@@ -3,6 +3,7 @@ from typing import Any
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 import os
+import psycopg2.extras
 import requests
 import sqlite3
 import time
@@ -344,8 +345,12 @@ def onboarding():
         bid = str(uuid.uuid4())
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
+        oauth_password_hash = bcrypt.hashpw(
+            uuid.uuid4().hex.encode("utf-8"),
+            bcrypt.gensalt(),
+        ).decode("utf-8")
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
-                   (bid, data.get("full_name"), email, "no_pass"))
+                   (bid, data.get("full_name"), email, oauth_password_hash))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
     finally:
