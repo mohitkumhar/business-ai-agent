@@ -70,7 +70,13 @@ export interface RevenueVsExpense { labels: string[]; revenue: number[]; expense
 export interface SalesTrend { labels: string[]; revenue: number[]; expenses: number[]; }
 export interface FinancialOverview { labels: string[]; revenue: number[]; expenses: number[]; net_profit: number[]; cash_balance: number[]; }
 export interface AlertsBySeverity { labels: string[]; data: number[]; }
-export interface TopProducts { labels: string[]; stock: number[]; margin: number[]; }
+export interface TopProducts {
+  labels: string[];
+  stock: number[];
+  margin: number[];
+  margin_amount?: number[];
+  margin_pct?: number[];
+}
 export interface EmployeeStats { labels: string[]; counts: number[]; avg_salary: number[]; }
 export interface SalesTarget { business_name: string; current_revenue: number; target_revenue: number; percentage: number; }
 export interface Alert { alert_id: number; created_at: string; alert_type: string; severity: string; message: string; status: string; }

@@ -759,10 +759,25 @@ def api_top_products():
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params("SELECT product_name, stock_quantity, selling_price, cost_price FROM products WHERE business_id = %s ORDER BY stock_quantity DESC LIMIT 10", (bid,))
+        margin_amount = [
+            float((r["selling_price"] or 0) - (r["cost_price"] or 0))
+            for r in rows
+        ]
+        margin_pct = [
+            round(
+                (((r["selling_price"] or 0) - (r["cost_price"] or 0)) / r["selling_price"]) * 100,
+                1,
+            )
+            if r["selling_price"]
+            else 0
+            for r in rows
+        ]
         return jsonify({
             "labels": [r["product_name"] for r in rows],
             "stock": [int(r["stock_quantity"] or 0) for r in rows],
-            "margin": [float((r["selling_price"] or 0) - (r["cost_price"] or 0)) for r in rows]
+            "margin": margin_amount,
+            "margin_amount": margin_amount,
+            "margin_pct": margin_pct,
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

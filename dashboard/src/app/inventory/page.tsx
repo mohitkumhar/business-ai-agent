@@ -45,7 +45,7 @@ export default function InventoryPage() {
                     <tr>
                       <th>Product Name</th>
                       <th>Stock Quantity</th>
-                      <th>Profit Margin ($)</th>
+                      <th>Profit Margin</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -63,7 +63,15 @@ export default function InventoryPage() {
                           </span>
                         </td>
                         <td style={{ fontWeight: 600 }}>
-                          ${data.margin[i].toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          ${(data.margin_amount?.[i] ?? data.margin[i]).toLocaleString(
+                            undefined,
+                            { minimumFractionDigits: 2 }
+                          )}
+                          {typeof data.margin_pct?.[i] === "number" && (
+                            <span style={{ color: "var(--text-secondary)", fontSize: 12, marginLeft: 8 }}>
+                              ({data.margin_pct[i].toFixed(1)}%)
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}

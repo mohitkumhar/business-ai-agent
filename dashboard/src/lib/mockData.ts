@@ -98,7 +98,9 @@ export const mockHealthScores: HealthScores = {
 export const mockTopProducts: TopProducts = {
   labels: ["Widget Pro", "DataSync", "CloudBase", "AI Toolkit", "SecureVault", "AnalytiX"],
   stock: [340, 210, 185, 420, 150, 290],
-  margin: [42, 58, 35, 62, 48, 55],
+  margin: [4200, 5800, 3500, 6200, 4800, 5500],
+  margin_amount: [4200, 5800, 3500, 6200, 4800, 5500],
+  margin_pct: [42, 58, 35, 62, 48, 55],
 };
 
 export const mockEmployeeStats: EmployeeStats = {
@@ -125,4 +127,3 @@ export const mockForecast: Forecast = {
   trend_percent: 12.5,
   insight: "Your revenue is projected to grow by 12.5% over the next month, driven by strong seasonal trends in product sales. Consider increasing inventory for top-performing items.",
 };
-
