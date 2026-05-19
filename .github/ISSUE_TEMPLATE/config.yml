@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/mohitkumhar/business-ai-agent/security/policy
+    about: Report vulnerabilities privately using the security policy.
+  - name: Support and setup help
+    url: https://github.com/mohitkumhar/business-ai-agent/blob/main/SUPPORT.md
+    about: Read the support guide before opening a setup question.
+  - name: Contribution guide
+    url: https://github.com/mohitkumhar/business-ai-agent/blob/main/CONTRIBUTING.md
+    about: Read this before starting a new contribution or GSSoC issue.

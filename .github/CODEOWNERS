@@ -1,0 +1,16 @@
+# Default reviewer for all repository changes.
+* @mohitkumhar
+
+# Core application areas.
+/agent_code/ @mohitkumhar
+/dashboard/ @mohitkumhar
+/landing-page/ @mohitkumhar
+/web/ @mohitkumhar
+/whatsapp_gateway/ @mohitkumhar
+
+# Project operations and contributor experience.
+/.github/ @mohitkumhar
+/docker-compose.yml @mohitkumhar
+/prometheus.yml @mohitkumhar
+/promtail-config.yaml @mohitkumhar
+/README.md @mohitkumhar

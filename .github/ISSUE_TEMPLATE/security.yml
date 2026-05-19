@@ -1,33 +1,32 @@
-name: 📌 Security Issue
-description: Create a Security issue
+name: Security report placeholder
+description: Do not disclose sensitive security details in a public issue.
 title: "security: "
 labels: ["security"]
 
 body:
-  - type: textarea
-    id: description
+  - type: markdown
     attributes:
-      label: 📄 Issue Description
+      value: |
+        Please do not post exploit details, secrets, private data, or a working attack path in a public issue.
+
+        Use the repository security policy instead:
+        https://github.com/mohitkumhar/business-ai-agent/security/policy
+
+        If private vulnerability reporting is not available, contact a maintainer privately and share only the minimum information needed to establish a secure reporting channel.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Public summary
+      description: Provide only a brief, non-sensitive summary.
+      placeholder: "Example: Possible authorization issue in the dashboard API."
     validations:
       required: true
 
-  - type: textarea
-    id: context
+  - type: checkboxes
+    id: confirmation
     attributes:
-      label: 🔄 Context / Steps
-    validations:
-      required: false
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: ✅ Expected Outcome
-    validations:
-      required: false
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: ❌ Actual Outcome
-    validations:
-      required: false
+      label: Confirmation
+      options:
+        - label: I have not included exploit details, secrets, private data, or a working attack path.
+          required: true

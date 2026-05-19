@@ -1,0 +1,23 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.avif binary
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.mp4 binary
+*.png binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+
+*.db binary
+*.sqlite binary
+
+package-lock.json text eol=lf
+*.mmd text eol=lf
+*.svg text eol=lf
+*.sql text eol=lf
