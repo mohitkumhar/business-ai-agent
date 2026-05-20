@@ -284,17 +284,22 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
 
 # --- Helper Functions (From Kushal-Dev) ---
 def get_period_dates(period):
-    now = datetime.utcnow()
-    y, m = now.year, now.month
+    end_date = date.today()
     if period == "this_month":
-        return datetime(y, m, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    if period == "last_month":
-        last_day_prev = datetime(y, m, 1) - timedelta(days=1)
-        return datetime(last_day_prev.year, last_day_prev.month, 1).strftime("%Y-%m-%d"), last_day_prev.strftime("%Y-%m-%d")
-    if period == "ytd":
-        return datetime(y, 1, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    start = now - timedelta(days=30)
-    return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+        start_date = end_date.replace(day=1)
+    elif period == "last_month":
+        last_month_end = end_date.replace(day=1) - timedelta(days=1)
+        start_date = last_month_end.replace(day=1)
+        end_date = last_month_end
+    elif period == "last_7_days":
+        start_date = end_date - timedelta(days=7)
+    elif period == "last_30_days":
+        start_date = end_date - timedelta(days=30)
+    elif period == "ytd":
+        start_date = date(end_date.year, 1, 1)
+    else:
+        start_date = end_date - timedelta(days=30)
+    return start_date, end_date
 
 def get_current_business_id():
     return getattr(g, "business_id", None)
@@ -670,21 +675,6 @@ def api_recent_transactions():
         return jsonify({"transactions": rows})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
-
-def get_period_dates(period):
-    end_date = datetime.now().date()
-    if period == "this_month":
-        start_date = end_date.replace(day=1)
-    elif period == "last_month":
-        start_date = (end_date.replace(day=1) - timedelta(days=1)).replace(day=1)
-        end_date = (end_date.replace(day=1) - timedelta(days=1))
-    elif period == "last_7_days":
-        start_date = end_date - timedelta(days=7)
-    elif period == "last_30_days":
-        start_date = end_date - timedelta(days=30)
-    else:
-        start_date = date(2000, 1, 1)
-    return start_date, end_date
 
 @app.route("/api/dashboard/summary-sql", methods=["GET", "OPTIONS"])
 @token_required
