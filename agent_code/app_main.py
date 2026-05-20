@@ -1091,14 +1091,48 @@ def api_dashboard_summary():
     alerts = execute_read_query_params("SELECT COUNT(*) AS active_alerts FROM alerts WHERE business_id = %s AND status = 'Active'", (bid,))
     
     curr = txn[0] if txn else {}
+    
+    # Parse dates to compute prev period
+    dt_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    if period == "this_month":
+        p_start = (dt_start - timedelta(days=1)).replace(day=1)
+        p_end = dt_start - timedelta(days=1)
+    elif period in ("last_7_days", "last_7"):
+        p_start = dt_start - timedelta(days=7)
+        p_end = dt_start - timedelta(days=1)
+    else:
+        p_start = dt_start - timedelta(days=30)
+        p_end = dt_start - timedelta(days=1)
+        
+    p_start_str = p_start.strftime("%Y-%m-%d")
+    p_end_str = p_end.strftime("%Y-%m-%d")
+    
+    prev_txn = execute_read_query_params("""
+        SELECT 
+            COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS total_revenue,
+            COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS total_expenses
+        FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
+    """, (bid, p_start_str, p_end_str))
+    
+    prev = prev_txn[0] if prev_txn else {}
+    
+    def calc_change(curr_val, prev_val):
+        if not prev_val: return 100.0 if curr_val else 0.0
+        return round(((curr_val - prev_val) / prev_val) * 100.0, 1)
+        
+    rev = float(curr.get("total_revenue", 0))
+    exp = float(curr.get("total_expenses", 0))
+    prev_rev = float(prev.get("total_revenue", 0))
+    prev_exp = float(prev.get("total_expenses", 0))
+    
     return jsonify({
-        "total_revenue": float(curr.get("total_revenue", 0)),
-        "total_expenses": float(curr.get("total_expenses", 0)),
-        "net_profit": float(curr.get("total_revenue", 0)) - float(curr.get("total_expenses", 0)),
+        "total_revenue": rev,
+        "total_expenses": exp,
+        "net_profit": rev - exp,
         "total_transactions": int(curr.get("total_transactions", 0)),
         "active_alerts": int(alerts[0].get("active_alerts", 0)) if alerts else 0,
-        "revenue_change": 12.5, # Static for demo or logic here
-        "expenses_change": -2.4
+        "revenue_change": calc_change(rev, prev_rev),
+        "expenses_change": calc_change(exp, prev_exp)
     })
 
 @app.route("/api/dashboard/forecast", methods=["GET"])
