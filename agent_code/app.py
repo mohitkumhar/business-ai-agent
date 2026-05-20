@@ -221,8 +221,25 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     return blob.content, meta.get("mime_type", "image/jpeg")
 
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
-    # Placeholder for vision LLM call
-    return {"amount": 0.0, "category": "Uncategorized", "type": "Expense", "vendor": "Unknown"}
+    extension_by_mime = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+    filename = f"whatsapp-bill{extension_by_mime.get(mime_type.lower(), '.jpg')}"
+    transactions = extract_transactions_from_image(image_bytes, filename)
+    if not transactions:
+        raise ValueError("No bill transaction could be extracted from the image.")
+
+    transaction_date, tx_type, category, amount, description = transactions[0]
+    return {
+        "date": transaction_date,
+        "amount": amount,
+        "category": category,
+        "type": tx_type,
+        "vendor": description or "Unknown",
+    }
 
 def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> int:
     conn = get_db_connection()
