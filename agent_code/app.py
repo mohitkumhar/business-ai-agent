@@ -282,22 +282,7 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         timeout=30,
     ).raise_for_status()
 
-# --- Helper Functions (From Kushal-Dev) ---
-def get_period_dates(period):
-    now = datetime.utcnow()
-    y, m = now.year, now.month
-    if period == "this_month":
-        return datetime(y, m, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    if period == "last_month":
-        last_day_prev = datetime(y, m, 1) - timedelta(days=1)
-        return datetime(last_day_prev.year, last_day_prev.month, 1).strftime("%Y-%m-%d"), last_day_prev.strftime("%Y-%m-%d")
-    if period == "ytd":
-        return datetime(y, 1, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    start = now - timedelta(days=30)
-    return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
-def get_current_business_id():
-    return getattr(g, "business_id", None)
 
 # --- Dashboard API Endpoints ---
 
