@@ -2,6 +2,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from typing import TypedDict, Annotated, NotRequired
 from langchain_community.tools import DuckDuckGoSearchRun
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from langgraph.graph.message import add_messages
@@ -26,6 +27,10 @@ class GeneralInformationGraphState(TypedDict):
     
 
 def create_postgres_memory():
+    if os.getenv("USE_IN_MEMORY_CHECKPOINTER") == "true":
+        logger.info("Using in-memory checkpointer for general information graph.")
+        return MemorySaver()
+
     # Run setup() on a standalone autocommit connection
     # because CREATE INDEX CONCURRENTLY cannot run inside a transaction block
     logger.info("Setting up PostgresSaver memory...")

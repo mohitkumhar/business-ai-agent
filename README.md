@@ -233,6 +233,20 @@ python app.py
 # Agent runs on http://localhost:5000
 ```
 
+### Running Backend Tests
+
+The Flask backend includes pytest coverage that runs without a real database by
+mocking database calls and external integrations.
+
+```bash
+cd agent_code
+pip install -r requirements.txt pytest
+pytest tests -v
+```
+
+The GitHub Actions CI workflow also runs `pytest agent_code/tests -v` whenever
+the `agent_code/tests/` directory is present.
+
 ### 2. Next.js Dashboard
 
 ```bash

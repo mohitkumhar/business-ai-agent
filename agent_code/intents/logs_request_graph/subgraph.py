@@ -11,6 +11,7 @@ Graph flow:
 """
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
@@ -35,6 +36,10 @@ DATABASE_URL = os.getenv(
 
 # ── Postgres checkpointer (same pattern as metrics graph) ───────────────
 def _create_postgres_memory():
+    if os.getenv("USE_IN_MEMORY_CHECKPOINTER") == "true":
+        logger.info("[logs] Using in-memory checkpointer for logs graph.")
+        return MemorySaver()
+
     try:
         logger.info("[logs] Setting up Postgres checkpointer for logs graph.")
         with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
