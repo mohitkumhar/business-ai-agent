@@ -3,7 +3,6 @@ import inspect
 from typing import Any, Callable
 
 from langchain_core.runnables import RunnableConfig
-
 from logger.logger import logger
 
 MAX_STEPS_DEFAULT = 16  # BUG2 FIX: was 12 — too low to allow format_response to run

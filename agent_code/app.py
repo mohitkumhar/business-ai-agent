@@ -1,39 +1,31 @@
 from __future__ import annotations
-from typing import Any
-from flask import Flask, request, jsonify, Response, stream_with_context, g
-from flask_cors import CORS
-import os
-import requests
-import sqlite3
-import time
-import json
-import uuid
-import jwt
-import bcrypt
+
 import hashlib
+import os
+import sqlite3
+import uuid
+from datetime import date, datetime, timedelta
 from functools import wraps
+from typing import Any
+
+import bcrypt
+import jwt
 import numpy as np
-from datetime import datetime, timedelta, date
-from dateutil.relativedelta import relativedelta
-from dotenv import load_dotenv
+import requests
 
 # Database & AI Imports
-from db_config import get_db_connection, execute_read_query_params
-from transaction_import import parse_csv_bytes, parse_xlsx_bytes
-from ocr_processor import extract_transactions_from_image
+from db_config import execute_read_query_params, get_db_connection
+from dotenv import load_dotenv
+from flask import Flask, Response, g, jsonify, request, stream_with_context
+from flask_cors import CORS
 from langchain_openai import ChatOpenAI
+from logger.logger import logger
 
 # Chatbot/LangGraph Imports
-from nodes import intent_detection, format_response
-from intents.general_information_graph.subgraph import general_information_graph_workflow
-from intents.database_request_graph.subgraph import database_request_graph_workflow
-from intents.logs_request_graph.subgraph import logs_request_graph_workflow
-from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
-from langgraph.types import Command
-
-from logger.logger import logger
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+from ocr_processor import extract_transactions_from_image
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 from query_execution import stream_agent_sse_lines
+from transaction_import import parse_csv_bytes, parse_xlsx_bytes
 
 load_dotenv()
 
@@ -79,7 +71,7 @@ def auth_signup():
         biz_id = str(uuid.uuid4())
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (biz_id, biz_name, data.get("industry", "Other"), name))
-        
+
         # Hash password and create user
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s) RETURNING user_id",
@@ -129,7 +121,6 @@ def auth_login():
     finally:
         conn.close()
 
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 
 # --- Configurations ---
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
@@ -241,7 +232,7 @@ def api_dashboard_summary():
     start_date, end_date = get_period_dates(period)
     bid = get_current_business_id()
     if not bid: return jsonify({"error": "No business found"}), 404
-    
+
     txn = execute_read_query_params("""
         SELECT 
             COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS total_revenue,
@@ -249,9 +240,9 @@ def api_dashboard_summary():
             COUNT(*) AS total_transactions
         FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
     """, (bid, start_date, end_date))
-    
+
     alerts = execute_read_query_params("SELECT COUNT(*) AS active_alerts FROM alerts WHERE business_id = %s AND status = 'Active'", (bid,))
-    
+
     curr = txn[0] if txn else {}
     return jsonify({
         "total_revenue": float(curr.get("total_revenue", 0)),
@@ -259,7 +250,7 @@ def api_dashboard_summary():
         "net_profit": float(curr.get("total_revenue", 0)) - float(curr.get("total_expenses", 0)),
         "total_transactions": int(curr.get("total_transactions", 0)),
         "active_alerts": int(alerts[0].get("active_alerts", 0)) if alerts else 0,
-        "revenue_change": 12.5, 
+        "revenue_change": 12.5,
         "expenses_change": -2.4,
         "net_profit_change": 15.1,
         "transactions_change": 4.3
@@ -277,14 +268,14 @@ def api_forecast():
             WHERE business_id = %s AND type='Revenue' AND transaction_date >= %s 
             GROUP BY 1 ORDER BY 1
         """, (bid, cutoff))
-        
+
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
-        
+
         if not hist:
             return jsonify({
-                "historical": [], 
-                "forecast": [], 
-                "trend_direction": "flat", 
+                "historical": [],
+                "forecast": [],
+                "trend_direction": "flat",
                 "trend_percent": 0,
                 "insight": "No revenue data available for forecasting yet."
             })
@@ -292,7 +283,7 @@ def api_forecast():
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
-        
+
         if len(hist) > 1:
             z = np.polyfit(x, y, 1)
             p = np.poly1d(z)
@@ -302,7 +293,7 @@ def api_forecast():
             p = lambda val: y[0] if len(y) > 0 else 0
             trend = "flat"
             percent = 0
-            
+
         forecast = []
         last_date = datetime.strptime(hist[-1]["date"], "%Y-%m-%d")
         for i in range(1, 31):
@@ -310,10 +301,10 @@ def api_forecast():
                 "date": (last_date + timedelta(days=i)).strftime("%Y-%m-%d"),
                 "predicted": max(0, round(float(p(len(hist) + i)), 2))
             })
-        
+
         return jsonify({
-            "historical": hist, 
-            "forecast": forecast, 
+            "historical": hist,
+            "forecast": forecast,
             "trend_direction": trend,
             "trend_percent": percent,
             "insight": f"Revenue is trending {trend}wards based on the last {len(hist)} days of data."
@@ -337,12 +328,12 @@ def onboarding():
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
-    
+
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         bid = str(uuid.uuid4())
-        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
+        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
                    (bid, data.get("full_name"), email, "no_pass"))
@@ -380,7 +371,7 @@ def import_transactions():
         if filename.endswith(".csv"): rows = parse_csv_bytes(content)
         elif filename.endswith(".xlsx"): rows = parse_xlsx_bytes(content)
         else: return jsonify({"error": "Unsupported file format"}), 400
-        
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
@@ -405,15 +396,15 @@ def import_notebook():
     try:
         content = file.read()
         filename = file.filename
-        
+
         # MD5 Hash Check
         file_hash = hashlib.md5(content).hexdigest()
-        
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
                 # Check if this hash was already imported for this business
-                cur.execute("SELECT 1 FROM daily_transactions WHERE business_id = %s AND description LIKE %s LIMIT 1", 
+                cur.execute("SELECT 1 FROM daily_transactions WHERE business_id = %s AND description LIKE %s LIMIT 1",
                            (bid, f"%[Import Hash: {file_hash}]%"))
                 if cur.fetchone():
                     return jsonify({"error": "This notebook page has already been imported."}), 409
@@ -421,7 +412,7 @@ def import_notebook():
 
         # Use OCR Processor
         rows = extract_transactions_from_image(content, filename)
-        
+
         # Return for PREVIEW first (Requirement #5)
         return jsonify({
             "transactions": [
@@ -436,7 +427,7 @@ def import_notebook():
             ],
             "hash": file_hash
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Notebook extraction failed: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -448,7 +439,7 @@ def confirm_notebook():
     bid = get_current_business_id()
     transactions = data.get("transactions", [])
     file_hash = data.get("hash")
-    
+
     if not transactions:
         return jsonify({"error": "No transactions to confirm"}), 400
 
@@ -524,7 +515,7 @@ def api_revenue_vs_expense():
             GROUP BY category, type
             ORDER BY total DESC
         """, (bid, start_date, end_date))
-        
+
         revenue_cats = {}
         expense_cats = {}
         for r in rows:
@@ -534,7 +525,7 @@ def api_revenue_vs_expense():
                 revenue_cats[cat] = revenue_cats.get(cat, 0) + amt
             else:
                 expense_cats[cat] = expense_cats.get(cat, 0) + amt
-                
+
         labels = sorted(set(list(revenue_cats.keys()) + list(expense_cats.keys())))
         return jsonify({
             "labels": labels,
@@ -586,7 +577,7 @@ def api_recent_transactions():
             params.append(category)
         sql += " ORDER BY transaction_date DESC LIMIT %s"
         params.append(limit)
-        
+
         rows = execute_read_query_params(sql, tuple(params))
         for r in rows:
             r["amount"] = float(r["amount"] or 0)
@@ -616,7 +607,7 @@ def api_summary_sql():
     bid = get_current_business_id()
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
-    
+
     # Prev period for growth
     if period == "this_month":
         p_start = (start_date - timedelta(days=1)).replace(day=1)
@@ -731,10 +722,10 @@ def api_health_scores():
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
         """, (bid,))
-        
+
         if not rows:
             return jsonify({"businesses": [], "scores": []})
-            
+
         return jsonify({
             "businesses": [r["business_name"] for r in rows],
             "scores": [

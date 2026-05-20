@@ -4,6 +4,7 @@
 # This module is kept as a thin wrapper for any non-graph callers.
 
 import os
+
 from intents.database_request_graph.subgraph import database_request_graph_workflow
 
 

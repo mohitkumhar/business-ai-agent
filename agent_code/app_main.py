@@ -8,15 +8,14 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import requests
+from db_config import execute_read_query_params, get_db_connection
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, request, stream_with_context, g
+from flask import Flask, Response, g, jsonify, request, stream_with_context
 from flask_cors import CORS
 from langchain_core.messages import HumanMessage, SystemMessage
-from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
-
-from db_config import execute_read_query_params, get_db_connection
 from llm.base_llm import base_llm
 from logger.logger import logger
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 from query_execution import stream_agent_sse_lines
 
 load_dotenv()
@@ -973,34 +972,22 @@ def get_business_info():
 if __name__ == "__main__":
     logger.info("Starting Flask development server.")
     app.run(host="0.0.0.0", port=5000, debug=True)
-from flask import Flask, request, jsonify, Response, stream_with_context, g
-from flask_cors import CORS
 import os
 import sqlite3
-import time
-import json
 import uuid
-import numpy as np
-from datetime import datetime, timedelta, date
-from dateutil.relativedelta import relativedelta
-from dotenv import load_dotenv
 
-# Database & AI Imports
-from db_config import get_db_connection, execute_read_query_params
-from transaction_import import parse_csv_bytes, parse_xlsx_bytes
-from ocr_processor import extract_transactions_from_image
+import numpy as np
+from dotenv import load_dotenv
+from flask import Flask
+from flask_cors import CORS
 from langchain_openai import ChatOpenAI
+from logger.logger import logger
 
 # Chatbot/LangGraph Imports
-from nodes import intent_detection, format_response
-from intents.general_information_graph.subgraph import general_information_graph_workflow
-from intents.database_request_graph.subgraph import database_request_graph_workflow
-from intents.logs_request_graph.subgraph import logs_request_graph_workflow
-from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
-from langgraph.types import Command
+from nodes import intent_detection
 
-from logger.logger import logger
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+# Database & AI Imports
+from prometheus_client import Counter, Histogram
 
 load_dotenv()
 
@@ -1070,7 +1057,7 @@ def api_dashboard_summary():
     start_date, end_date = get_period_dates(period)
     bid = get_latest_business_id()
     if not bid: return jsonify({"error": "No business found"}), 404
-    
+
     txn = execute_read_query_params("""
         SELECT 
             COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS total_revenue,
@@ -1078,9 +1065,9 @@ def api_dashboard_summary():
             COUNT(*) AS total_transactions
         FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
     """, (bid, start_date, end_date))
-    
+
     alerts = execute_read_query_params("SELECT COUNT(*) AS active_alerts FROM alerts WHERE business_id = %s AND status = 'Active'", (bid,))
-    
+
     curr = txn[0] if txn else {}
     return jsonify({
         "total_revenue": float(curr.get("total_revenue", 0)),
@@ -1103,14 +1090,14 @@ def api_forecast():
             WHERE business_id = %s AND type='Revenue' AND transaction_date >= %s 
             GROUP BY 1 ORDER BY 1
         """, (bid, cutoff))
-        
+
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
         z = np.polyfit(x, y, 1)
         p = np.poly1d(z)
-        
+
         forecast = []
         last_date = datetime.strptime(hist[-1]["date"], "%Y-%m-%d") if hist else datetime.utcnow()
         for i in range(1, 31):
@@ -1118,7 +1105,7 @@ def api_forecast():
                 "date": (last_date + timedelta(days=i)).strftime("%Y-%m-%d"),
                 "predicted": max(0, round(float(p(len(hist) + i)), 2))
             })
-        
+
         return jsonify({"historical": hist, "forecast": forecast, "insight": "Revenue is trending upwards based on last 60 days."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1129,12 +1116,12 @@ def onboarding():
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
-    
+
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         bid = str(uuid.uuid4())
-        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
+        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
                    (bid, data.get("full_name"), email, "no_pass"))

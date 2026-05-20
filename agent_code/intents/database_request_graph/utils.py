@@ -1,22 +1,20 @@
 import re
+from datetime import date
+
+from db_config import get_db_connection, get_db_schema
+from intents.database_request_graph.advisory_nodes import _resolve_business_id
 from intents.database_request_graph.structures import (
+    BusinessInsightOutput,
     DateRangeOutput,
     EntityExtractionOutput,
     SQLGenerationOutput,
     SQLValidationOutput,
-    BusinessInsightOutput,
 )
-from langgraph.types import interrupt
-from datetime import date
+from intents.database_request_graph.subgraph import DatabaseRequestGraphState
 from langchain_core.runnables import RunnableConfig
+from langgraph.types import interrupt
 from llm.base_llm import base_llm
 from logger.logger import logger
-from intents.database_request_graph.subgraph import (
-    DatabaseRequestGraphState
-)
-from db_config import get_db_schema, get_db_connection
-from intents.database_request_graph.advisory_nodes import _resolve_business_id
-
 
 AVAILABLE_TABLES: list[str] = [
     "alerts",
@@ -67,7 +65,7 @@ def resolve_data_range(state: DatabaseRequestGraphState):
 
     user_query = state["user_query"]
     today_str = date.today().isoformat()
-    
+
     logger.info(f"Resolving date range for user query: '{user_query}'")
 
     prompt = f"""You are a date-range extraction assistant.
@@ -243,7 +241,7 @@ def _resolve_clarification(clarification) -> list[str]:
     if isinstance(clarification, list):
         matched = [t for t in clarification if t in AVAILABLE_TABLES]
         logger.info(f"Matched clarification list to tables: {matched}")
-        return matched if matched else ["daily_transactions"]    
+        return matched if matched else ["daily_transactions"]
     logger.warning(f"Unhandled clarification type: {type(clarification)}. Defaulting to daily_transactions.")
     return ["daily_transactions"]
 
@@ -451,7 +449,7 @@ OPERATING BUSINESS_ID (filter all financial queries) : {business_id or '(resolve
 RULES
 - ONLY SELECT statements.  No INSERT / UPDATE / DELETE / DROP / ALTER / TRUNCATE / CREATE.
 - Use **only** table and column names that appear verbatim in DATABASE SCHEMA (no invented columns like \"revenue\" if the schema has total_revenue).
-- If you alias a table (e.g. financial_records AS fr), every qualified column must use that alias — never reference another alias (e.g. tr.\*) unless that alias is in FROM/JOIN.
+- If you alias a table (e.g. financial_records AS fr), every qualified column must use that alias — never reference another alias (e.g. tr.\\*) unless that alias is in FROM/JOIN.
 {financial_rules}
 - Use proper JOIN multitable queries when the schema requires it; for financial summaries always join `businesses b` as above when filtering financial_records.
 - Add meaningful column aliases.
@@ -633,7 +631,7 @@ If issues are fixable, provide corrected_sql.  Otherwise set is_valid=false."""
             "sql_validation_error": "",
             "route": "sql_valid",
         }
-        
+
 
 
 #  NODE 6 - execute_query
@@ -662,8 +660,9 @@ def execute_query(state: DatabaseRequestGraphState):
     logger.info(f"Executing SQL query: {clean_sql}")
 
     try:
-        from db_config import execute_read_query
         import json
+
+        from db_config import execute_read_query
 
         _t0 = _time.perf_counter()
         rows = execute_read_query(clean_sql)
@@ -702,8 +701,9 @@ def execute_query(state: DatabaseRequestGraphState):
 #  NODE 7 - logging
 # =================================
 
-from datetime import datetime
 import json
+from datetime import datetime
+
 
 def logging_node(state: DatabaseRequestGraphState):
     """Persist an audit-log entry for the query lifecycle."""
@@ -966,7 +966,7 @@ Respond ONLY with the formatted answer - no preamble, no meta-commentary."""
         logger.info("Final response formatted successfully by LLM.")
     except Exception as exc:
         logger.error("format_response LLM call failed: %s", exc, exc_info=True)
-        
+
         # graceful fallback
         logger.info("Falling back to manual response formatting.")
         parts = [f"**Summary**: {insight.get('summary', 'Data retrieved.')}"]

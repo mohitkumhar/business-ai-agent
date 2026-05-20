@@ -1,16 +1,17 @@
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, START, END
-from typing import TypedDict, Annotated, NotRequired
-from langchain_community.tools import DuckDuckGoSearchRun
-from langgraph.checkpoint.postgres import PostgresSaver
-from psycopg_pool import ConnectionPool
-from langgraph.graph.message import add_messages
-import psycopg
-from intents.general_information_graph.structures import WebSearchStructure
-from dotenv import load_dotenv
 import os
+from typing import Annotated, NotRequired, TypedDict
+
+import psycopg
+from dotenv import load_dotenv
+from intents.general_information_graph.structures import WebSearchStructure
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 from llm.base_llm import base_llm
 from logger.logger import logger
+from psycopg_pool import ConnectionPool
 
 load_dotenv()
 
@@ -23,7 +24,7 @@ class GeneralInformationGraphState(TypedDict):
     user_query_output: str
     route: str
     chain_prior_summaries: NotRequired[str]
-    
+
 
 def create_postgres_memory():
     # Run setup() on a standalone autocommit connection
@@ -68,7 +69,7 @@ def is_web_search_required(state: GeneralInformationGraphState):
     User Query:
     {user_query}
     """
-    
+
     logger.info(f"Prompt for web search requirement:\n{prompt}")
     response = general_information_web_search_require_llm.invoke(prompt).model_dump()
     logger.info(f"Web search requirement response: {response}")
@@ -160,19 +161,19 @@ def generate_graph():
 
 
     gen_info_graph.add_edge(START, "is_web_search_required")
-    
+
     gen_info_graph.add_conditional_edges("is_web_search_required", lambda state: state["route"], {
         "required": "duck_duck_go_search",
         "not_required": "answer_user_query",
     })
-    
+
     gen_info_graph.add_edge("duck_duck_go_search", "answer_user_query")
     gen_info_graph.add_edge("answer_user_query", END)
     memory = create_postgres_memory()
-    
-    
+
+
     general_information_graph_workflow = gen_info_graph.compile(checkpointer=memory)
-    
+
     return general_information_graph_workflow
 
 

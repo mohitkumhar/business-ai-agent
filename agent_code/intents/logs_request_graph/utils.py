@@ -10,20 +10,19 @@ Loki label used by Promtail:  job="python_app"
 
 import json
 import os
-import requests
 import time
-import requests
 from datetime import date
-from dotenv import load_dotenv
-from langchain_core.runnables import RunnableConfig
 
-from llm.base_llm import base_llm
-from logger.logger import logger
+import requests
+from dotenv import load_dotenv
 from intents.logs_request_graph.graph_state import LogsRequestGraphState
 from intents.logs_request_graph.structures import (
-    LogsQueryParseOutput,
     LogsAnalysisOutput,
+    LogsQueryParseOutput,
 )
+from langchain_core.runnables import RunnableConfig
+from llm.base_llm import base_llm
+from logger.logger import logger
 
 load_dotenv()
 

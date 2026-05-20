@@ -7,9 +7,6 @@ import os
 import re
 from typing import Any
 
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
-
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
 from slack_integration.slack_formatter import (
@@ -24,6 +21,8 @@ from slack_integration.smart_assigner import (
     should_notify_assignee,
     slack_thread_id,
 )
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 _MENTION = re.compile(r"<@[^>]+>\s*")
 

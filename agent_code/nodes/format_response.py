@@ -1,5 +1,6 @@
-from datetime import datetime
 import json
+from datetime import datetime
+
 from llm.base_llm import base_llm
 
 
@@ -64,7 +65,7 @@ def format_response(intent, result, auth_meta=None, intent_meta=None):
 
 def format_response_stream(intent, result, auth_meta=None, intent_meta=None):
     """Streaming version of format_response."""
-    
+
     # Check if the intent is a greeting (intent is now a dict: {'intent': ['greeting_request']})
     is_greeting = False
     if isinstance(intent, dict) and "intent" in intent:
@@ -83,13 +84,13 @@ def format_response_stream(intent, result, auth_meta=None, intent_meta=None):
             yield _serialize(result)
         return
 
-    # If it's a general information request, we also want to just return the 
+    # If it's a general information request, we also want to just return the
     # AI's answer directly rather than reformatting it into a heavy business table.
     is_general = False
     if isinstance(intent, dict) and "intent" in intent:
         if "general_information_request" in intent["intent"]:
             is_general = True
-            
+
     if is_general:
         if isinstance(result, dict) and "user_query_output" in result:
             yield str(result["user_query_output"])

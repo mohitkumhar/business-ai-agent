@@ -8,7 +8,6 @@ import threading
 from urllib.parse import parse_qs
 
 from flask import Blueprint, jsonify, request
-
 from logger.logger import logger
 
 slack_bp = Blueprint("slack_integration", __name__, url_prefix="/slack")
@@ -183,7 +182,7 @@ def slack_interactive():
                             channel=dm,
                             text=f"Hello! <@{user_id}> has manually assigned an issue to you from the web chatbot. Please check the channel.",
                         )
-            
+
             elif action_id == "escalation_dismiss":
                 msg_blocks = payload.get("message", {}).get("blocks", [])
                 if msg_blocks and msg_blocks[-1].get("type") == "actions":
@@ -194,7 +193,7 @@ def slack_interactive():
                 })
                 requests.post(response_url, json={"replace_original": True, "blocks": msg_blocks})
 
-        except Exception as e:
+        except Exception:
             logger.exception("Slack interactive escalation failed")
 
     if action_id in ("escalation_assign", "escalation_dismiss"):

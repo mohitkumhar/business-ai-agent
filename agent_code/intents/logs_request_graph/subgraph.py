@@ -10,21 +10,21 @@ Graph flow:
   __end__
 """
 
-from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.postgres import PostgresSaver
-from psycopg_pool import ConnectionPool
-from dotenv import load_dotenv
-import psycopg
 import os
 
-from logger.logger import logger
+import psycopg
+from dotenv import load_dotenv
 from intents.logs_request_graph.graph_state import LogsRequestGraphState
 from intents.logs_request_graph.utils import (
-    parse_logs_query,
-    fetch_logs,
     analyze_logs,
+    fetch_logs,
     format_logs_response,
+    parse_logs_query,
 )
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.graph import END, START, StateGraph
+from logger.logger import logger
+from psycopg_pool import ConnectionPool
 
 load_dotenv()
 

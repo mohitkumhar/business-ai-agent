@@ -1,8 +1,8 @@
-import psycopg2
-import uuid
+import os
 import random
 from datetime import datetime, timedelta
-import os
+
+import psycopg2
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,7 +36,7 @@ def seed_data():
     print("Seeding Roles & Users...")
     cur.execute("INSERT INTO roles (business_id, role_name) VALUES (%s, %s) RETURNING role_id", (biz_id, "Owner"))
     role_id = cur.fetchone()[0]
-    
+
     cur.execute("""
         INSERT INTO users (business_id, role_id, name, email, password_hash)
         VALUES (%s, %s, %s, %s, %s)
@@ -66,7 +66,7 @@ def seed_data():
     print("Seeding Daily Transactions (Last 30 Days)...")
     tx_types = ["Revenue", "Expense"]
     tx_categories = ["Product Sales", "Inventory", "Marketing", "Payroll", "Rent", "Utilities", "Consulting"]
-    
+
     today = datetime.utcnow().date()
     for d in range(30):
         date = today - timedelta(days=d)
@@ -81,7 +81,7 @@ def seed_data():
                 cat = random.choice(["Marketing", "Payroll", "Rent", "Utilities", "Consulting"])
                 amt = random.uniform(1000, 8000)
                 desc = f"Payment for {cat}"
-            
+
             cur.execute("""
                 INSERT INTO daily_transactions (business_id, transaction_date, type, category, amount, description)
                 VALUES (%s, %s, %s, %s, %s, %s)

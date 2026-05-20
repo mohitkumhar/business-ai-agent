@@ -1,5 +1,7 @@
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+
 
 class DateRangeOutput(BaseModel):
     start_date: Optional[str] = Field(
