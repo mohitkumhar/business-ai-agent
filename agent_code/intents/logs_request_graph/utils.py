@@ -12,7 +12,6 @@ import json
 import os
 import requests
 import time
-import requests
 from datetime import date
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
