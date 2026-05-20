@@ -119,7 +119,7 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
     Same safety rules as execute_read_query, but supports parameterized queries
     (psycopg2 %s placeholders). Use for all user-influenced predicates.
     """
-    _assert_read_only_select(sql)
+    s = _assert_read_only_select(sql)
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
