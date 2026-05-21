@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import bcrypt
 
-from agent_code.auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, is_bcrypt_hash, verify_password
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, is_bcrypt_hash, verify_password
 
 
 def test_social_login_password_sentinel_is_not_bcrypt_hash():
