@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
 from db_config import execute_read_query_params, get_db_connection
+from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
@@ -1146,7 +1147,7 @@ def onboarding():
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
-                   (bid, data.get("full_name"), email, "no_pass"))
+                   (bid, data.get("full_name"), email, SOCIAL_LOGIN_PASSWORD_HASH))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
     finally:
