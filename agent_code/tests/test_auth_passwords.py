@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bcrypt
 
-from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, is_bcrypt_hash, verify_password
+from agent_code.auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, is_bcrypt_hash, verify_password
 
 
 def test_social_login_password_sentinel_is_not_bcrypt_hash():
