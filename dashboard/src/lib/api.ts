@@ -40,10 +40,12 @@ export interface Alert {
   status: string;
 }
 
+export type ForecastTrend = "up" | "down" | "stable" | "flat";
+
 export interface Forecast {
   historical: { date: string; actual: number }[];
   forecast: { date: string; predicted: number; lower_bound: number; upper_bound: number }[];
-  trend_direction: "up" | "down" | "stable";
+  trend_direction: ForecastTrend;
   trend_percent: number;
   insight: string;
 }
@@ -159,7 +161,7 @@ export const api = {
   },
 
   getForecast: async (period: string): Promise<Forecast> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`));
+    const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`), { headers: getHeaders() });
     if (!res.ok) {
       const { mockForecast } = await import("./mockData");
       return mockForecast;
