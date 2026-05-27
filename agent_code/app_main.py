@@ -457,10 +457,10 @@ def whatsapp_verify():
     Responds with the challenge string when ``hub.verify_token``
     matches the configured ``WHATSAPP_VERIFY_TOKEN``.
 
-    Args:
-        hub.mode (str): Must be ``"subscribe"``.
-        hub.verify_token (str): Token to validate against config.
-        hub.challenge (str): Echoed back on success.
+    The endpoint reads three query parameters from ``request.args``:
+    ``hub.mode`` (must be ``"subscribe"``), ``hub.verify_token`` (compared
+    against the configured token), and ``hub.challenge`` (echoed back
+    on success).
 
     Returns:
         tuple: (challenge_str, 200) on success, (error_msg, 403) on failure.
