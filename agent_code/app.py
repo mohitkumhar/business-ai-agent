@@ -710,14 +710,14 @@ def api_dashboard_summary():
 
     try:
         def get_metrics(s, e):
-            """Fetch revenue, expenses, and transaction count for a date range.
+            """Fetch revenue, expenses, transaction count, and active alerts.
 
             Args:
                 s: Start date (datetime.date or str).
                 e: End date (datetime.date or str).
 
             Returns:
-                tuple: (revenue, expenses, transaction_count).
+                tuple: (revenue, expenses, transaction_count, active_alerts).
 
             Raises:
                 Exception: If the database query fails.
