@@ -410,6 +410,14 @@ def _send_telegram_text(chat_id: int, text: str):
 
 @app.route("/")
 def home():
+    """Health-check endpoint.
+
+    Returns a plain-text confirmation that the agent service is alive.
+    Used by load balancers, monitoring tools, and Docker health checks.
+
+    Returns:
+        str: A status message indicating the service is running.
+    """
     return "Intelligent AI Agent is running. Use /api/v1/query."
 
 
