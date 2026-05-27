@@ -16,6 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
 from db_config import execute_read_query_params, get_db_connection
+from api_errors import internal_error_response
 from llm.base_llm import base_llm
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
@@ -446,7 +447,7 @@ def billing_analyze_all():
         return jsonify({"business_id": business_id, "analysis": answer})
     except Exception as exc:
         logger.error("Analyze all failed: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
@@ -508,7 +509,7 @@ def whatsapp_events():
         return jsonify({"ok": True}), 200
     except Exception as exc:
         logger.error("WhatsApp webhook failed: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
@@ -568,7 +569,7 @@ def telegram_webhook():
         return jsonify({"ok": True})
     except Exception as exc:
         logger.error("Telegram webhook failed: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 ASSIGNMENTS_FILE = "assigned_issues.json"
@@ -620,7 +621,7 @@ def get_employees():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/v1/escalate", methods=["POST"])
@@ -655,7 +656,7 @@ def escalate_to_slack():
         delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
         return jsonify({"status": "ok"}), 200
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/summary", methods=["GET", "OPTIONS"])
@@ -689,7 +690,7 @@ def api_dashboard_summary():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/financial-overview", methods=["GET", "OPTIONS"])
@@ -721,7 +722,7 @@ def api_financial_overview():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
@@ -752,7 +753,7 @@ def api_revenue_vs_expense():
             {"labels": labels, "revenue": [revenue_cats.get(c, 0) for c in labels], "expenses": [expense_cats.get(c, 0) for c in labels]}
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/sales-trend", methods=["GET", "OPTIONS"])
@@ -779,7 +780,7 @@ def api_sales_trend():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/transactions-by-category", methods=["GET", "OPTIONS"])
@@ -798,7 +799,7 @@ def api_transactions_by_category():
         )
         return jsonify({"labels": [r["category"] or "Other" for r in rows], "data": [int(r["cnt"]) for r in rows]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/alerts-by-severity", methods=["GET", "OPTIONS"])
@@ -809,7 +810,7 @@ def api_alerts_by_severity():
         )
         return jsonify({"labels": [r["severity"] for r in rows], "data": [int(r["cnt"]) for r in rows]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
@@ -843,7 +844,7 @@ def api_health_scores():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
@@ -869,7 +870,7 @@ def api_top_products():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
@@ -886,7 +887,7 @@ def api_employee_stats():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/recent-transactions", methods=["GET", "OPTIONS"])
@@ -916,7 +917,7 @@ def api_recent_transactions():
                 r["transaction_date"] = r["transaction_date"].isoformat()
         return jsonify({"transactions": rows})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/sales-target", methods=["GET", "OPTIONS"])
@@ -950,7 +951,7 @@ def api_sales_target():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/categories", methods=["GET", "OPTIONS"])
@@ -959,7 +960,7 @@ def api_categories():
         rows = execute_read_query_params("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 
 @app.route("/api/dashboard/business-info", methods=["GET", "OPTIONS"])
@@ -975,7 +976,7 @@ def get_business_info():
             return jsonify({"error": "No business found"}), 404
         return jsonify(business)
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
     finally:
         conn.close()
 
@@ -1165,7 +1166,7 @@ def api_forecast():
         
         return jsonify({"historical": hist, "forecast": forecast, "insight": "Revenue is trending upwards based on last 60 days."})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response(e)
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
