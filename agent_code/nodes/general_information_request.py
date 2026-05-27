@@ -1,5 +1,6 @@
 from intents.general_information_graph.subgraph import general_information_graph_workflow
 
+
 def handle(text, intent_meta):
     initial_state = {"user_query": text}
     config = {"configurable": {"thread_id": "default-thread"}}

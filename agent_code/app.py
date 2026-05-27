@@ -1,43 +1,36 @@
 from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sqlite3
+import uuid
+from datetime import date, datetime, timedelta
+from functools import wraps
 from typing import Any
-from flask import Flask, request, jsonify, Response, stream_with_context, g
+
+import bcrypt
+import jwt
+import numpy as np
+import psycopg2.extras
+import requests
+from auth import AuthError, decode_jwt_identity
+
+# Database & AI Imports
+from db_config import execute_read_query_params, get_db_connection
+from dotenv import load_dotenv
+from flask import Flask, Response, g, jsonify, request, stream_with_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import os
-import psycopg2.extras
-import requests
-import sqlite3
-import time
-import json
-import uuid
-import jwt
-import bcrypt
-import hashlib
-from functools import wraps
-import numpy as np
-from datetime import datetime, timedelta, date
-from dateutil.relativedelta import relativedelta
-from dotenv import load_dotenv
-
-# Database & AI Imports
-from db_config import get_db_connection, execute_read_query_params
-from transaction_import import parse_csv_bytes, parse_xlsx_bytes
-from ocr_processor import extract_transactions_from_image
 from langchain_openai import ChatOpenAI
+from logger.logger import logger
 
 # Chatbot/LangGraph Imports
-from nodes import intent_detection, format_response
-from intents.general_information_graph.subgraph import general_information_graph_workflow
-from intents.database_request_graph.subgraph import database_request_graph_workflow
-from intents.logs_request_graph.subgraph import logs_request_graph_workflow
-from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
-from langgraph.types import Command
-
-from logger.logger import logger
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+from ocr_processor import extract_transactions_from_image
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 from query_execution import stream_agent_sse_lines
-from auth import AuthError, decode_jwt_identity
+from transaction_import import parse_csv_bytes, parse_xlsx_bytes
 
 load_dotenv()
 
@@ -78,8 +71,6 @@ def token_required(f):
         return f(*args, **kwargs)
     return decorated
 
-def get_current_business_id():
-    return getattr(g, "business_id", None)
 
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
@@ -105,7 +96,7 @@ def auth_signup():
         biz_id = str(uuid.uuid4())
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (biz_id, biz_name, data.get("industry", "Other"), name))
-        
+
         # Hash password and create user
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s) RETURNING user_id",
@@ -156,7 +147,6 @@ def auth_login():
     finally:
         conn.close()
 
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 
 # --- Configurations ---
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
@@ -213,10 +203,12 @@ def _init_chat_db():
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
-    if not WHATSAPP_ACCESS_TOKEN: raise ValueError("WhatsApp token missing")
+    if not WHATSAPP_ACCESS_TOKEN:
+        raise ValueError("WhatsApp token missing")
     meta = requests.get(f"https://graph.facebook.com/v21.0/{media_id}", headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"}).json()
     url = meta.get("url")
-    if not url: raise ValueError("Media URL missing")
+    if not url:
+        raise ValueError("Media URL missing")
     blob = requests.get(url, headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"})
     return blob.content, meta.get("mime_type", "image/jpeg")
 
@@ -282,22 +274,27 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         timeout=30,
     ).raise_for_status()
 
-# --- Helper Functions (From Kushal-Dev) ---
-def get_period_dates(period):
-    now = datetime.utcnow()
-    y, m = now.year, now.month
-    if period == "this_month":
-        return datetime(y, m, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    if period == "last_month":
-        last_day_prev = datetime(y, m, 1) - timedelta(days=1)
-        return datetime(last_day_prev.year, last_day_prev.month, 1).strftime("%Y-%m-%d"), last_day_prev.strftime("%Y-%m-%d")
-    if period == "ytd":
-        return datetime(y, 1, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    start = now - timedelta(days=30)
-    return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+
+# --- Helper Functions ---
 
 def get_current_business_id():
     return getattr(g, "business_id", None)
+
+def get_period_dates(period):
+    end_date = datetime.now().date()
+    if period == "this_month":
+        start_date = end_date.replace(day=1)
+    elif period == "last_month":
+        start_date = (end_date.replace(day=1) - timedelta(days=1)).replace(day=1)
+        end_date = (end_date.replace(day=1) - timedelta(days=1))
+    elif period == "last_7_days":
+        start_date = end_date - timedelta(days=7)
+    elif period == "last_30_days":
+        start_date = end_date - timedelta(days=30)
+    else:
+        start_date = date(2000, 1, 1)
+    return start_date, end_date
+
 
 # --- Dashboard API Endpoints ---
 
@@ -309,22 +306,23 @@ def home():
 @token_required
 def api_forecast():
     bid = get_current_business_id()
-    if not bid: return jsonify({"historical":[], "forecast":[], "trend_direction": "flat", "trend_percent": 0}), 404
+    if not bid:
+        return jsonify({"historical": [], "forecast": [], "trend_direction": "flat", "trend_percent": 0}), 404
     try:
         cutoff = (datetime.utcnow() - timedelta(days=60)).strftime("%Y-%m-%d")
         rows = execute_read_query_params("""
-            SELECT transaction_date, SUM(amount) as amount FROM daily_transactions 
-            WHERE business_id = %s AND type='Revenue' AND transaction_date >= %s 
+            SELECT transaction_date, SUM(amount) as amount FROM daily_transactions
+            WHERE business_id = %s AND type='Revenue' AND transaction_date >= %s
             GROUP BY 1 ORDER BY 1
         """, (bid, cutoff))
-        
+
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
-        
+
         if not hist:
             return jsonify({
-                "historical": [], 
-                "forecast": [], 
-                "trend_direction": "flat", 
+                "historical": [],
+                "forecast": [],
+                "trend_direction": "flat",
                 "trend_percent": 0,
                 "insight": "No revenue data available for forecasting yet."
             })
@@ -332,17 +330,18 @@ def api_forecast():
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
-        
+
         if len(hist) > 1:
             z = np.polyfit(x, y, 1)
             p = np.poly1d(z)
             trend = "up" if z[0] > 0 else "down"
             percent = abs(round(float(z[0] / (np.mean(y) or 1) * 100), 1))
         else:
-            p = lambda val: y[0] if len(y) > 0 else 0
+            def p(val):
+                return y[0] if len(y) > 0 else 0
             trend = "flat"
             percent = 0
-            
+
         forecast = []
         last_date = datetime.strptime(hist[-1]["date"], "%Y-%m-%d")
         for i in range(1, 31):
@@ -350,10 +349,10 @@ def api_forecast():
                 "date": (last_date + timedelta(days=i)).strftime("%Y-%m-%d"),
                 "predicted": max(0, round(float(p(len(hist) + i)), 2))
             })
-        
+
         return jsonify({
-            "historical": hist, 
-            "forecast": forecast, 
+            "historical": hist,
+            "forecast": forecast,
             "trend_direction": trend,
             "trend_percent": percent,
             "insight": f"Revenue is trending {trend}wards based on the last {len(hist)} days of data."
@@ -364,7 +363,6 @@ def api_forecast():
 @app.route("/api/dashboard/categories", methods=["GET", "OPTIONS"])
 @token_required
 def api_categories():
-    bid = get_current_business_id()
     try:
         rows = execute_read_query_params("SELECT DISTINCT category FROM daily_transactions WHERE category IS NOT NULL ORDER BY category")
         return jsonify({"categories": [r["category"] for r in rows]})
@@ -376,13 +374,14 @@ def onboarding():
     data = request.json
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
-    if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
-    
+    if not business_name or not email:
+        return jsonify({"error": "Missing fields"}), 400
+
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         bid = str(uuid.uuid4())
-        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
+        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
                    (bid, data.get("full_name"), email, "no_pass"))
@@ -393,7 +392,8 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
+    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
+        return request.args.get("hub.challenge"), 200
     return "failed", 403
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
@@ -444,16 +444,20 @@ def telegram_webhook():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def import_transactions():
-    if "file" not in request.files: return jsonify({"error": "No file part"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
     bid = get_current_business_id()
     try:
         content = file.read()
         filename = file.filename.lower()
-        if filename.endswith(".csv"): rows = parse_csv_bytes(content)
-        elif filename.endswith(".xlsx"): rows = parse_xlsx_bytes(content)
-        else: return jsonify({"error": "Unsupported file format"}), 400
-        
+        if filename.endswith(".csv"):
+            rows = parse_csv_bytes(content)
+        elif filename.endswith(".xlsx"):
+            rows = parse_xlsx_bytes(content)
+        else:
+            return jsonify({"error": "Unsupported file format"}), 400
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
@@ -464,7 +468,8 @@ def import_transactions():
                     """, (bid, *row))
             conn.commit()
             return jsonify({"message": f"Successfully imported {len(rows)} transactions!"}), 201
-        finally: conn.close()
+        finally:
+            conn.close()
     except Exception as e:
         logger.error(f"Import failed: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -473,29 +478,31 @@ def import_transactions():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def import_notebook():
-    if "file" not in request.files: return jsonify({"error": "No file part"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
     bid = get_current_business_id()
     try:
         content = file.read()
         filename = file.filename
-        
+
         # MD5 Hash Check
         file_hash = hashlib.md5(content).hexdigest()
-        
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
                 # Check if this hash was already imported for this business
-                cur.execute("SELECT 1 FROM daily_transactions WHERE business_id = %s AND description LIKE %s LIMIT 1", 
+                cur.execute("SELECT 1 FROM daily_transactions WHERE business_id = %s AND description LIKE %s LIMIT 1",
                            (bid, f"%[Import Hash: {file_hash}]%"))
                 if cur.fetchone():
                     return jsonify({"error": "This notebook page has already been imported."}), 409
-        finally: conn.close()
+        finally:
+            conn.close()
 
         # Use OCR Processor
         rows = extract_transactions_from_image(content, filename)
-        
+
         # Return for PREVIEW first (Requirement #5)
         return jsonify({
             "transactions": [
@@ -510,7 +517,7 @@ def import_notebook():
             ],
             "hash": file_hash
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Notebook extraction failed: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -523,7 +530,7 @@ def confirm_notebook():
     bid = get_current_business_id()
     transactions = data.get("transactions", [])
     file_hash = data.get("hash")
-    
+
     if not transactions:
         return jsonify({"error": "No transactions to confirm"}), 400
 
@@ -562,8 +569,8 @@ def api_financial_overview():
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params("""
-            SELECT year, month, 
-                   COALESCE(SUM(total_revenue),0) AS total_revenue, 
+            SELECT year, month,
+                   COALESCE(SUM(total_revenue),0) AS total_revenue,
                    COALESCE(SUM(total_expenses),0) AS total_expenses,
                    COALESCE(SUM(net_profit),0) AS net_profit,
                    COALESCE(SUM(cash_balance),0) AS cash_balance
@@ -600,7 +607,7 @@ def api_revenue_vs_expense():
             GROUP BY category, type
             ORDER BY total DESC
         """, (bid, start_date, end_date))
-        
+
         revenue_cats = {}
         expense_cats = {}
         for r in rows:
@@ -610,7 +617,7 @@ def api_revenue_vs_expense():
                 revenue_cats[cat] = revenue_cats.get(cat, 0) + amt
             else:
                 expense_cats[cat] = expense_cats.get(cat, 0) + amt
-                
+
         labels = sorted(set(list(revenue_cats.keys()) + list(expense_cats.keys())))
         return jsonify({
             "labels": labels,
@@ -628,7 +635,7 @@ def api_sales_trend():
     start_date, end_date = get_period_dates(period)
     try:
         rows = execute_read_query_params("""
-            SELECT transaction_date, 
+            SELECT transaction_date,
                    COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS revenue,
                    COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS expenses
             FROM daily_transactions
@@ -662,7 +669,7 @@ def api_recent_transactions():
             params.append(category)
         sql += " ORDER BY transaction_date DESC LIMIT %s"
         params.append(limit)
-        
+
         rows = execute_read_query_params(sql, tuple(params))
         for r in rows:
             r["amount"] = float(r["amount"] or 0)
@@ -671,28 +678,13 @@ def api_recent_transactions():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
-def get_period_dates(period):
-    end_date = datetime.now().date()
-    if period == "this_month":
-        start_date = end_date.replace(day=1)
-    elif period == "last_month":
-        start_date = (end_date.replace(day=1) - timedelta(days=1)).replace(day=1)
-        end_date = (end_date.replace(day=1) - timedelta(days=1))
-    elif period == "last_7_days":
-        start_date = end_date - timedelta(days=7)
-    elif period == "last_30_days":
-        start_date = end_date - timedelta(days=30)
-    else:
-        start_date = date(2000, 1, 1)
-    return start_date, end_date
-
 @app.route("/api/dashboard/summary-sql", methods=["GET", "OPTIONS"])
 @token_required
 def api_dashboard_summary():
     bid = get_current_business_id()
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
-    
+
     # Prev period for growth
     if period == "this_month":
         p_start = (start_date - timedelta(days=1)).replace(day=1)
@@ -707,11 +699,11 @@ def api_dashboard_summary():
     try:
         def get_metrics(s, e):
             r = execute_read_query_params("""
-                SELECT 
+                SELECT
                     COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS rev,
                     COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS exp,
                     COUNT(*) AS txns
-                FROM daily_transactions 
+                FROM daily_transactions
                 WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
             """, (bid, s, e))[0]
             alerts = execute_read_query_params("SELECT COUNT(*) FROM alerts WHERE business_id = %s AND status='Active'", (bid,))[0]["count"]
@@ -721,7 +713,8 @@ def api_dashboard_summary():
         prev_rev, prev_exp, prev_txns, _ = get_metrics(p_start, p_end)
 
         def calc_change(curr, prev):
-            if not prev: return 100 if curr else 0
+            if not prev:
+                return 100 if curr else 0
             return round(((curr - prev) / prev) * 100, 1)
 
         return jsonify({
@@ -754,7 +747,8 @@ def api_alerts_list():
 @token_required
 def get_business_info():
     bid = get_current_business_id()
-    if not bid: return jsonify({"error": "No business found"}), 404
+    if not bid:
+        return jsonify({"error": "No business found"}), 404
     try:
         rows = execute_read_query_params("SELECT * FROM businesses WHERE business_id = %s", (bid,))
         return jsonify(rows[0] if rows else {})
@@ -765,16 +759,18 @@ def get_business_info():
 @token_required
 def api_sales_target():
     bid = get_current_business_id()
-    if not bid: return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
+    if not bid:
+        return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
     try:
         rows = execute_read_query_params("""
-            SELECT monthly_target_revenue, 
-                   (SELECT COALESCE(SUM(amount), 0) FROM daily_transactions 
-                    WHERE business_id = %s AND type='Revenue' 
+            SELECT monthly_target_revenue,
+                   (SELECT COALESCE(SUM(amount), 0) FROM daily_transactions
+                    WHERE business_id = %s AND type='Revenue'
                     AND EXTRACT(MONTH FROM transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as current_revenue
             FROM businesses WHERE business_id = %s
         """, (bid, bid))
-        if not rows: return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
+        if not rows:
+            return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
         row = rows[0]
         target = float(row["monthly_target_revenue"] or 100000)
         current = float(row["current_revenue"] or 0)
@@ -807,10 +803,10 @@ def api_health_scores():
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
         """, (bid,))
-        
+
         if not rows:
             return jsonify({"businesses": [], "scores": []})
-            
+
         return jsonify({
             "businesses": [r["business_name"] for r in rows],
             "scores": [

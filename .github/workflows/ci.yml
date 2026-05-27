@@ -52,5 +52,5 @@ jobs:
       - name: Install ruff
         run: python -m pip install --upgrade ruff
 
-      - name: Run critical ruff checks
-        run: ruff check agent_code --select E9,F63,F7,F82
+      - name: Run ruff checks
+        run: ruff check agent_code/

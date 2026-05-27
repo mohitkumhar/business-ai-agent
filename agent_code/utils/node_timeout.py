@@ -1,7 +1,8 @@
 """Synchronous timeout wrapper for blocking node / graph calls (Flask is sync)."""
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Callable, TypeVar
 
 from logger.logger import logger
