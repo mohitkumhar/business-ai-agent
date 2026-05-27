@@ -1,0 +1,60 @@
+name: Docker Build Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "agent_code/**"
+      - "dashboard/**"
+      - "landing-page/**"
+      - "web/**"
+      - "whatsapp_gateway/**"
+      - "docker-compose.yml"
+      - ".github/workflows/docker-build-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-build-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.image.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: agent-api
+            context: ./agent_code
+            file: ./agent_code/Dockerfile
+          - name: dashboard
+            context: ./dashboard
+            file: ./dashboard/Dockerfile
+          - name: landing-page
+            context: ./landing-page
+            file: ./landing-page/Dockerfile
+          - name: web
+            context: ./web
+            file: ./web/Dockerfile
+          - name: whatsapp-gateway
+            context: ./whatsapp_gateway
+            file: ./whatsapp_gateway/Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          push: false

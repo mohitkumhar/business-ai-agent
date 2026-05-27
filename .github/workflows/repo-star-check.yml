@@ -1,0 +1,88 @@
+name: Repo Star Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  watch:
+    types: [started]
+  workflow_dispatch:
+    inputs:
+      github_user:
+        description: "GitHub username to check. Defaults to the workflow actor."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-star-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-star:
+    name: Check repository star
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify user starred repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_USER: ${{ github.event.inputs.github_user || github.event.pull_request.user.login || github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          WATCH_ACTION: ${{ github.event.action }}
+          GITHUB_ACTOR_NAME: ${{ github.actor }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          repo = os.environ["REPOSITORY"]
+          target = (os.environ.get("TARGET_USER") or "").strip()
+          event_name = os.environ.get("EVENT_NAME", "")
+          watch_action = os.environ.get("WATCH_ACTION", "")
+          actor = os.environ.get("GITHUB_ACTOR_NAME", "")
+
+          if not target:
+              print("No GitHub user was provided to check.")
+              sys.exit(1)
+
+          if event_name == "watch" and watch_action == "started" and target.lower() == actor.lower():
+              print(f"{target} just starred {repo}.")
+              sys.exit(0)
+
+          page = 1
+          while True:
+              endpoint = f"/repos/{repo}/stargazers?per_page=100&page={page}"
+              result = subprocess.run(
+                  [
+                      "gh",
+                      "api",
+                      "-H",
+                      "Accept: application/vnd.github+json",
+                      endpoint,
+                  ],
+                  capture_output=True,
+                  text=True,
+                  check=False,
+              )
+              if result.returncode != 0:
+                  print(result.stderr)
+                  sys.exit(result.returncode)
+
+              stargazers = json.loads(result.stdout)
+              if any((user.get("login") or "").lower() == target.lower() for user in stargazers):
+                  print(f"{target} has starred {repo}.")
+                  sys.exit(0)
+
+              if len(stargazers) < 100:
+                  break
+              page += 1
+
+          print(f"{target} has not starred {repo}.")
+          sys.exit(1)
+          PY
