@@ -451,6 +451,20 @@ def billing_analyze_all():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
+    """WhatsApp webhook verification endpoint (GET).
+
+    Handles the Meta/Facebook webhook verification handshake.
+    Responds with the challenge string when ``hub.verify_token``
+    matches the configured ``WHATSAPP_VERIFY_TOKEN``.
+
+    Args:
+        hub.mode (str): Must be ``"subscribe"``.
+        hub.verify_token (str): Token to validate against config.
+        hub.challenge (str): Echoed back on success.
+
+    Returns:
+        tuple: (challenge_str, 200) on success, (error_msg, 403) on failure.
+    """
     mode = request.args.get("hub.mode", "")
     token = request.args.get("hub.verify_token", "")
     challenge = request.args.get("hub.challenge", "")
