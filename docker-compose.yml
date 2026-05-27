@@ -4,15 +4,15 @@ services:
     container_name: postgres_db
     restart: always
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: root
-      POSTGRES_DB: test_db
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-test_db}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d test_db"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,7 +40,7 @@ services:
   #     - /app/node_modules
   #   environment:
   #     - VITE_API_URL=http://backend:5000
-  #     - DATABASE_URL=postgresql://admin:root@db:5432/test_db
+  #     - DATABASE_URL=${DATABASE_URL}
   #     - ENCRYPTION_SECRET=12345678901234567890123456789012
   #     - NEXTAUTH_URL=http://localhost:5173
   #     - NEXT_PUBLIC_VIEWER_URL=http://localhost:5173
