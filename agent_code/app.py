@@ -710,6 +710,18 @@ def api_dashboard_summary():
 
     try:
         def get_metrics(s, e):
+            """Fetch revenue, expenses, and transaction count for a date range.
+
+            Args:
+                s: Start date (datetime.date or str).
+                e: End date (datetime.date or str).
+
+            Returns:
+                tuple: (revenue, expenses, transaction_count).
+
+            Raises:
+                Exception: If the database query fails.
+            """
             r = execute_read_query_params("""
                 SELECT 
                     COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS rev,
