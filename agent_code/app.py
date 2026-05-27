@@ -141,7 +141,13 @@ def auth_login():
         cur.execute("SELECT user_id, business_id, name, password_hash FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
 
-        if not user or not bcrypt.checkpw(password.encode("utf-8"), user["password_hash"].encode("utf-8")):
+        password_hash = user.get("password_hash") if user else None
+        if (
+            not user
+            or not password_hash
+            or not password_hash.startswith("$2")
+            or not bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+        ):
             return jsonify({"message": "Invalid email or password"}), 401
 
         token = jwt.encode({
@@ -385,7 +391,7 @@ def onboarding():
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
-                   (bid, data.get("full_name"), email, "no_pass"))
+                   (bid, data.get("full_name"), email, None))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
     finally:
