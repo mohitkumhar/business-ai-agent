@@ -415,6 +415,15 @@ def home():
 
 @app.route("/metrics")
 def metrics_endpoint():
+    """Prometheus metrics endpoint.
+
+    Exposes application metrics (request counts, durations, etc.) in
+    Prometheus text format for scraping by monitoring infrastructure.
+
+    Returns:
+        Response: A Flask Response with ``text/plain; version=0.0.4``
+        Content-Type containing the latest Prometheus metrics.
+    """
     return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
 
