@@ -13,6 +13,8 @@
 
 </div>
 
+<!-- README-only PR automation comment check. -->
+
 ---
 
 ## 📌 Table of Contents
