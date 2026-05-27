@@ -13,6 +13,8 @@
 
 </div>
 
+<!-- README-only CI smoke test PR. -->
+
 ---
 
 ## 📌 Table of Contents
