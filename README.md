@@ -355,13 +355,13 @@ psql -U admin -d test_db -c "\dt"
 | `WHATSAPP_VERIFY_TOKEN` | Agent | Meta webhook verification token | — |
 | `WHATSAPP_ACCESS_TOKEN` | Agent | Meta WhatsApp API access token | — |
 | `WHATSAPP_PHONE_NUMBER_ID` | Agent | Meta WhatsApp phone number ID | — |
-| `JWT_SECRET` | Agent | JWT signing secret for Flask auth tokens | `super-secret-business-key-2026` |
+| `JWT_SECRET` | Agent | High-entropy JWT signing secret for Flask auth tokens; required and must not use the sample value | — |
 | `CHAT_DB_PATH` | Agent | SQLite file path for chat history persistence | `chat_history.db` |
 | `DEFAULT_BUSINESS_ID` | Agent | Fallback business ID for integrations without a session | — |
 | `GITHUB_REPO` | Agent | Repository used by GitHub issue helper flows | `mohitkumhar/intelligent-business-agent` |
 | `API_KEY` | Agent auth | Simple API key | `secret-token` |
 
-Copy `.env.example` to `.env`, fill private values locally, and never commit real `.env` files:
+Copy `.env.example` to `.env`, fill private values locally, generate `JWT_SECRET` with a high-entropy value such as `openssl rand -hex 32`, and never commit real `.env` files:
 
 ```bash
 cp .env.example .env

@@ -39,14 +39,14 @@ from langgraph.types import Command
 from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from query_execution import stream_agent_sse_lines
-from auth import AuthError, decode_jwt_identity
+from auth import AuthError, decode_jwt_identity, require_jwt_secret
 from api_errors import internal_error_response
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
-app.config["SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
+app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
 
 DEFAULT_RATE_LIMITS = [

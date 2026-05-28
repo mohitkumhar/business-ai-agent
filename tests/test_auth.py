@@ -5,10 +5,20 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 
-from agent_code.auth import AuthError, decode_jwt_identity
+from agent_code.auth import AuthError, DEFAULT_JWT_SECRET, decode_jwt_identity, require_jwt_secret
 
 
 SECRET = "test-secret-with-at-least-32-bytes"
+
+
+def test_require_jwt_secret_accepts_custom_secret():
+    assert require_jwt_secret(SECRET) == SECRET
+
+
+@pytest.mark.parametrize("raw_secret", [None, "", DEFAULT_JWT_SECRET])
+def test_require_jwt_secret_rejects_missing_or_sample_secret(raw_secret):
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        require_jwt_secret(raw_secret)
 
 
 def _token(payload):
