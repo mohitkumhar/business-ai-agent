@@ -38,6 +38,7 @@ from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity
+from api_errors import internal_error_response
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, verify_password
 
 load_dotenv()
@@ -122,7 +123,7 @@ def auth_signup():
 
         return jsonify({"token": token, "business_id": biz_id, "user": {"name": name, "email": email}}), 201
     except Exception as e:
-        return jsonify({"message": str(e)}), 500
+        return internal_error_response(e, field="message")
     finally:
         conn.close()
 
@@ -153,7 +154,7 @@ def auth_login():
 
         return jsonify({"token": token, "business_id": user["business_id"], "user": {"name": user["name"], "email": email}}), 200
     except Exception as e:
-        return jsonify({"message": str(e)}), 500
+        return internal_error_response(e, field="message")
     finally:
         conn.close()
 
@@ -222,8 +223,25 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     return blob.content, meta.get("mime_type", "image/jpeg")
 
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
-    # Placeholder for vision LLM call
-    return {"amount": 0.0, "category": "Uncategorized", "type": "Expense", "vendor": "Unknown"}
+    extension_by_mime = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+    filename = f"whatsapp-bill{extension_by_mime.get(mime_type.lower(), '.jpg')}"
+    transactions = extract_transactions_from_image(image_bytes, filename)
+    if not transactions:
+        raise ValueError("No bill transaction could be extracted from the image.")
+
+    transaction_date, tx_type, category, amount, description = transactions[0]
+    return {
+        "date": transaction_date,
+        "amount": amount,
+        "category": category,
+        "type": tx_type,
+        "vendor": description or "Unknown",
+    }
 
 def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> int:
     conn = get_db_connection()
@@ -283,22 +301,7 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         timeout=30,
     ).raise_for_status()
 
-# --- Helper Functions (From Kushal-Dev) ---
-def get_period_dates(period):
-    now = datetime.utcnow()
-    y, m = now.year, now.month
-    if period == "this_month":
-        return datetime(y, m, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    if period == "last_month":
-        last_day_prev = datetime(y, m, 1) - timedelta(days=1)
-        return datetime(last_day_prev.year, last_day_prev.month, 1).strftime("%Y-%m-%d"), last_day_prev.strftime("%Y-%m-%d")
-    if period == "ytd":
-        return datetime(y, 1, 1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
-    start = now - timedelta(days=30)
-    return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
-def get_current_business_id():
-    return getattr(g, "business_id", None)
 
 # --- Dashboard API Endpoints ---
 
@@ -360,7 +363,7 @@ def api_forecast():
             "insight": f"Revenue is trending {trend}wards based on the last {len(hist)} days of data."
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response(e)
 
 @app.route("/api/dashboard/categories", methods=["GET", "OPTIONS"])
 @token_required
@@ -370,7 +373,7 @@ def api_categories():
         rows = execute_read_query_params("SELECT DISTINCT category FROM daily_transactions WHERE category IS NOT NULL ORDER BY category")
         return jsonify({"categories": [r["category"] for r in rows]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
@@ -437,7 +440,7 @@ def telegram_webhook():
                 _send_telegram_text(chat_id, "Sorry, I could not process that Telegram update.")
         except Exception:
             pass
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response(e)
 
 # --- Transaction Import Endpoints ---
 
@@ -468,7 +471,7 @@ def import_transactions():
         finally: conn.close()
     except Exception as e:
         logger.error(f"Import failed: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response(e)
 
 @app.route("/api/v1/import/notebook", methods=["POST"])
 @limiter.limit(IMPORT_RATE_LIMIT)
@@ -514,7 +517,7 @@ def import_notebook():
         
     except Exception as e:
         logger.error(f"Notebook extraction failed: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response(e)
 
 @app.route("/api/v1/import/confirm-notebook", methods=["POST"])
 @limiter.limit(IMPORT_RATE_LIMIT)
@@ -541,7 +544,7 @@ def confirm_notebook():
         conn.commit()
         return jsonify({"message": f"Successfully saved {len(transactions)} transactions!"}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return internal_error_response(e)
     finally:
         conn.close()
 
@@ -585,7 +588,7 @@ def api_financial_overview():
             "cash_balance": [float(r["cash_balance"]) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
 @token_required
@@ -619,7 +622,7 @@ def api_revenue_vs_expense():
             "expenses": [expense_cats.get(c, 0) for c in labels]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/sales-trend", methods=["GET", "OPTIONS"])
 @token_required
@@ -643,7 +646,7 @@ def api_sales_trend():
             "expenses": [float(r["expenses"]) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/recent-transactions", methods=["GET", "OPTIONS"])
 @token_required
@@ -670,7 +673,7 @@ def api_recent_transactions():
             r["transaction_date"] = r["transaction_date"].strftime("%Y-%m-%d")
         return jsonify({"transactions": rows})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 def get_period_dates(period):
     end_date = datetime.now().date()
@@ -737,7 +740,7 @@ def api_dashboard_summary():
             "transactions_change": calc_change(txns, prev_txns),
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/alerts-list", methods=["GET"])
 @token_required
@@ -749,7 +752,7 @@ def api_alerts_list():
             r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M")
         return jsonify({"alerts": rows})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/business-info", methods=["GET", "OPTIONS"])
 @token_required
@@ -760,7 +763,7 @@ def get_business_info():
         rows = execute_read_query_params("SELECT * FROM businesses WHERE business_id = %s", (bid,))
         return jsonify(rows[0] if rows else {})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/sales-target", methods=["GET", "OPTIONS"])
 @token_required
@@ -782,7 +785,7 @@ def api_sales_target():
         pct = round((current / target * 100), 1) if target > 0 else 0
         return jsonify({"current_revenue": current, "target_revenue": target, "percentage": pct})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/alerts-by-severity", methods=["GET", "OPTIONS"])
 @token_required
@@ -792,7 +795,7 @@ def api_alerts_by_severity():
         rows = execute_read_query_params("SELECT severity, COUNT(*) AS cnt FROM alerts WHERE business_id = %s AND status='Active' GROUP BY severity", (bid,))
         return jsonify({"labels": [r["severity"] for r in rows], "data": [int(r["cnt"]) for r in rows]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
 @token_required
@@ -828,7 +831,7 @@ def api_health_scores():
             ],
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
 @token_required
@@ -851,7 +854,7 @@ def api_top_products():
             "margin_pct": margin_pct
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
 @token_required
@@ -865,7 +868,7 @@ def api_employee_stats():
             "avg_salary": [round(float(r["avg_salary"]), 2) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return internal_error_response(exc)
 
 @app.route("/metrics")
 def metrics():

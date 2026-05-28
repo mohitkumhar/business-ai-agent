@@ -1,14 +1,31 @@
-FROM node:20-alpine
+FROM node:20-alpine AS deps
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+ENV TANSTACK_START_TARGET=node-server
+
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN npm run build
 
-# Expose the port defined in package.json (dev script uses port 3003)
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=5173
+
+COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/public ./public
+
 EXPOSE 5173
 
-# Run the dev server and bind to 0.0.0.0
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0","--port", "5173"]
+CMD ["node", ".output/server/index.mjs"]

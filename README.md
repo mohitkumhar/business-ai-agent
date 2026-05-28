@@ -331,25 +331,41 @@ psql -U admin -d test_db -c "\dt"
 | Variable | Service | Description | Default |
 |----------|---------|-------------|---------|
 | `DATABASE_URL` | Agent, Web | PostgreSQL connection string | `postgresql://admin:root@localhost:5432/test_db` |
-| `LLM_BASE_URL` | Agent | Ollama base URL | `http://127.0.0.1:11434/` |
 | `GROQ_API_KEY` | Agent | Groq API key for `ChatOpenAI` calls that use the Groq OpenAI-compatible endpoint | — |
+| `GEMINI_API_KEY` | Agent | Gemini Vision API key for OCR-based image transaction extraction | — |
+| `OPENROUTER_API_KEY` | Agent | OpenRouter API key for LangGraph subgraph LLM calls | — |
+| `OPENROUTER_MODEL` | Agent | OpenRouter model used by the base LLM client | `openai/gpt-4o-mini` |
 | `PROMETHEUS_URL` | Agent | Prometheus API URL | `http://prometheus:9090` |
 | `LOKI_URL` | Agent | Loki API URL | `http://loki:3100` |
 | `AGENT_API_URL` | Dashboard, Web | Flask agent base URL | `http://localhost:5000` |
+| `NEXT_PUBLIC_AGENT_API_URL` | Dashboard | Browser-visible Flask agent URL for direct client requests | `http://localhost:5000` |
+| `NEXT_PUBLIC_LANDING_URL` | Dashboard | Public landing page URL used by dashboard links | `http://localhost:5173` |
+| `NEXT_PUBLIC_SLACK_APP_URL` | Dashboard | Optional Slack app install or launch URL | — |
 | `RATE_LIMIT_DEFAULT` | Agent | Default Flask-Limiter quota for API clients | `200 per day;50 per hour` |
 | `RATE_LIMIT_AUTH` | Agent | Signup/login quota per client IP | `5 per minute` |
 | `RATE_LIMIT_CHAT` | Agent | Chat generation quota per client IP | `10 per minute` |
 | `RATE_LIMIT_IMPORT` | Agent | Transaction import quota per client IP | `20 per hour` |
 | `TELEGRAM_BOT_TOKEN` | Agent | Telegram BotFather token used by `/api/v1/telegram/webhook` to send AI replies | - |
+| `VITE_API_URL` | Landing Page | Flask agent URL used by onboarding requests | `http://localhost:5000` |
 | `VITE_GOOGLE_CLIENT_ID` | Landing Page | Google OAuth Client ID | — |
+| `NEXTAUTH_URL` | Landing Page | Local auth callback base URL | `http://localhost:5173` |
+| `NEXT_PUBLIC_VIEWER_URL` | Landing Page | Public viewer URL for the landing app | `http://localhost:5173` |
+| `ENCRYPTION_SECRET` | Landing Page | Local encryption secret for app integrations | — |
 | `MY_WHATSAPP_NUMBER` | WhatsApp Gateway | E.164 WhatsApp number without `+` | — |
 | `WHATSAPP_VERIFY_TOKEN` | Agent | Meta webhook verification token | — |
 | `WHATSAPP_ACCESS_TOKEN` | Agent | Meta WhatsApp API access token | — |
 | `WHATSAPP_PHONE_NUMBER_ID` | Agent | Meta WhatsApp phone number ID | — |
-| `SECRET_KEY` | Web Flask | Session secret key | `super-secret-key-change-me` |
+| `JWT_SECRET` | Agent | JWT signing secret for Flask auth tokens | `super-secret-business-key-2026` |
+| `CHAT_DB_PATH` | Agent | SQLite file path for chat history persistence | `chat_history.db` |
+| `DEFAULT_BUSINESS_ID` | Agent | Fallback business ID for integrations without a session | — |
+| `GITHUB_REPO` | Agent | Repository used by GitHub issue helper flows | `mohitkumhar/intelligent-business-agent` |
 | `API_KEY` | Agent auth | Simple API key | `secret-token` |
 
-Copy `.env.example` to `.env`, fill private values locally, and never commit real `.env` files.
+Copy `.env.example` to `.env`, fill private values locally, and never commit real `.env` files:
+
+```bash
+cp .env.example .env
+```
 
 ---
 
