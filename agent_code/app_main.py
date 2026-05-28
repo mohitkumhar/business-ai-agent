@@ -5,6 +5,7 @@ import bcrypt
 import json
 import os
 import time
+from functools import wraps
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -19,10 +20,12 @@ from db_config import execute_read_query_params, get_db_connection
 from llm.base_llm import base_llm
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
+from auth import AuthError, decode_jwt_identity
 
 load_dotenv()
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
 CORS(app)
 
 AGENT_REQUEST_COUNT = Counter(
@@ -47,6 +50,28 @@ WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        try:
+            identity = decode_jwt_identity(
+                request.headers.get("Authorization"),
+                app.config["SECRET_KEY"],
+            )
+        except AuthError as exc:
+            return jsonify({"message": exc.message}), exc.status_code
+
+        g.user_id = identity["user_id"]
+        g.business_id = identity["business_id"]
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def get_current_business_id():
+    return getattr(g, "business_id", None)
 
 
 @app.before_request
@@ -725,18 +750,21 @@ def api_financial_overview():
 
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
+@token_required
 def api_revenue_vs_expense():
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    bid = get_current_business_id()
+    period = request.args.get("period", "this_month")
+    start_date, end_date = get_period_dates(period)
     try:
         rows = execute_read_query_params(
             """
             SELECT category, type, COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (bid, start_date, end_date),
         )
         revenue_cats: dict[str, float] = {}
         expense_cats: dict[str, float] = {}
