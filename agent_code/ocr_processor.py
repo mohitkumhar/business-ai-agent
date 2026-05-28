@@ -8,6 +8,36 @@ from logger.logger import logger
 # Try to get API KEY from environment
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+
+def _clean_gemini_json_response(text_result: str) -> str:
+    """
+    Return the JSON payload from a Gemini response.
+
+    Gemini is prompted to return a raw JSON array, but model responses may still
+    include markdown fences or surrounding prose. Only use fenced content when a
+    closing fence exists; otherwise fall back to the raw text and array bounds.
+    """
+    cleaned = text_result.strip()
+
+    fence_start = cleaned.find("```")
+    if fence_start != -1:
+        content_start = fence_start + 3
+        fence_end = cleaned.find("```", content_start)
+        if fence_end != -1:
+            fenced = cleaned[content_start:fence_end].strip()
+            if fenced.lower().startswith("json"):
+                fenced = fenced[4:].strip()
+            if fenced:
+                cleaned = fenced
+
+    array_start = cleaned.find("[")
+    array_end = cleaned.rfind("]")
+    if array_start != -1 and array_end != -1 and array_start < array_end:
+        return cleaned[array_start : array_end + 1].strip()
+
+    return cleaned
+
+
 def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[tuple]:
     """
     Use Gemini Vision API to extract handwritten ledger entries and format them as transactions.
@@ -19,7 +49,7 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
 
     # Encode image to base64
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-    
+
     # MIME type detection
     ext = os.path.splitext(filename)[1].lower()
     mime_type = "image/jpeg"
@@ -54,18 +84,11 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
             {
                 "parts": [
                     {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": image_base64
-                        }
-                    }
+                    {"inline_data": {"mime_type": mime_type, "data": image_base64}},
                 ]
             }
         ],
-        "generationConfig": {
-            "response_mime_type": "application/json"
-        }
+        "generationConfig": {"response_mime_type": "application/json"},
     }
 
     headers = {"Content-Type": "application/json"}
@@ -74,33 +97,29 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
         logger.info(f"Sending image OCR request to Gemini for {filename}...")
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
-        
+
         resp_json = response.json()
-        
+
         # Parse text from Gemini response
         if "candidates" in resp_json and len(resp_json["candidates"]) > 0:
             candidate = resp_json["candidates"][0]
             if "content" not in candidate or "parts" not in candidate["content"]:
                 raise ValueError("Incomplete response from Gemini API.")
-                
+
             text_result = candidate["content"]["parts"][0]["text"]
             logger.info("Successfully received OCR response from Gemini.")
-            
+
             # Requirement #3: Safe JSON parsing with specific error types
             try:
-                # Remove markdown code fences if LLM accidentally included them
-                if "```" in text_result:
-                    cleaned = text_result.split("```")[1]
-                    if cleaned.startswith("json"): cleaned = cleaned[4:]
-                    text_result = cleaned.strip()
-                
+                text_result = _clean_gemini_json_response(text_result)
+
                 data = json.loads(text_result)
                 if not isinstance(data, list):
                     if isinstance(data, dict) and "transactions" in data:
                         data = data["transactions"]
                     else:
                         raise ValueError("Gemini returned an object instead of a list.")
-                
+
                 if not data:
                     raise ValueError("No transactions found in this image.")
 
@@ -108,22 +127,25 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
                 for idx, item in enumerate(data):
                     try:
                         dt_str = item.get("date", "")
-                        if not dt_str: continue # Skip if no date
-                        
+                        if not dt_str:
+                            continue  # Skip if no date
+
                         d = datetime.strptime(dt_str, "%Y-%m-%d").date()
                         t = str(item.get("type", "Revenue")).capitalize()
                         c = str(item.get("category", "General"))[:100]
                         a = float(item.get("amount", 0))
                         desc = str(item.get("description", c))[:500]
-                        
+
                         transactions.append((d, t, c, a, desc))
                     except Exception as e:
                         logger.warning(f"Skipping row {idx} due to parsing error: {e}")
                         continue
-                
+
                 if not transactions:
-                    raise ValueError("Found entries, but none were valid transaction formats.")
-                    
+                    raise ValueError(
+                        "Found entries, but none were valid transaction formats."
+                    )
+
                 return transactions
             except json.JSONDecodeError as e:
                 logger.error(f"JSON Decode Error: {text_result}")
