@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 
 def test_dashboard_categories_requires_authentication(client):
     response = client.get("/api/dashboard/categories")
@@ -53,3 +56,56 @@ def test_alerts_by_severity_returns_chart_payload(client, app_module, auth_heade
 
     assert response.status_code == 200
     assert response.get_json() == {"labels": ["High", "Low"], "data": [2, 1]}
+
+
+def test_dashboard_export_csv_downloads_filtered_transactions(client, app_module, auth_headers, monkeypatch):
+    captured = {}
+
+    def fake_read_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [
+            {
+                "transaction_id": 7,
+                "transaction_date": date(2026, 5, 20),
+                "type": "Revenue",
+                "category": "Sales",
+                "amount": Decimal("1250.50"),
+                "description": "May invoice",
+            }
+        ]
+
+    monkeypatch.setattr(app_module, "execute_read_query_params", fake_read_query)
+
+    response = client.get("/api/dashboard/export-csv?period=last_7_days", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    assert "attachment; filename=profitpilot_export_last_7_days_" in response.headers["Content-Disposition"]
+    assert response.get_data(as_text=True).splitlines() == [
+        "transaction_id,transaction_date,type,category,amount,description",
+        "7,2026-05-20,Revenue,Sales,1250.50,May invoice",
+    ]
+    assert "transaction_date BETWEEN %s AND %s" in captured["sql"]
+    assert captured["params"][0] == "business-1"
+
+
+def test_dashboard_export_csv_resolves_business_from_email(client, app_module, monkeypatch):
+    calls = []
+
+    def fake_read_query(sql, params):
+        calls.append((sql, params))
+        if "FROM users" in sql:
+            return [{"business_id": "business-email"}]
+        return []
+
+    monkeypatch.setattr(app_module, "execute_read_query_params", fake_read_query)
+
+    response = client.get("/api/dashboard/export-csv?period=this_month&email=owner@example.com")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True).splitlines() == [
+        "transaction_id,transaction_date,type,category,amount,description",
+    ]
+    assert calls[0][1] == ("owner@example.com",)
+    assert calls[1][1][0] == "business-email"

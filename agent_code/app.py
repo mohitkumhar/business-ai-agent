@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import Any
+import csv
+import io
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -81,6 +83,23 @@ def token_required(f):
 
 def get_current_business_id():
     return getattr(g, "business_id", None)
+
+def resolve_dashboard_business_id():
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        identity = decode_jwt_identity(auth_header, app.config["SECRET_KEY"])
+        return identity["business_id"]
+
+    email = request.args.get("email", "").lower().strip()
+    if email:
+        rows = execute_read_query_params(
+            "SELECT business_id FROM users WHERE LOWER(email) = %s LIMIT 1",
+            (email,),
+        )
+        if rows:
+            return rows[0]["business_id"]
+
+    return get_current_business_id()
 
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
@@ -675,6 +694,47 @@ def api_recent_transactions():
             r["amount"] = float(r["amount"] or 0)
             r["transaction_date"] = r["transaction_date"].strftime("%Y-%m-%d")
         return jsonify({"transactions": rows})
+    except Exception as exc:
+        return internal_error_response(exc)
+
+@app.route("/api/dashboard/export-csv", methods=["GET", "OPTIONS"])
+def api_export_dashboard_csv():
+    try:
+        bid = resolve_dashboard_business_id()
+        if not bid:
+            return jsonify({"message": "Authorization header or email is required"}), 401
+
+        period = request.args.get("period", "this_month")
+        start_date, end_date = get_period_dates(period)
+        rows = execute_read_query_params("""
+            SELECT transaction_id, transaction_date, type, category, amount, description
+            FROM daily_transactions
+            WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
+            ORDER BY transaction_date DESC, transaction_id DESC
+        """, (bid, start_date, end_date))
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["transaction_id", "transaction_date", "type", "category", "amount", "description"])
+        for row in rows:
+            transaction_date = row["transaction_date"]
+            if hasattr(transaction_date, "strftime"):
+                transaction_date = transaction_date.strftime("%Y-%m-%d")
+            writer.writerow([
+                row["transaction_id"],
+                transaction_date,
+                row["type"],
+                row["category"],
+                row["amount"] or 0,
+                row["description"],
+            ])
+
+        filename = f"profitpilot_export_{period}_{date.today().isoformat()}.csv"
+        response = Response(output.getvalue(), mimetype="text/csv")
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except AuthError as exc:
+        return jsonify({"message": exc.message}), exc.status_code
     except Exception as exc:
         return internal_error_response(exc)
 
