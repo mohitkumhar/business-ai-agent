@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
+async function readJsonSafe(res: Response) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function logError(err: unknown) {
+  console.error("[escalate proxy] err:", err);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -11,13 +23,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (!upstream.ok) {
-      const text = await upstream.text();
-      return NextResponse.json({ error: text }, { status: upstream.status });
+      const payload = await readJsonSafe(upstream);
+      const message =
+        typeof payload?.error === "string"
+          ? payload.error
+          : "Escalation failed in the backend agent";
+      return NextResponse.json({ error: message }, { status: upstream.status });
     }
-    
-    return NextResponse.json({ status: "ok" });
-  } catch (err: any) {
-    console.error("[escalate proxy] err:", err);
+
+    const payload = await readJsonSafe(upstream);
+    return NextResponse.json(payload ?? { status: "ok" });
+  } catch (err: unknown) {
+    logError(err);
     return NextResponse.json({ error: "Failed to reach backend agent" }, { status: 502 });
   }
 }
