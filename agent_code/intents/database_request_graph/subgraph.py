@@ -10,6 +10,7 @@ Flow:
 """
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
@@ -115,6 +116,10 @@ def _route_after_advisory(state: DatabaseRequestGraphState) -> str:
 
 
 def _create_postgres_memory():
+    if os.getenv("USE_IN_MEMORY_CHECKPOINTER") == "true":
+        logger.info("Using in-memory checkpointer for database request graph.")
+        return MemorySaver()
+
     try:
         logger.info("Setting up Postgres checkpointer for graph state persistence.")
         with psycopg.connect(DATABASE_URL, autocommit=True) as conn:

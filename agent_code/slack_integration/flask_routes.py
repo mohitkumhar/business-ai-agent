@@ -143,6 +143,7 @@ def slack_interactive():
     ch_meta = payload.get("channel") or {}
     source_channel_id = str(ch_meta.get("id") or "")
     source_is_im = ch_meta.get("name") == "directmessage"
+    actions = payload.get("actions") or []
 
     actions = payload.get("actions") or []
     action_item = None

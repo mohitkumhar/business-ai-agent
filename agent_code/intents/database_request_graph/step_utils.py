@@ -2,8 +2,6 @@
 import inspect
 from typing import Any, Callable
 
-from langchain_core.runnables import RunnableConfig
-
 from logger.logger import logger
 
 MAX_STEPS_DEFAULT = 16  # BUG2 FIX: was 12 — too low to allow format_response to run
@@ -82,7 +80,7 @@ def wrap_node(fn: Callable) -> Callable:
             if config is None and args:
                 config = args[0]
             if config is None:
-                config = RunnableConfig()
+                config = {"configurable": {}}
             out = fn(merged, config)
         else:
             out = fn(merged)

@@ -5,6 +5,9 @@ import { defineConfig } from "vite";
 import viteTsConfigPaths from "vite-tsconfig-paths";
 import contentCollections from "./content-collection-vite-plugin";
 
+const tanstackStartTarget =
+  process.env.TANSTACK_START_TARGET === "node-server" ? "node-server" : "vercel";
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -36,7 +39,7 @@ export default defineConfig({
     }),
     contentCollections(),
     tanstackStart({
-      target: "vercel",
+      target: tanstackStartTarget,
     }),
   ],
 });

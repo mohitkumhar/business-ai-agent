@@ -19,13 +19,11 @@ import RecentTransactions from "@/components/RecentTransactions";
 import ForecastChart from "@/components/ForecastChart";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
-
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
-  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     // Auth bypass for demo
@@ -35,9 +33,12 @@ export default function DashboardPage() {
   return (
     <DashboardPeriodProvider>
       <div className="app-layout">
-        <Sidebar />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div className="main-area">
-          <Topbar onSearch={setSearchQuery} />
+          <Topbar
+            onSearch={setSearchQuery}
+            onMenuClick={() => setSidebarOpen(true)}
+          />
           <div className="content-wrapper">
             <WelcomeBanner />
             <ErrorBoundary label="KPI cards">

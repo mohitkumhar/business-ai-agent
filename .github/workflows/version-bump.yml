@@ -3,6 +3,10 @@ name: Auto Bump Version
 on:
   pull_request_target:
     types: [opened]
+    paths-ignore:
+      - "README.md"
+      - "*.md"
+      - "docs/**"
 
 permissions:
   contents: write
@@ -16,8 +20,8 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
       - name: Setup Git
@@ -27,11 +31,12 @@ jobs:
 
       - name: Bump Version
         run: |
+          set -euo pipefail
           VERSION=$(cat VERSION)
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
           PATCH=$((PATCH+1))
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          echo $NEW_VERSION > VERSION
+          echo "$NEW_VERSION" > VERSION
           git add VERSION
           git commit -m "Auto bump version to $NEW_VERSION"
-          git push origin ${{ github.head_ref }}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
