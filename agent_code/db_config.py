@@ -123,7 +123,7 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(sql, params or ())
+        cur.execute(s, params or ())
         results = cur.fetchall()
         cur.close()
         return [dict(row) for row in results]
