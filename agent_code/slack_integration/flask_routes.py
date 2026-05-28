@@ -145,6 +145,7 @@ def slack_interactive():
     source_is_im = ch_meta.get("name") == "directmessage"
     actions = payload.get("actions") or []
 
+    actions = payload.get("actions") or []
     action_item = None
     for a in actions:
         if isinstance(a, dict):

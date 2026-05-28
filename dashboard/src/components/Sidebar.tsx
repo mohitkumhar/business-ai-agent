@@ -12,9 +12,14 @@ import {
   UsersIcon, 
   AlertTriangleIcon,
   FileUpIcon,
-  SettingsIcon 
+  SettingsIcon,
+  XIcon
 } from "./Icons";
 
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
 
 function clearProfitPilotSession() {
   if (typeof window === "undefined") return;
@@ -24,7 +29,7 @@ function clearProfitPilotSession() {
   }
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
 
   // Management section (Testsparkhack se Import Data add kiya)
@@ -58,12 +63,29 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="sidebar">
-      {/* Logo */}
-      <div className="sidebar-logo">
-        <div className="logo-icon"></div>
-        <span className="logo-text">ProfitPilot</span>
-      </div>
+    <>
+      <div
+        className={`sidebar-backdrop ${isOpen ? "open" : ""}`}
+        aria-hidden="true"
+        onClick={onClose}
+      />
+      <aside
+        id="dashboard-sidebar"
+        className={`sidebar ${isOpen ? "open" : ""}`}
+      >
+        {/* Logo */}
+        <div className="sidebar-logo">
+          <div className="logo-icon"></div>
+          <span className="logo-text">ProfitPilot</span>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={onClose}
+            aria-label="Close navigation"
+          >
+            <XIcon size={18} />
+          </button>
+        </div>
 
       {/* Management Section */}
       <nav className="sidebar-nav">
@@ -75,6 +97,7 @@ export default function Sidebar() {
             key={item.href}
             href={item.href}
             className={`nav-link ${pathname === item.href ? "active" : ""}`}
+            onClick={onClose}
           >
             <span className="nav-icon">{item.icon}</span>
             <span>{item.label}</span>
@@ -92,6 +115,7 @@ export default function Sidebar() {
             key={item.href}
             href={item.href}
             className={`nav-link ${pathname === item.href ? "active" : ""}`}
+            onClick={onClose}
           >
             <span className="nav-icon">{item.icon}</span>
             <span>{item.label}</span>
@@ -109,6 +133,7 @@ export default function Sidebar() {
             key={item.href}
             href={item.href}
             className={`nav-link ${pathname === item.href ? "active" : ""}`}
+            onClick={onClose}
           >
             <span className="nav-icon">{item.icon}</span>
             <span>{item.label}</span>
@@ -121,6 +146,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => {
+            onClose?.();
             clearProfitPilotSession();
             window.location.href = LANDING_PAGE_URL.replace(/\/$/, "");
           }}
@@ -131,6 +157,7 @@ export default function Sidebar() {
           <span>Logout</span>
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

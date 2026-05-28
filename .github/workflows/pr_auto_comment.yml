@@ -6,32 +6,39 @@ on:
 
 permissions:
   issues: write
+  pull-requests: write
 
 jobs:
   pr-comment:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Commenting & Labeling PR
+      - name: Comment and label PR
         env:
-          GH_TOKEN: ${{ secrets.MOHIT_GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
+          gh pr comment "$PR_NUMBER" \
+            --repo "$REPO" \
+            --body "Thanks for opening this PR!
 
-          gh pr comment $PR_NUMBER \
-            --body "
-            🎉 Thanks for opening this PR!
+          I will review it soon and attach the appropriate labels.
 
-            🚀 I'll review it soon and attach the appropriate labels 🏷️
+          Meanwhile, please make sure:
+          - All tests are passing
+          - Code is properly formatted
 
-            Meanwhile, please make sure:
-            ✅ All tests are passing  
-            ✅ Code is properly formatted  
+          Thanks again!
+          Mohit Kumhar
+          Maintainer"
 
-            Thanks again!  
-            Mohit Kumhar  
-            **Maintainer**
-            "
+          gh label create "needs-review" \
+            --repo "$REPO" \
+            --color "fbca04" \
+            --description "PR awaits maintainer review" \
+            --force || true
 
-          gh pr edit $PR_NUMBER \
+          gh pr edit "$PR_NUMBER" \
+            --repo "$REPO" \
             --add-label "needs-review"

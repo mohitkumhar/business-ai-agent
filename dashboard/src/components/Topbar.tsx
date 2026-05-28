@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { SearchIcon, HelpCircleIcon, BellIcon, SunIcon, MoonIcon } from "./Icons";
+import { SearchIcon, HelpCircleIcon, BellIcon, SunIcon, MoonIcon, MenuIcon } from "./Icons";
 import { LANDING_PAGE_URL } from "@/lib/publicUrls";
 import { syncUserEmailFromUrl, syncUserNameFromApi } from "@/lib/syncDashboardUser";
 import { useTheme } from "@/context/ThemeContext";
@@ -9,6 +9,7 @@ import { useTheme } from "@/context/ThemeContext";
 interface TopbarProps {
   onSearch: (query: string) => void;
   title?: string;
+  onMenuClick?: () => void;
 }
 
 function readStoredName(): string {
@@ -41,7 +42,7 @@ function clearSessionAndGoLanding() {
   window.location.href = LANDING_PAGE_URL.replace(/\/$/, "");
 }
 
-export default function Topbar({ onSearch, title = "Overview" }: TopbarProps) {
+export default function Topbar({ onSearch, title = "Overview", onMenuClick }: TopbarProps) {
   const [query, setQuery] = useState("");
   const [displayName, setDisplayName] = useState("User");
   const [userEmail, setUserEmail] = useState("");
@@ -92,6 +93,15 @@ export default function Topbar({ onSearch, title = "Overview" }: TopbarProps) {
   return (
     <header className="topbar">
       <div className="topbar-left">
+        <button
+          type="button"
+          className="mobile-menu-btn"
+          onClick={onMenuClick}
+          aria-label="Open navigation"
+          aria-controls="dashboard-sidebar"
+        >
+          <MenuIcon size={20} />
+        </button>
         <span className="topbar-title">{title}</span>
         <div className="search-box">
           <span className="search-icon"><SearchIcon size={15} color="#94A3B8" /></span>

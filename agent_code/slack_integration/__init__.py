@@ -5,7 +5,13 @@ from slack_integration.smart_assigner import (
     pick_assignee_slack_id,
     parse_business_envelope,
 )
-from slack_integration.slack_handler import SlackDelivery
+
+try:
+    from slack_integration.slack_handler import SlackDelivery
+except ModuleNotFoundError as exc:
+    if exc.name != "slack_sdk":
+        raise
+    SlackDelivery = None
 
 __all__ = [
     "SlackDelivery",

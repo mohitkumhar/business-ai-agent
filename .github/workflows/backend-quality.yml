@@ -1,0 +1,47 @@
+name: Backend Quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agent_code/**"
+      - "tests/**"
+      - ".github/workflows/backend-quality.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "agent_code/**"
+      - "tests/**"
+      - ".github/workflows/backend-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syntax-and-critical-lint:
+    name: Syntax and critical lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lint tools
+        run: python -m pip install --upgrade ruff
+
+      - name: Compile Python files
+        run: python -m compileall -q agent_code tests
+
+      - name: Run critical ruff checks
+        run: ruff check agent_code tests --select E9,F63,F7,F82
