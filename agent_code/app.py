@@ -321,6 +321,13 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
     ).raise_for_status()
 
 
+def _sse_stream_response(generator):
+    response = Response(stream_with_context(generator), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
+
 
 # --- Dashboard API Endpoints ---
 
@@ -568,6 +575,28 @@ def confirm_notebook():
         conn.close()
 
 # --- AI Chat API ---
+
+@app.route("/api/v1/query", methods=["POST", "GET"])
+@limiter.limit(CHAT_RATE_LIMIT)
+def query_agent():
+    input_query = request.args.get("input-query", "")
+    thread_id = request.args.get("thread-id", "")
+    business_id = request.args.get("business-id", "")
+
+    if not input_query:
+        return jsonify({"is_error": True, "error": "input query is required"}), 400
+    if not thread_id:
+        return jsonify({"is_error": True, "error": "thread-id is required"}), 400
+
+    return _sse_stream_response(
+        stream_agent_sse_lines(
+            input_query,
+            thread_id,
+            business_id,
+            on_chain_intent=lambda name: AGENT_INTENT_COUNT.labels(name).inc(),
+        )
+    )
+
 
 @app.route("/api/chat/send", methods=["POST"])
 @limiter.limit(CHAT_RATE_LIMIT)
