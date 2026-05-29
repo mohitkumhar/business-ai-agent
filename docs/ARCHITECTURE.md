@@ -31,47 +31,46 @@ ProfitPilot is composed of five logical layers:
 
 ```mermaid
 flowchart TD
-    subgraph Browser["🌐 Browser / Client"]
-        LP["Landing Page\nVite + TanStack\n:5173"]
-        DB["Dashboard\nNext.js 14\n:3001"]
+    subgraph Browser["Browser / Client"]
+        LP["Landing Page - Vite + TanStack :5173"]
+        DB["Dashboard - Next.js 14 :3001"]
     end
 
-    subgraph Agent["🤖 Flask Agent :5000"]
-        direction TB
-        IR["Intent Router\n(LangGraph + Ollama)"]
-        GI["general_information_graph\nDuckDuckGo Web Search"]
-        DQ["database_request_graph\nSQL Generation + Execution"]
-        LQ["logs_request_graph\nLogQL → Loki"]
-        MQ["metrics_request_graph\nPromQL → Prometheus"]
+    subgraph Agent["Flask Agent :5000"]
+        IR["Intent Router - LangGraph + Ollama"]
+        GI["general_information_graph - DuckDuckGo"]
+        DQ["database_request_graph - SQL"]
+        LQ["logs_request_graph - LogQL"]
+        MQ["metrics_request_graph - PromQL"]
         IR --> GI
         IR --> DQ
         IR --> LQ
         IR --> MQ
     end
 
-    subgraph LLM["🧠 LLM Runtime (Host Machine)"]
-        OL["Ollama\nllama3.2:3b\n:11434"]
+    subgraph LLM["LLM Runtime - Host Machine"]
+        OL["Ollama llama3.2:3b :11434"]
     end
 
-    subgraph Data["🗄️ Data Layer"]
-        PG["PostgreSQL 16\n:5432\nBusiness Data"]
-        SQ["SQLite\nChat History"]
+    subgraph Data["Data Layer"]
+        PG["PostgreSQL 16 :5432"]
+        SQ["SQLite - Chat History"]
     end
 
-    subgraph Obs["📈 Observability Stack"]
-        PR["Prometheus\n:9090"]
-        GR["Grafana\n:3000"]
-        LK["Loki\n:3100"]
+    subgraph Obs["Observability Stack"]
+        PR["Prometheus :9090"]
+        GR["Grafana :3000"]
+        LK["Loki :3100"]
         PT["Promtail"]
     end
 
-    subgraph Integrations["🔗 Integrations"]
+    subgraph Integrations["Integrations"]
         WA["WhatsApp Gateway"]
         SL["Slack Bot"]
     end
 
-    LP -- "POST /api/v1/onboarding\nGoogle OAuth" --> Agent
-    DB -- "API rewrites (next.config.ts)" --> Agent
+    LP -- "POST /api/v1/onboarding" --> Agent
+    DB -- "API rewrites via next.config.ts" --> Agent
     Agent -- "LLM inference" --> OL
     DQ -- "SQL queries" --> PG
     Agent -- "write history" --> SQ
@@ -100,7 +99,7 @@ sequenceDiagram
     participant Router as LangGraph Intent Router
     participant LLM as Ollama llama3.2:3b
     participant Sub as LangGraph Subgraph
-    participant DS as Data Source<br/>(PG / Loki / Prometheus / Web)
+    participant DS as Data Source - PG / Loki / Prometheus / Web
 
     User->>FE: Types a question
     FE->>Flask: POST /chat (SSE request)
