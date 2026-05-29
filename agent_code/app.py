@@ -17,6 +17,7 @@ import jwt
 import bcrypt
 import hashlib
 from functools import wraps
+from pathlib import Path
 import numpy as np
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
@@ -65,6 +66,13 @@ AUTH_RATE_LIMIT = os.getenv("RATE_LIMIT_AUTH", "5 per minute")
 CHAT_RATE_LIMIT = os.getenv("RATE_LIMIT_CHAT", "10 per minute")
 IMPORT_RATE_LIMIT = os.getenv("RATE_LIMIT_IMPORT", "20 per hour")
 
+try:
+    from slack_integration.flask_routes import register_slack_routes
+
+    register_slack_routes(app)
+except ImportError as exc:
+    logger.warning("Slack event routes were not registered: %s", exc)
+
 # --- Authentication Logic ---
 def token_required(f):
     @wraps(f)
@@ -101,6 +109,105 @@ def resolve_dashboard_business_id():
             return rows[0]["business_id"]
 
     return get_current_business_id()
+
+
+ASSIGNMENTS_FILE = Path(
+    os.getenv("ASSIGNMENTS_FILE", str(Path(__file__).with_name("assigned_issues.json")))
+)
+
+
+def get_assigned_counts() -> dict[str, int]:
+    path = Path(ASSIGNMENTS_FILE)
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Could not read assignment counts from %s", path, exc_info=True)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): int(value or 0) for key, value in raw.items()}
+
+
+def increment_assigned_count(username: str) -> None:
+    assignee = (username or "").strip()
+    if not assignee:
+        return
+    path = Path(ASSIGNMENTS_FILE)
+    counts = get_assigned_counts()
+    counts[assignee] = counts.get(assignee, 0) + 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(counts, f)
+
+
+def _fallback_employees(counts: dict[str, int]) -> list[dict[str, Any]]:
+    names = [
+        name.strip()
+        for name in os.getenv("ESCALATION_FALLBACK_EMPLOYEES", "engineer_a,engineer_b").split(",")
+        if name.strip()
+    ]
+    return [
+        {"login": name, "avatar_url": "", "assigned_issues": counts.get(name, 0)}
+        for name in names
+    ]
+
+
+def _github_contributor_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ProfitPilot-backend",
+    }
+    token = (os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _load_slack_delivery():
+    from slack_integration.slack_handler import SlackDelivery
+
+    return SlackDelivery()
+
+
+def _pick_escalation_assignee(query: str, summary: str) -> str | None:
+    from slack_integration.smart_assigner import pick_assignee_slack_id
+
+    return pick_assignee_slack_id(user_query=query, summary=summary)
+
+
+def _slack_text(value: Any, max_len: int) -> str:
+    text = str(value or "").replace("```", "` ` `").strip()
+    return text[:max_len] if len(text) > max_len else text
+
+
+def _build_web_escalation_blocks(query: str, summary: str, assignee: str | None) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Web User Escalation", "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"*Query:*\n>{_slack_text(query, 500)}\n\n"
+                    f"*Context:*\n```{_slack_text(summary, 2000)}```"
+                ),
+            },
+        },
+    ]
+    if assignee:
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": f"Suggested assignee: `{_slack_text(assignee, 80)}`"}],
+            }
+        )
+    return blocks
 
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
@@ -467,6 +574,108 @@ def telegram_webhook():
         except Exception:
             pass
         return internal_error_response(e)
+
+
+# --- Dashboard Slack Escalation Endpoints ---
+
+@app.route("/api/v1/employees", methods=["GET"])
+def get_escalation_employees():
+    repo = os.getenv("GITHUB_REPO", "mohitkumhar/business-ai-agent").strip()
+    counts = get_assigned_counts()
+
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{repo}/contributors",
+            headers=_github_contributor_headers(),
+            timeout=20,
+        )
+        if response.status_code != 200:
+            logger.warning(
+                "GitHub contributors lookup failed for %s with status %s",
+                repo,
+                response.status_code,
+            )
+            return jsonify({"employees": _fallback_employees(counts), "source": "fallback"})
+
+        contributors = response.json()
+        if not isinstance(contributors, list):
+            logger.warning("GitHub contributors response for %s was not a list", repo)
+            return jsonify({"employees": _fallback_employees(counts), "source": "fallback"})
+
+        employees = [
+            {
+                "login": str(contributor.get("login") or "Unknown"),
+                "avatar_url": str(contributor.get("avatar_url") or ""),
+                "assigned_issues": counts.get(str(contributor.get("login") or "Unknown"), 0),
+            }
+            for contributor in contributors
+            if isinstance(contributor, dict)
+        ]
+        return jsonify({"employees": employees, "source": "github"})
+    except requests.RequestException as exc:
+        logger.warning("GitHub contributors lookup failed for %s: %s", repo, exc)
+        return jsonify({"employees": _fallback_employees(counts), "source": "fallback"})
+    except Exception as exc:
+        return internal_error_response(exc)
+
+
+@app.route("/api/v1/escalate", methods=["POST"])
+def escalate_to_slack():
+    try:
+        data = request.get_json(silent=True) or {}
+        query = str(data.get("query") or "").strip()
+        summary = str(data.get("summary") or "").strip()
+
+        if not query and not summary:
+            return jsonify({"error": "Either query or summary is required"}), 400
+
+        query = query or "No specific query"
+        summary = summary or "No summary provided"
+
+        try:
+            delivery = _load_slack_delivery()
+        except ModuleNotFoundError as exc:
+            if exc.name == "slack_sdk":
+                return jsonify({"error": "Slack SDK dependency is not installed"}), 503
+            raise
+
+        if not delivery.configured() or delivery.client is None:
+            return jsonify({"error": "Slack is not configured. Set SLACK_BOT_TOKEN first."}), 503
+
+        channel_id = getattr(delivery, "demo_channel_id", "")
+        if not channel_id:
+            return jsonify({"error": "No Slack channel configured. Set SLACK_DEMO_CHANNEL_ID first."}), 503
+
+        assignee = str(data.get("assignee_name") or "").strip()
+        auto_assigned = False
+        if not assignee:
+            assignee = _pick_escalation_assignee(query, summary) or ""
+            auto_assigned = bool(assignee)
+
+        if assignee:
+            increment_assigned_count(assignee)
+
+        blocks = _build_web_escalation_blocks(query, summary, assignee or None)
+        delivery.client.chat_postMessage(
+            channel=channel_id,
+            text="Web Chatbot Escalation",
+            blocks=blocks,
+        )
+
+        return jsonify(
+            {
+                "status": "ok",
+                "assignee": assignee or None,
+                "auto_assigned": auto_assigned,
+            }
+        ), 200
+    except Exception as exc:
+        if exc.__class__.__name__ == "SlackApiError":
+            response = getattr(exc, "response", {}) or {}
+            slack_error = response.get("error", "unknown_error") if isinstance(response, dict) else "unknown_error"
+            logger.warning("Slack rejected web escalation: %s", slack_error, exc_info=True)
+            return jsonify({"error": "Slack rejected the escalation request", "slack_error": slack_error}), 502
+        return internal_error_response(exc)
 
 # --- Transaction Import Endpoints ---
 

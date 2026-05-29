@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Failed to fetch employees";
+}
+
 export async function GET() {
   const apiUrl = process.env.AGENT_API_URL || "http://localhost:5000";
   try {
@@ -11,7 +15,7 @@ export async function GET() {
     }
     const data = await res.json();
     return NextResponse.json(data);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }
