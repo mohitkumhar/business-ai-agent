@@ -5,8 +5,8 @@ import bcrypt
 import json
 import os
 import time
-from functools import wraps
 from datetime import datetime, timedelta
+from functools import wraps
 from typing import Any
 
 import requests
@@ -20,12 +20,12 @@ from db_config import execute_read_query_params, get_db_connection
 from llm.base_llm import base_llm
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
-from auth import AuthError, decode_jwt_identity
+from auth import AuthError, decode_jwt_identity, require_jwt_secret
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
+app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
 
 AGENT_REQUEST_COUNT = Counter(
