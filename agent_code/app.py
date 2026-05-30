@@ -42,6 +42,7 @@ from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
 from api_errors import internal_error_response
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, verify_password
+from swagger_docs import register_swagger_docs
 
 load_dotenv()
 
@@ -968,6 +969,7 @@ def health():
     return jsonify({"status": "ok"})
 
 # Start Server
+register_swagger_docs(app)
 _init_chat_db()
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
