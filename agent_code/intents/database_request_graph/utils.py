@@ -560,9 +560,9 @@ def sql_validation(state: DatabaseRequestGraphState):
 
         explain_validate_select(generated_sql)
     except ValueError as exc:
-        return _fail(str(exc))
+        return _fail("Database validation failed.")
     except Exception as exc:
-        msg = str(exc).strip().split("\n")[0]
+        msg = "SQL failed database validation (EXPLAIN)."
         logger.info("[SQL VALID] planner=fail | retry=%s | err=%s", retry_count, msg[:200])
         return _fail(msg or "SQL failed database validation (EXPLAIN).")
 
@@ -679,21 +679,21 @@ def execute_query(state: DatabaseRequestGraphState):
         logger.error(f"SQL safety check failed: {exc}", exc_info=True)
         return {
             "query_results": "[]",
-            "execution_error": f"Safety check: {exc}",
+            "execution_error": "An internal error occurred during query execution.",
             "has_results": False,
         }
     except RuntimeError as exc:
         logger.error(f"SQL execution error: {exc}", exc_info=True)
         return {
             "query_results": "[]",
-            "execution_error": f"Execution error: {exc}",
+            "execution_error": "An internal error occurred during query execution.",
             "has_results": False,
         }
     except Exception as exc:
         logger.critical(f"Unexpected error during query execution: {exc}", exc_info=True)
         return {
             "query_results": "[]",
-            "execution_error": f"Unexpected error: {exc}",
+            "execution_error": "An internal error occurred during query execution.",
             "has_results": False,
         }
 

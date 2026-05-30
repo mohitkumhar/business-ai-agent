@@ -197,7 +197,7 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
 
     except Exception as exc:
         logger.error(f"Error during stream: {exc}", exc_info=True)
-        yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_str})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again later.', 'intent_str': intent_str})}\n\n"
 
 
 def _chain_thread_config(base_thread_id: str, step_index: int) -> dict:
@@ -456,11 +456,11 @@ def stream_agent_sse_lines(
                         exc,
                         exc_info=True,
                     )
-                    yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_name})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again later.', 'intent_str': intent_name})}\n\n"
                     return
                 except Exception as exc:
                     logger.error("Chained invoke failed at %s: %s", intent_name, exc, exc_info=True)
-                    yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_name})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again later.', 'intent_str': intent_name})}\n\n"
                     return
                 artifact = _artifact_for_chain(result, intent_name)
                 prior = (prior + artifact).strip()
@@ -477,6 +477,6 @@ def stream_agent_sse_lines(
                     )
                 except Exception as exc:
                     logger.error("Chained stream failed at %s: %s", intent_name, exc, exc_info=True)
-                    yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_name})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again later.', 'intent_str': intent_name})}\n\n"
 
     yield from generate_chained()

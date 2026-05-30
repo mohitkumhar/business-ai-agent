@@ -175,7 +175,7 @@ def fetch_metrics(state: MetricsRequestGraphState):
             logger.error(f"[metrics] PromQL '{promql}' failed: {exc}", exc_info=True)
             all_results.append({
                 "query": promql,
-                "error": str(exc),
+                "error": "Metrics query failed.",
             })
 
     has_any = any(r.get("result") for r in all_results if "error" not in r)

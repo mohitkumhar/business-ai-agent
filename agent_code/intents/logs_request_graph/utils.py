@@ -187,7 +187,7 @@ def fetch_logs(state: LogsRequestGraphState):
         logger.error(f"[logs] fetch_logs failed: {exc}", exc_info=True)
         return {
             "raw_logs": "",
-            "fetch_error": str(exc),
+            "fetch_error": "Log fetch failed.",
             "has_results": False,
             "log_line_count": 0,
         }
