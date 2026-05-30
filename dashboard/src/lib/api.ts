@@ -44,11 +44,13 @@ export type ForecastTrend = "up" | "down" | "stable" | "flat";
 
 export interface Forecast {
   historical: { date: string; actual: number }[];
-  forecast: { date: string; predicted: number; lower_bound: number; upper_bound: number }[];
+  forecast: { date: string; predicted: number; lower_bound?: number; upper_bound?: number }[];
   trend_direction: ForecastTrend;
   trend_percent: number;
   insight: string;
 }
+
+
 
 export interface BusinessInfo {
   business_id: string;
@@ -160,14 +162,25 @@ export const api = {
     return res.json();
   },
 
-  getForecast: async (period: string): Promise<Forecast> => {
+    getForecast: async (period: string): Promise<Forecast> => {
     const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`), { headers: getHeaders() });
     if (!res.ok) {
       const { mockForecast } = await import("./mockData");
       return mockForecast;
     }
-    return res.json();
+    const data: Forecast = await res.json();
+    
+    // Fallback alignment handler to prevent chart errors if bounds are omitted by backend
+    return {
+      ...data,
+      forecast: data.forecast.map((item) => ({
+        ...item,
+        lower_bound: item.lower_bound ?? item.predicted,
+        upper_bound: item.upper_bound ?? item.predicted,
+      })),
+    };
   },
+
 
   getRecentTransactions: async (params: { search?: string; category?: string; limit?: number; period?: string; }) => {
     const query = new URLSearchParams();
