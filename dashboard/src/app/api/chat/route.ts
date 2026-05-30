@@ -32,13 +32,16 @@ export async function POST(req: NextRequest) {
     "input-query": inputQuery,
     "thread-id": threadId,
   });
+  const authorization = req.headers.get("authorization");
+  const headers: Record<string, string> = { Accept: "text/event-stream" };
+  if (authorization) headers.Authorization = authorization;
 
   try {
     const upstream = await fetch(
       `${agentUrl}/api/v1/query?${params.toString()}`,
       {
         method: "POST",
-        headers: { Accept: "text/event-stream" },
+        headers,
         // @ts-expect-error -- Node 18+ undici supports duplex
         duplex: "half",
       }

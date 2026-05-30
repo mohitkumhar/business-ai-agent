@@ -251,11 +251,14 @@ export default function ChatbotPage() {
         "input-query": userMsg,
         "thread-id": activeId,
       });
+      const token = localStorage.getItem("profit_pilot_token");
+      const headers: Record<string, string> = { Accept: "text/event-stream" };
+      if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch(`/api/chat?${params.toString()}`, {
         method: "POST",
         signal: ctrl.signal,
-        headers: { Accept: "text/event-stream" },
+        headers,
       });
 
       if (!res.ok || !res.body) {
