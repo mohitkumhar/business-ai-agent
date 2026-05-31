@@ -361,7 +361,14 @@ psql -U admin -d test_db -c "\dt"
 | `GITHUB_REPO` | Agent | Repository used by GitHub issue helper flows | `mohitkumhar/intelligent-business-agent` |
 | `API_KEY` | Agent auth | Simple API key | `secret-token` |
 
-Copy `.env.example` to `.env`, fill private values locally, and never commit real `.env` files:
+### Environment Setup Guide
+
+Before running the project locally, create the required environment files from the example file if available.
+
+For the root directory:
+
+```bash
+cp .env.example .env
 
 ```bash
 cp .env.example .env
@@ -470,9 +477,14 @@ Verify that:
 
 ---
 
-## 🤝 Contributing — GSSoC Guide
+### Environment Setup Guide
 
-Welcome to GirlScript Summer of Code 2025! 🎉 We're excited to have you. Follow these steps to make your first contribution.
+Before running the project locally, create the required environment files from the example file if available.
+
+For the root directory:
+
+```bash
+cp .env.example .env
 
 ---
 
