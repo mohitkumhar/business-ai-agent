@@ -215,7 +215,32 @@ def _init_chat_db():
         );
     """)
     db.close()
-
+def _ensure_whatsapp_tables():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS public.whatsapp_contacts (
+                    phone TEXT PRIMARY KEY,
+                    business_id UUID NOT NULL REFERENCES public.businesses(business_id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS public.billing_ingestions (
+                    ingestion_id BIGSERIAL PRIMARY KEY,
+                    business_id UUID NOT NULL REFERENCES public.businesses(business_id) ON DELETE CASCADE,
+                    source TEXT NOT NULL,
+                    sender_phone TEXT,
+                    media_id TEXT,
+                    transaction_id BIGINT REFERENCES public.daily_transactions(transaction_id) ON DELETE SET NULL,
+                    extracted_json JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        conn.commit()
+    finally:
+        conn.close()
 # --- External Integration Helpers (WhatsApp/Telegram) ---
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     if not WHATSAPP_ACCESS_TOKEN: raise ValueError("WhatsApp token missing")
@@ -245,24 +270,183 @@ def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[st
         "type": tx_type,
         "vendor": description or "Unknown",
     }
+def _normalize_bill_fields(extracted: dict[str, Any]) -> dict[str, Any]:
+    amount = extracted.get("amount")
+    try:
+        amount = float(amount) if amount is not None else 0.0
+    except (ValueError, TypeError):
+        amount = 0.0
+    tx_date = str(
+        extracted.get("transaction_date")
+        or extracted.get("date")
+        or datetime.utcnow().date().isoformat()
+    )
+    ttype = str(extracted.get("type") or "Expense").strip().lower()
+    if ttype not in ("revenue", "expense"):
+        ttype = "expense"
+    category = str(
+        extracted.get("category")
+        or extracted.get("vendor_name")
+        or extracted.get("vendor")
+        or "Uncategorized"
+    )
+    description = str(
+        extracted.get("description")
+        or extracted.get("vendor_name")
+        or extracted.get("vendor")
+        or "Bill ingestion"
+    )
+    return {
+        "amount": max(amount, 0.0),
+        "transaction_date": tx_date,
+        "type": "Revenue" if ttype == "revenue" else "Expense",
+        "category": category[:100],
+        "description": description,
+        "vendor_name": str(extracted.get("vendor_name") or "").strip(),
+        "confidence": extracted.get("confidence", None),
+    }
+def _send_whatsapp_text(to_number: str, text: str):
+    if not (WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID):
+        logger.warning("WhatsApp send skipped; credentials not configured.")
+        return
 
-def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> int:
+    body = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "text",
+        "text": {
+            "preview_url": False,
+            "body": text[:4096]
+        },
+    }
+
+    requests.post(
+        f"https://graph.facebook.com/v21.0/{WHATSAPP_PHONE_NUMBER_ID}/messages",
+        headers={
+            "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json=body,
+        timeout=30,
+    ).raise_for_status()
+def _insert_bill_transaction(
+    business_id: str,
+    sender_phone: str | None,
+    media_id: str,
+    normalized: dict[str, Any],
+    extracted: dict[str, Any],
+) -> int:
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO daily_transactions (business_id, transaction_date, type, category, amount, description)
-                VALUES (%s, %s, %s, %s, %s, %s) RETURNING transaction_id
-            """, (business_id, normalized.get("date", date.today()), normalized["type"], normalized["category"], normalized["amount"], f"Bill from {normalized.get('vendor', 'Unknown')}"))
-            tx_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO public.daily_transactions (business_id, transaction_date, type, category, amount, description)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING transaction_id
+                """,
+                (
+                    business_id,
+                    normalized["transaction_date"],
+                    normalized["type"],
+                    normalized["category"],
+                    normalized["amount"],
+                    normalized["description"],
+                ),
+            )
+            tx_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                INSERT INTO public.billing_ingestions (business_id, source, sender_phone, media_id, transaction_id, extracted_json)
+                VALUES (%s, 'whatsapp', %s, %s, %s, %s::jsonb)
+                """,
+                (business_id, sender_phone, media_id, tx_id, json.dumps(extracted)),
+            )
         conn.commit()
         return tx_id
     finally:
         conn.close()
 
-def _analyze_transaction(tx_id: int, bid: str) -> str:
-    # Quick analysis logic
-    return "Analysis complete. This transaction follows your monthly trend."
+
+def _analyze_transaction(transaction_id: int, business_id: str) -> str:
+    rows = execute_read_query_params(
+        """
+        SELECT transaction_id, transaction_date, type, category, amount, description
+        FROM public.daily_transactions
+        WHERE transaction_id = %s AND business_id = %s
+        """,
+        (transaction_id, business_id),
+    )
+    if not rows:
+        return "Bill captured but transaction not found for analysis."
+    tx = rows[0]
+    month_rows = execute_read_query_params(
+        """
+        SELECT
+            COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS month_revenue,
+            COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS month_expense
+        FROM public.daily_transactions
+        WHERE business_id = %s
+          AND date_trunc('month', transaction_date) = date_trunc('month', %s::date)
+        """,
+        (business_id, tx["transaction_date"]),
+    )
+    prompt = (
+        "You are a business finance analyst. Give concise analysis for this bill and impact.\n"
+        f"Transaction: {json.dumps(tx, default=str)}\n"
+        f"Monthly totals: {json.dumps(month_rows[0] if month_rows else {}, default=str)}\n"
+        "Return a short paragraph plus 3 bullet recommendations."
+    )
+    res = groq_llm.invoke(prompt)
+    return res.content if isinstance(res.content, str) else json.dumps(res.content)
+
+def _resolve_business_id(phone: str | None) -> str:
+    if phone:
+        rows = execute_read_query_params(
+            "SELECT business_id FROM public.whatsapp_contacts WHERE phone = %s LIMIT 1",
+            (phone,),
+        )
+        if rows:
+            return str(rows[0]["business_id"])
+    if DEFAULT_BUSINESS_ID:
+        return DEFAULT_BUSINESS_ID
+    rows = execute_read_query_params(
+        "SELECT business_id FROM public.businesses ORDER BY created_at DESC LIMIT 1"
+    )
+    if not rows:
+        raise ValueError("No business available. Onboard business or set DEFAULT_BUSINESS_ID.")
+    return str(rows[0]["business_id"])
+def _analyze_business_data(business_id: str, user_question: str) -> str:
+    summary = execute_read_query_params(
+        """
+        SELECT
+            COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS total_revenue,
+            COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS total_expense,
+            COUNT(*) AS transaction_count
+        FROM public.daily_transactions
+        WHERE business_id = %s
+        """,
+        (business_id,),
+    )
+    recent = execute_read_query_params(
+        """
+        SELECT transaction_date, type, category, amount, description
+        FROM public.daily_transactions
+        WHERE business_id = %s
+        ORDER BY transaction_date DESC, transaction_id DESC
+        LIMIT 25
+        """,
+        (business_id,),
+    )
+    prompt = (
+        "You are a business analyst. Answer user question based on business transaction data.\n"
+        f"Question: {user_question}\n"
+        f"Summary: {json.dumps(summary[0] if summary else {}, default=str)}\n"
+        f"Recent transactions: {json.dumps(recent, default=str)}\n"
+        "Answer clearly with actionable suggestions."
+    )
+    res = groq_llm.invoke(prompt)
+    return res.content if isinstance(res.content, str) else json.dumps(res.content)
 
 def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
     chunks: list[str] = []
@@ -429,13 +613,63 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
-    return "failed", 403
+    mode = request.args.get("hub.mode", "")
+    token = request.args.get("hub.verify_token", "")
+    challenge = request.args.get("hub.challenge", "")
+    if mode == "subscribe" and token and token == WHATSAPP_VERIFY_TOKEN:
+        return challenge, 200
+    return "verification failed", 403
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
-    # Full logic from app_main.py simplified for merge
-    return jsonify({"ok": True})
+    try:
+        payload = request.get_json(force=True) or {}
+        entries = payload.get("entry") or []
+        for entry in entries:
+            for change in entry.get("changes") or []:
+                value = change.get("value") or {}
+                for msg in value.get("messages") or []:
+                    from_phone = str(msg.get("from") or "").strip()
+                    business_id = _resolve_business_id(from_phone)
+                    msg_type = msg.get("type")
+                    if msg_type == "image":
+                        media_id = (msg.get("image") or {}).get("id")
+                        if not media_id:
+                            continue
+                        image_bytes, mime_type = _download_whatsapp_media(media_id)
+                        extracted = _extract_bill_data_from_image(image_bytes, mime_type)
+                        normalized = _normalize_bill_fields(extracted)
+                        tx_id = _insert_bill_transaction(
+                            business_id,
+                            from_phone,
+                            media_id,
+                            normalized,
+                            extracted,
+                        )
+                        analysis = _analyze_transaction(tx_id, business_id)
+                        reply = (
+                            f"Bill recorded successfully.\n"
+                            f"Transaction ID: {tx_id}\n"
+                            f"Amount: {normalized['amount']}\n"
+                            f"Type: {normalized['type']}\n"
+                            f"Category: {normalized['category']}\n\n"
+                            f"Analysis:\n{analysis}"
+                        )
+                        _send_whatsapp_text(from_phone, reply)
+                    elif msg_type == "text":
+                        body = ((msg.get("text") or {}).get("body") or "").strip()
+                        if not body:
+                            continue
+                        if body.lower().startswith("analyze all"):
+                            answer = _analyze_business_data(business_id, body)
+                        else:
+                            thread_id = f"wa-{from_phone}"
+                            answer = _run_agent_to_text(body, thread_id, business_id)
+                        _send_whatsapp_text(from_phone, answer)
+        return jsonify({"ok": True}), 200
+    except Exception as exc:
+        logger.error("WhatsApp webhook failed: %s", exc, exc_info=True)
+        return internal_error_response(exc)
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
@@ -473,6 +707,23 @@ def telegram_webhook():
         except Exception:
             pass
         return internal_error_response(e)
+def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
+    if not TELEGRAM_BOT_TOKEN:
+        raise ValueError("TELEGRAM_BOT_TOKEN is not configured.")
+    meta = requests.get(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
+        params={"file_id": file_id},
+        timeout=30,
+    )
+    meta.raise_for_status()
+    info = meta.json().get("result") or {}
+    file_path = info.get("file_path")
+    if not file_path:
+        raise ValueError("Telegram getFile missing file_path.")
+    url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+    blob = requests.get(url, timeout=60)
+    blob.raise_for_status()
+    return blob.content, "image/jpeg"
 
 # --- Transaction Import Endpoints ---
 
