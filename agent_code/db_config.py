@@ -70,14 +70,7 @@ def _assert_read_only_select(sql: str) -> str:
         raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
     in_single_quote = False
     in_double_quote = False
-    escape_char = False
     for idx, ch in enumerate(s):
-        if escape_char:
-            escape_char = False
-            continue
-        if ch == "\\":
-            escape_char = True
-            continue
         if ch == "'" and not in_double_quote:
             in_single_quote = not in_single_quote
             continue

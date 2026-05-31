@@ -34,6 +34,8 @@ def test_assert_read_only_select_accepts_single_selects(sql, expected):
         "WITH changed AS (UPDATE users SET role = 'admin' RETURNING *) SELECT * FROM changed",
         "SELECT 1; DROP TABLE users;",
         "SELECT 1; SELECT 2",
+        "SELECT '\\'; SELECT 2",
+        "SELECT 'abc\\'; DROP TABLE businesses;",
     ],
 )
 def test_assert_read_only_select_rejects_unsafe_sql(sql):
