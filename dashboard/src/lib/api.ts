@@ -120,8 +120,7 @@ async function safeFetchJson<T>(
 }
 
 export function getAuthHeaders() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
-  return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
+  return _cachedToken ? ({ Authorization: `Bearer ${_cachedToken}` } as HeadersInit) : ({} as HeadersInit);
 }
 
 async function readJsonOrThrow<T>(
@@ -305,6 +304,92 @@ getEmployeeStats: async (
     window.URL.revokeObjectURL(url);
   },
 };
+
+
+/** SSE payload from POST /api/chat/send (agent streams JSON per `data:` line). */
+export type ChatStreamEvent = {
+  type: string;
+  content?: string;
+  status?: string;
+  node?: string;
+  message?: string;
+  clarification?: string | { message?: string };
+  intent_str?: string;
+  error?: string;
+  [key: string]: unknown;
+};
+
+export interface StreamChatSendOptions {
+  signal?: AbortSignal;
+}
+
+function* yieldSsePart(part: string): Generator<ChatStreamEvent> {
+  for (const line of part.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const jsonStr = line.slice(6).trim();
+    if (!jsonStr) continue;
+    try {
+      yield JSON.parse(jsonStr) as ChatStreamEvent;
+    } catch {
+      /* skip malformed chunk */
+    }
+  }
+}
+
+/**
+ * POST /api/chat/send and consume the response as Server-Sent Events (not JSON).
+ */
+export async function* streamChatSend(
+  conversationId: string,
+  message: string,
+  options: StreamChatSendOptions = {}
+): AsyncGenerator<ChatStreamEvent> {
+  const chatPath = `/api/chat/send`; // Proxied via route.ts
+  const res = await fetch(chatPath, {
+    method: "POST",
+    headers: {
+      ...getHeaders(),
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({ conversation_id: conversationId, message }),
+    signal: options.signal,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "Chat request failed");
+    throw new Error(errText || `Chat request failed (${res.status})`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body from chat endpoint");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (value) buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        yield* yieldSsePart(part);
+      }
+
+      if (done) {
+        if (buffer.trim()) yield* yieldSsePart(buffer);
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Alias for issue #534 — same SSE stream as {@link streamChatSend}. */
+export const sendMessage = streamChatSend;
 
 
 export async function listChatConversations(): Promise<ChatConversation[]> {

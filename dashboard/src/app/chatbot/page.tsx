@@ -8,6 +8,7 @@ import {
   getAuthHeaders,
   listChatConversations,
   removeChatConversation,
+  streamChatSend,
   upsertChatConversation,
 } from "@/lib/api";
 import {
@@ -378,136 +379,110 @@ export default function ChatbotPage() {
     abortRef.current = ctrl;
 
     try {
-      const params = new URLSearchParams({
-        "input-query": userMsg,
-        "thread-id": activeId,
-      });
-
-      const res = await fetch(`/api/chat?${params.toString()}`, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: {
-          Accept: "text/event-stream",
-          ...getAuthHeaders(),
-        },
-      });
-
-      if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "Unknown error");
-        throw new Error(`HTTP ${res.status}: ${errText}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-
-        for (const part of parts) {
-          for (const line of part.split("\n")) {
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6);
-            if (!jsonStr) continue;
-
-            try {
-              const evt = JSON.parse(jsonStr);
-              lastStreamActivityRef.current = Date.now();
-              switch (evt.type) {
-                case "chain_start":
-                  break;
-                case "chain_step_complete":
-                  break;
-                case "node_status": {
-                  const nodeName = (evt.node as string) || "";
-                  const msg = (evt.message as string) || "";
-                  if (msg) setStatus({ kind: "streaming", label: msg, node: nodeName });
-                  break;
-                }
-                case "status": {
-                  const nodeName = evt.node || "";
-                  setStatus({ kind: "streaming", label: evt.status, node: nodeName });
-                  if (nodeName && nodeName !== "__start__") {
-                    setCompletedNodes((prev) => {
-                      if (prev.some((n) => n.name === nodeName)) return prev;
-                      return [...prev, { name: nodeName, friendlyName: friendlyNodeName(nodeName) }];
-                    });
-                  }
-                  break;
-                }
-                case "token":
-                  assistantContent += evt.content;
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: last.content + evt.content,
-                      };
-                    }
-                    return updated;
-                  });
-                  break;
-
-                case "clarification":
-                  assistantContent = evt.clarification;
-                  assistantIntent = evt.intent_str ?? null;
-                  shouldPersistAssistant = true;
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: evt.clarification,
-                        intent: evt.intent_str,
-                      };
-                    }
-                    return updated;
-                  });
-                  setStatus({ kind: "clarification", text: evt.clarification });
-                  break;
-
-                case "final":
-                  assistantIntent = evt.intent_str ?? null;
-                  shouldPersistAssistant = assistantContent.trim().length > 0;
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = { ...last, intent: evt.intent_str };
-                    }
-                    return updated;
-                  });
-                  setStatus({ kind: "idle" });
-                  break;
-
-                case "error":
-                  shouldPersistAssistant = false;
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      const nextContent = last.content || `⚠ Error: ${evt.error}`;
-                      assistantContent = nextContent;
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: nextContent,
-                      };
-                    }
-                    return updated;
-                  });
-                  setStatus({ kind: "idle" });
-                  break;
-              }
-            } catch { /* skip malformed */ }
+      for await (const evt of streamChatSend(activeId, userMsg, { signal: ctrl.signal })) {
+        lastStreamActivityRef.current = Date.now();
+        switch (evt.type) {
+          case "chain_start":
+          case "chain_step_complete":
+            break;
+          case "node_status": {
+            const nodeName = (evt.node as string) || "";
+            const msg = (evt.message as string) || "";
+            if (msg) setStatus({ kind: "streaming", label: msg, node: nodeName });
+            break;
           }
+          case "status": {
+            const nodeName = evt.node || "";
+            const statusLabel = evt.status || "";
+            if (statusLabel) {
+              setStatus({ kind: "streaming", label: statusLabel, node: nodeName });
+            }
+            if (nodeName && nodeName !== "__start__") {
+              setCompletedNodes((prev) => {
+                if (prev.some((n) => n.name === nodeName)) return prev;
+                return [
+                  ...prev,
+                  { name: nodeName, friendlyName: friendlyNodeName(nodeName) },
+                ];
+              });
+            }
+            break;
+          }
+          case "token":
+            assistantContent += evt.content ?? "";
+            updateActiveMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last?.role === "assistant") {
+                updated[updated.length - 1] = {
+                  ...last,
+                  content: last.content + (evt.content ?? ""),
+                };
+              }
+              return updated;
+            });
+            break;
+
+          case "clarification": {
+            const clarif =
+              typeof evt.clarification === "string"
+                ? evt.clarification
+                : evt.clarification?.message ?? "Please clarify your question.";
+            assistantContent = clarif;
+            assistantIntent = evt.intent_str ?? null;
+            shouldPersistAssistant = true;
+            updateActiveMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last?.role === "assistant") {
+                updated[updated.length - 1] = {
+                  ...last,
+                  content: clarif,
+                  intent: evt.intent_str,
+                };
+              }
+              return updated;
+            });
+            setStatus({ kind: "clarification", text: clarif });
+            break;
+          }
+
+          case "final":
+            assistantIntent = evt.intent_str ?? null;
+            shouldPersistAssistant = assistantContent.trim().length > 0;
+            updateActiveMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last?.role === "assistant") {
+                updated[updated.length - 1] = {
+                  ...last,
+                  ...(evt.content ? { content: evt.content } : {}),
+                  intent: evt.intent_str,
+                };
+                if (evt.content) assistantContent = evt.content;
+              }
+              return updated;
+            });
+            setStatus({ kind: "idle" });
+            break;
+
+          case "error":
+            shouldPersistAssistant = false;
+            updateActiveMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last?.role === "assistant") {
+                const nextContent = last.content || `⚠ Error: ${evt.error ?? "Unknown"}`;
+                assistantContent = nextContent;
+                updated[updated.length - 1] = {
+                  ...last,
+                  content: nextContent,
+                };
+              }
+              return updated;
+            });
+            setStatus({ kind: "idle" });
+            break;
         }
       }
 
