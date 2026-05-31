@@ -86,6 +86,7 @@ def token_required(f):
 def get_current_business_id():
     return getattr(g, "business_id", None)
 
+
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
@@ -734,6 +735,9 @@ def api_recent_transactions():
 def api_export_dashboard_csv():
     try:
         bid = get_current_business_id()
+        if not bid:
+            return jsonify({"message": "Business ID not found"}), 404
+
         period = request.args.get("period", "this_month")
         start_date, end_date = get_period_dates(period)
         rows = execute_read_query_params("""

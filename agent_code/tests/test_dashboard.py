@@ -90,22 +90,8 @@ def test_dashboard_export_csv_downloads_filtered_transactions(client, app_module
     assert captured["params"][0] == "business-1"
 
 
-def test_dashboard_export_csv_resolves_business_from_email(client, app_module, monkeypatch):
-    calls = []
-
-    def fake_read_query(sql, params):
-        calls.append((sql, params))
-        if "FROM users" in sql:
-            return [{"business_id": "business-email"}]
-        return []
-
-    monkeypatch.setattr(app_module, "execute_read_query_params", fake_read_query)
-
+def test_dashboard_export_csv_rejects_unauthenticated_email_fallback(client):
     response = client.get("/api/dashboard/export-csv?period=this_month&email=owner@example.com")
 
-    assert response.status_code == 200
-    assert response.get_data(as_text=True).splitlines() == [
-        "transaction_id,transaction_date,type,category,amount,description",
-    ]
-    assert calls[0][1] == ("owner@example.com",)
-    assert calls[1][1][0] == "business-email"
+    assert response.status_code == 401
+    assert response.get_json()["message"] == "Authorization header is required"
