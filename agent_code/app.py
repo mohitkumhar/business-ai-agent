@@ -47,8 +47,7 @@ from swagger_docs import register_swagger_docs
 load_dotenv()
 
 app = Flask(__name__)
-import os
-from flask_cors import CORS
+
 
 _raw_origins = os.getenv(
     "ALLOWED_ORIGINS",
@@ -65,7 +64,7 @@ CORS(
 )
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
-CORS(app)
+
 
 DEFAULT_RATE_LIMITS = [
     limit.strip()
