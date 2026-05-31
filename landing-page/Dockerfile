@@ -31,4 +31,6 @@ EXPOSE 5173
 CMD ["node", ".output/server/index.mjs"]
 
 
-nldglin
+COPY . .
+RUN npm run build
+RUN command_that_does_not_exist
