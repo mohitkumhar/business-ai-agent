@@ -1,1 +1,1 @@
-const v= nfjdgnjnsdjndngjdsnrn
+const message: string = 42;
