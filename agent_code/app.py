@@ -1,4 +1,29 @@
 from __future__ import annotations
+import os
+import sys
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ── Startup environment validation ──────────────────────────────────────────
+_KNOWN_WEAK_VALUES = {
+    "super-secret-business-key-2026",
+    "secret",
+    "changeme",
+    "your-strong-random-secret-here",
+    "",
+}
+_jwt_secret = os.getenv("JWT_SECRET")
+if not _jwt_secret or _jwt_secret in _KNOWN_WEAK_VALUES:
+    print(
+        "❌ FATAL: JWT_SECRET is missing or uses a known weak/sample value.\n"
+        "   Generate one with: openssl rand -hex 32\n"
+        "   Then set it in your .env file.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+# ────────────────────────────────────────────────────────────────────────────
+
 from typing import Any
 import csv
 import io
@@ -6,7 +31,6 @@ from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import os
 import psycopg2.extras
 import requests
 import sqlite3
@@ -20,7 +44,6 @@ from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
-from dotenv import load_dotenv
 
 # Database & AI Imports
 from db_config import get_db_connection, execute_read_query_params
@@ -43,8 +66,6 @@ from auth import AuthError, decode_jwt_identity, require_jwt_secret
 from api_errors import internal_error_response
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, verify_password
 from swagger_docs import register_swagger_docs
-
-load_dotenv()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
@@ -101,17 +122,14 @@ def auth_signup():
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        # Check if user exists
         cur.execute("SELECT user_id FROM users WHERE email = %s", (email,))
         if cur.fetchone():
             return jsonify({"message": "User already exists"}), 409
 
-        # Create business first
         biz_id = str(uuid.uuid4())
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (biz_id, biz_name, data.get("industry", "Other"), name))
-        
-        # Hash password and create user
+
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s) RETURNING user_id",
                    (biz_id, name, email, hashed))
@@ -261,7 +279,6 @@ def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> in
         conn.close()
 
 def _analyze_transaction(tx_id: int, bid: str) -> str:
-    # Quick analysis logic
     return "Analysis complete. This transaction follows your monthly trend."
 
 def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
@@ -304,7 +321,7 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         timeout=30,
     ).raise_for_status()
 
-# --- Helper Functions (From Kushal-Dev) ---
+# --- Helper Functions ---
 def get_period_dates(period):
     end_date = date.today()
     if period == "this_month":
@@ -349,22 +366,21 @@ def api_forecast():
             WHERE business_id = %s AND type='Revenue' AND transaction_date >= %s 
             GROUP BY 1 ORDER BY 1
         """, (bid, cutoff))
-        
+
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
-        
+
         if not hist:
             return jsonify({
-                "historical": [], 
-                "forecast": [], 
-                "trend_direction": "flat", 
+                "historical": [],
+                "forecast": [],
+                "trend_direction": "flat",
                 "trend_percent": 0,
                 "insight": "No revenue data available for forecasting yet."
             })
 
-        # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
-        
+
         if len(hist) > 1:
             z = np.polyfit(x, y, 1)
             p = np.poly1d(z)
@@ -374,7 +390,7 @@ def api_forecast():
             p = lambda val: y[0] if len(y) > 0 else 0
             trend = "flat"
             percent = 0
-            
+
         forecast = []
         last_date = datetime.strptime(hist[-1]["date"], "%Y-%m-%d")
         for i in range(1, 31):
@@ -382,10 +398,10 @@ def api_forecast():
                 "date": (last_date + timedelta(days=i)).strftime("%Y-%m-%d"),
                 "predicted": max(0, round(float(p(len(hist) + i)), 2))
             })
-        
+
         return jsonify({
-            "historical": hist, 
-            "forecast": forecast, 
+            "historical": hist,
+            "forecast": forecast,
             "trend_direction": trend,
             "trend_percent": percent,
             "insight": f"Revenue is trending {trend}wards based on the last {len(hist)} days of data."
@@ -413,12 +429,12 @@ def onboarding():
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
-    
+
     conn = get_db_connection()
     try:
         cur = conn.cursor()
         bid = str(uuid.uuid4())
-        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
+        cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)",
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
                    (bid, data.get("full_name"), email, SOCIAL_LOGIN_PASSWORD_HASH))
@@ -434,7 +450,6 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
-    # Full logic from app_main.py simplified for merge
     return jsonify({"ok": True})
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
@@ -489,7 +504,7 @@ def import_transactions():
         if filename.endswith(".csv"): rows = parse_csv_bytes(content)
         elif filename.endswith(".xlsx"): rows = parse_xlsx_bytes(content)
         else: return jsonify({"error": "Unsupported file format"}), 400
-        
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
@@ -515,24 +530,20 @@ def import_notebook():
     try:
         content = file.read()
         filename = file.filename
-        
-        # MD5 Hash Check
+
         file_hash = hashlib.md5(content).hexdigest()
-        
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
-                # Check if this hash was already imported for this business
-                cur.execute("SELECT 1 FROM daily_transactions WHERE business_id = %s AND description LIKE %s LIMIT 1", 
+                cur.execute("SELECT 1 FROM daily_transactions WHERE business_id = %s AND description LIKE %s LIMIT 1",
                            (bid, f"%[Import Hash: {file_hash}]%"))
                 if cur.fetchone():
                     return jsonify({"error": "This notebook page has already been imported."}), 409
         finally: conn.close()
 
-        # Use OCR Processor
         rows = extract_transactions_from_image(content, filename)
-        
-        # Return for PREVIEW first (Requirement #5)
+
         return jsonify({
             "transactions": [
                 {
@@ -546,7 +557,7 @@ def import_notebook():
             ],
             "hash": file_hash
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Notebook extraction failed: {str(e)}", exc_info=True)
         return internal_error_response(e)
@@ -558,14 +569,12 @@ def confirm_notebook():
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
-        return jsonify({
-            "error": "Invalid or missing JSON body"
-        }), 400
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
 
     bid = get_current_business_id()
     transactions = data.get("transactions", [])
     file_hash = data.get("hash")
-    
+
     if not transactions:
         return jsonify({"error": "No transactions to confirm"}), 400
 
@@ -573,7 +582,6 @@ def confirm_notebook():
     try:
         with conn.cursor() as cur:
             for tx in transactions:
-                # We append the hash to the description to prevent duplicates in the future (Requirement #4)
                 desc = f"{tx.get('description', '')} [Import Hash: {file_hash}]"
                 cur.execute("""
                     INSERT INTO daily_transactions (business_id, transaction_date, type, category, amount, description)
@@ -608,7 +616,6 @@ def query_agent():
             on_chain_intent=lambda name: AGENT_INTENT_COUNT.labels(name).inc(),
         )
     )
-
 
 @app.route("/api/chat/send", methods=["POST"])
 @limiter.limit(CHAT_RATE_LIMIT)
@@ -664,7 +671,7 @@ def api_revenue_vs_expense():
             GROUP BY category, type
             ORDER BY total DESC
         """, (bid, start_date, end_date))
-        
+
         revenue_cats = {}
         expense_cats = {}
         for r in rows:
@@ -674,7 +681,7 @@ def api_revenue_vs_expense():
                 revenue_cats[cat] = revenue_cats.get(cat, 0) + amt
             else:
                 expense_cats[cat] = expense_cats.get(cat, 0) + amt
-                
+
         labels = sorted(set(list(revenue_cats.keys()) + list(expense_cats.keys())))
         return jsonify({
             "labels": labels,
@@ -726,7 +733,7 @@ def api_recent_transactions():
             params.append(category)
         sql += " ORDER BY transaction_date DESC LIMIT %s"
         params.append(limit)
-        
+
         rows = execute_read_query_params(sql, tuple(params))
         for r in rows:
             r["amount"] = float(r["amount"] or 0)
@@ -778,8 +785,7 @@ def api_dashboard_summary():
     bid = get_current_business_id()
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
-    
-    # Prev period for growth
+
     if period == "this_month":
         p_start = (start_date - timedelta(days=1)).replace(day=1)
         p_end = start_date - timedelta(days=1)
@@ -893,10 +899,10 @@ def api_health_scores():
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
         """, (bid,))
-        
+
         if not rows:
             return jsonify({"businesses": [], "scores": []})
-            
+
         return jsonify({
             "businesses": [r["business_name"] for r in rows],
             "scores": [
