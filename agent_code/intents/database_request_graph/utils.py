@@ -1,3 +1,59 @@
+from pydantic import ValidationError
+import time
+insight_llm = base_llm.with_structured_output(BusinessInsightOutput)
+def invoke_with_retry(llm, prompt: str, retries: int = 2):
+    """
+    Retry structured-output calls when schema validation fails.
+    """
+
+    last_error = None
+
+    for attempt in range(retries + 1):
+        try:
+            return llm.invoke(prompt)
+
+        except ValidationError as exc:
+            last_error = exc
+
+            logger.warning(
+                "Structured output validation failed "
+                "(attempt %s/%s): %s",
+                attempt + 1,
+                retries + 1,
+                exc,
+            )
+
+            prompt = f"""
+The previous response failed schema validation.
+
+Validation Error:
+{exc}
+
+Return the answer again and ensure it exactly matches
+the required structured schema.
+
+Original Task:
+{prompt}
+"""
+
+            time.sleep(1)
+
+        except Exception as exc:
+            last_error = exc
+
+            logger.warning(
+                "LLM invocation failed "
+                "(attempt %s/%s): %s",
+                attempt + 1,
+                retries + 1,
+                exc,
+            )
+
+            time.sleep(1)
+
+    raise last_error
+
+
 import re
 from intents.database_request_graph.structures import (
     DateRangeOutput,
@@ -91,7 +147,7 @@ User Query: {user_query}"""
 
     try:
         logger.info("Invoking date_range_llm to resolve date range...")
-        result = date_range_llm.invoke(prompt)
+       result = invoke_with_retry(date_range_llm, prompt)
         logger.info(f"Date range resolved: {result}")
         return {
             "date_range_start": result.start_date or "",
@@ -153,7 +209,7 @@ User Query: {user_query}"""
 
     try:
         logger.info("Invoking entity_llm to validate entities...")
-        result = entity_llm.invoke(prompt)
+        result = invoke_with_retry(entity_llm, prompt)
         logger.info(f"Entity extraction result: {result}")
     except Exception as exc:
         logger.error("validate_entities LLM call failed: %s", exc, exc_info=True)
@@ -488,7 +544,7 @@ Return the SQL query and a short plain-English explanation."""
     try:
         logger.info("[SQL GEN] tables=%s | retry=%s", target_tables, state.get("sql_retry_count", 0))
         logger.info("Invoking sql_gen_llm to generate SQL query.")
-        result = sql_gen_llm.invoke(prompt)
+        result = invoke_with_retry(sql_gen_llm, prompt)
         logger.info("[SQL GEN] query_preview=%s", (result.sql_query or "")[:200])
         out = {
             "generated_sql": result.sql_query,
@@ -602,7 +658,7 @@ If issues are fixable, provide corrected_sql.  Otherwise set is_valid=false."""
 
     try:
         logger.info("Performing LLM-based SQL validation.")
-        result = sql_val_llm.invoke(prompt)
+        result = invoke_with_retry(sql_val_llm, prompt)
 
         if result.is_valid:
             logger.info("SQL validation successful.")
@@ -859,7 +915,7 @@ Rules:
 
     try:
         logger.info("Invoking insight_llm to generate business insights.")
-        result = insight_llm.invoke(prompt)
+        result = invoke_with_retry(insight_llm, prompt)
         logger.info("Business insights generated successfully.")
         return {
             "business_insight": json.dumps({
