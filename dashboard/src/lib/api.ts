@@ -83,24 +83,6 @@ export interface HealthScores { businesses: string[]; scores: HealthScore[]; }
 
 
 // --- Helpers ---
-function getStoredUserEmail(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("profit_pilot_user");
-    if (!raw) return null;
-    return JSON.parse(raw).email || null;
-  } catch {
-    return null;
-  }
-}
-
-function appendUserEmail(url: string): string {
-  const email = getStoredUserEmail();
-  if (!email) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}email=${encodeURIComponent(email)}`;
-}
-
 function withPeriod(baseUrl: string, period: DashboardPeriod): string {
   const sep = baseUrl.includes("?") ? "&" : "?";
   return `${baseUrl}${sep}period=${period}`;
@@ -108,7 +90,7 @@ function withPeriod(baseUrl: string, period: DashboardPeriod): string {
 
 async function fetchWithFallback<T>(url: string, fallback: T): Promise<T> {
   try {
-    const res = await fetch(appendUserEmail(url));
+    const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) return fallback;
     return res.json();
   } catch {
@@ -134,34 +116,34 @@ function getHeaders() {
 
 export const api = {
   getSummary: async (period: string): Promise<DashboardSummary> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/summary-sql?period=${period}`), { headers: getHeaders() });
+    const res = await fetch(`/api/dashboard/summary-sql?period=${period}`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Summary API failed");
     return res.json();
   },
 
   getFinancialOverview: async (period?: string): Promise<FinancialOverview> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`), { headers: getHeaders() });
+    const res = await fetch(`/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`, { headers: getHeaders() });
     return res.json();
   },
 
   getSalesTarget: async (period: string): Promise<SalesTarget> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/sales-target?period=${period}`), { headers: getHeaders() });
+    const res = await fetch(`/api/dashboard/sales-target?period=${period}`, { headers: getHeaders() });
     return res.json();
   },
 
 
   getRevenueVsExpense: async (period: string) => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/revenue-vs-expense?period=${period}`));
+    const res = await fetch(`/api/dashboard/revenue-vs-expense?period=${period}`, { headers: getHeaders() });
     return res.json();
   },
 
   getSalesTrend: async (period: string) => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/sales-trend?period=${period}`));
+    const res = await fetch(`/api/dashboard/sales-trend?period=${period}`, { headers: getHeaders() });
     return res.json();
   },
 
   getForecast: async (period: string): Promise<Forecast> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`), { headers: getHeaders() });
+    const res = await fetch(`/api/dashboard/forecast?period=${period}`, { headers: getHeaders() });
     if (!res.ok) {
       const { mockForecast } = await import("./mockData");
       return mockForecast;
@@ -175,33 +157,33 @@ export const api = {
     if (params.category) query.set("category", params.category);
     if (params.limit) query.set("limit", params.limit.toString());
     if (params.period) query.set("period", params.period);
-    const res = await fetch(appendUserEmail(`/api/dashboard/recent-transactions?${query.toString()}`));
+    const res = await fetch(`/api/dashboard/recent-transactions?${query.toString()}`, { headers: getHeaders() });
     return res.json();
   },
 
   getAlertsList: async (period?: string) => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`));
+    const res = await fetch(`/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`, { headers: getHeaders() });
     return res.json();
   },
 
 
   getBusinessInfo: async (): Promise<BusinessInfo> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/business-info`));
+    const res = await fetch(`/api/dashboard/business-info`, { headers: getHeaders() });
     return res.json();
   },
 
   // Other endpoints
-  getCategories: async () => (await fetch(appendUserEmail(`/api/dashboard/categories`))).json(),
-  getAlertsBySeverity: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`))).json(),
-  getHealthScores: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/health-scores${period ? `?period=${period}` : ""}`))).json(),
-  getTopProducts: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/top-products${period ? `?period=${period}` : ""}`))).json(),
-  getEmployeeStats: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`))).json(),
+  getCategories: async () => (await fetch(`/api/dashboard/categories`, { headers: getHeaders() })).json(),
+  getAlertsBySeverity: async (period?: string) => (await fetch(`/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
+  getHealthScores: async (period?: string) => (await fetch(`/api/dashboard/health-scores${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
+  getTopProducts: async (period?: string) => (await fetch(`/api/dashboard/top-products${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
+  getEmployeeStats: async (period?: string) => (await fetch(`/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
 
 
   /** Export data as CSV (Restored) */
   exportDashboardCsv: async (period: string) => {
     const params = new URLSearchParams({ period });
-    const res = await fetch(appendUserEmail(`/api/dashboard/export-csv?${params.toString()}`));
+    const res = await fetch(`/api/dashboard/export-csv?${params.toString()}`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Export failed");
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);

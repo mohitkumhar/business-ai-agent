@@ -11,7 +11,8 @@ export async function GET() {
     }
     const data = await res.json();
     return NextResponse.json(data);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch employees";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -53,6 +53,13 @@ def _load_api_errors_with_fake_flask():
 
     fake_flask = types.ModuleType("flask")
     fake_flask.jsonify = lambda payload: FakeResponse(payload)
+    original_flask = sys.modules.get("flask")
     sys.modules["flask"] = fake_flask
     sys.modules.pop("agent_code.api_errors", None)
-    return importlib.import_module("agent_code.api_errors")
+    try:
+        return importlib.import_module("agent_code.api_errors")
+    finally:
+        if original_flask is None:
+            sys.modules.pop("flask", None)
+        else:
+            sys.modules["flask"] = original_flask

@@ -369,6 +369,19 @@ cp .env.example .env
 
 ---
 
+### Dashboard authentication flow
+
+All `/api/dashboard/*` endpoints are protected and identify the caller **only** from a JWT — never from a client-supplied `email` query parameter:
+
+1. The user logs in via `POST /api/auth/login`, which returns a signed JWT (HS256, signed with `JWT_SECRET`) carrying the `user_id` and `business_id`.
+2. The dashboard stores the token (`localStorage` key `profit_pilot_token`).
+3. Every dashboard request sends `Authorization: Bearer <token>`; the backend's `@token_required` decorator decodes it and derives the tenant's `business_id` server-side.
+4. Each query is scoped with `WHERE business_id = %s` so a token for one business can never read another's data.
+
+There is no anonymous/email fallback — requests without a valid token receive `401`.
+
+---
+
 ### Telegram Webhook
 
 Set `TELEGRAM_BOT_TOKEN`, then configure your Telegram bot webhook to POST updates to:
