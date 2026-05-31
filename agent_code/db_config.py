@@ -68,8 +68,18 @@ def _assert_read_only_select(sql: str) -> str:
     cleaned = s.lower()
     if not (cleaned.startswith("select") or cleaned.startswith("with")):
         raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
-    if s.count(";") > 0:
-        raise ValueError("Multiple SQL statements are not allowed.")
+    in_single_quote = False
+    in_double_quote = False
+    for idx, ch in enumerate(s):
+        if ch == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            continue
+        if ch == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            continue
+        if ch == ";" and not in_single_quote and not in_double_quote:
+            if s[idx + 1 :].strip():
+                raise ValueError("Multiple SQL statements are not allowed.")
     for keyword in _FORBIDDEN:
         if keyword in cleaned:
             raise ValueError(f"Forbidden SQL keyword detected: {keyword.strip()}")

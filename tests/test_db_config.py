@@ -10,6 +10,14 @@ from agent_code import db_config
     [
         ("SELECT * FROM businesses;", "SELECT * FROM businesses"),
         ("  with recent as (select 1) select * from recent  ", "with recent as (select 1) select * from recent"),
+        (
+            "SELECT * FROM daily_transactions WHERE description = 'Rent; May'",
+            "SELECT * FROM daily_transactions WHERE description = 'Rent; May'",
+        ),
+        (
+            'SELECT * FROM t WHERE note = "status; active"',
+            'SELECT * FROM t WHERE note = "status; active"',
+        ),
     ],
 )
 def test_assert_read_only_select_accepts_single_selects(sql, expected):
@@ -24,6 +32,10 @@ def test_assert_read_only_select_accepts_single_selects(sql, expected):
         "DELETE FROM users",
         "SELECT * FROM users; SELECT * FROM roles",
         "WITH changed AS (UPDATE users SET role = 'admin' RETURNING *) SELECT * FROM changed",
+        "SELECT 1; DROP TABLE users;",
+        "SELECT 1; SELECT 2",
+        "SELECT '\\'; SELECT 2",
+        "SELECT 'abc\\'; DROP TABLE businesses;",
     ],
 )
 def test_assert_read_only_select_rejects_unsafe_sql(sql):
