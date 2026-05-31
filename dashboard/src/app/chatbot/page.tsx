@@ -85,6 +85,9 @@ export default function ChatbotPage() {
 
   const [employees, setEmployees] = useState<{login: string, avatar_url?: string, assigned_issues: number}[]>([]);
   const [escalatingMsgId, setEscalatingMsgId] = useState<number | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackType, setFeedbackType] = useState<"success" | "error" | null>(null);
+
 
   useEffect(() => {
     fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
@@ -183,9 +186,11 @@ export default function ChatbotPage() {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(`Escalation failed: ${err.error || "Unknown error"}`);
+        setFeedbackType("error");
+        setFeedbackMessage(`Escalation failed: ${err.error || "Unknown error"}`);
       } else {
-        alert("Conversation escalated to Slack successfully!");
+        setFeedbackType("success");
+        setFeedbackMessage("Conversation escalated to Slack successfully!");
         // Refresh employees to bump issue counts
         fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
           .then(r => r.json())
@@ -193,7 +198,8 @@ export default function ChatbotPage() {
           .catch(console.error);
       }
     } catch (error) {
-      alert("Error escalating conversation.");
+      setFeedbackType("error");
+      setFeedbackMessage("Error escalating conversation.");
     }
   }, [messages]);
 
@@ -531,7 +537,26 @@ export default function ChatbotPage() {
               </div>
             )}
 
-            {/* ── Messages ── */}
+            {/* Accessible feedback */}
+            {feedbackMessage && (
+              <div
+                role={feedbackType === "error" ? "alert" : "status"}
+                aria-live={feedbackType === "error" ? "assertive" : "polite"}
+                style={{
+                  margin: "12px",
+                  padding: "10px",
+                  borderRadius: "8px",
+                  background:
+                    feedbackType === "error"
+                      ? "rgba(239,68,68,0.1)"
+                      : "rgba(34,197,94,0.1)",
+                }}
+              >
+                {feedbackMessage}
+              </div>
+            )}
+
+
             <div className="chat-messages" style={{ flex: 1 }}>
               {messages.length === 0 && (
                 <div className="chat-empty">
