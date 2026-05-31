@@ -4,6 +4,19 @@
 {% block page_title %}Dashboard  <span class="badge">Last 24 Hours</span>{% endblock %}
 
 {% block content %}
+<div id="emptyState" class="text-center py-5" style="display: none;">
+    <div class="chart-card" style="padding: 40px;">
+        <h2>
+            <i class="fas fa-search"></i>
+            No business results found
+        </h2>
+
+        <p style="margin-top: 10px; color: #888;">
+            No dashboard data is currently available.
+            Try refreshing or searching with different inputs.
+        </p>
+    </div>
+</div>
 <!-- KPI Cards Row -->
 <div class="kpi-row" id="kpiRow">
     <div class="kpi-card">
