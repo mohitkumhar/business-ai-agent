@@ -600,12 +600,21 @@ def confirm_notebook():
 def query_agent():
     input_query = request.args.get("input-query", "")
     thread_id = request.args.get("thread-id", "")
-    business_id = request.args.get("business-id", "")
 
     if not input_query:
         return jsonify({"is_error": True, "error": "input query is required"}), 400
     if not thread_id:
         return jsonify({"is_error": True, "error": "thread-id is required"}), 400
+
+    try:
+        auth_header = request.headers.get("Authorization")
+        business_id = (
+            decode_jwt_identity(auth_header, app.config["SECRET_KEY"])["business_id"]
+            if auth_header
+            else request.args.get("business-id", "")
+        )
+    except AuthError as exc:
+        return jsonify({"is_error": True, "error": exc.message}), exc.status_code
 
     return _sse_stream_response(
         stream_agent_sse_lines(

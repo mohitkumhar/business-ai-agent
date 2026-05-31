@@ -1,5 +1,22 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
+import jwt
+
+
+def _bearer_token(app_module, business_id="business-token"):
+    token = jwt.encode(
+        {
+            "user_id": "user-token",
+            "business_id": business_id,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        app_module.app.config["SECRET_KEY"],
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
 
 def test_query_route_streams_sse_for_dashboard_proxy(client, app_module, monkeypatch):
     captured = {}
@@ -40,3 +57,48 @@ def test_query_route_requires_dashboard_proxy_params(client):
 
     assert response.status_code == 400
     assert response.get_json() == {"is_error": True, "error": "thread-id is required"}
+
+
+def test_query_route_derives_business_context_from_jwt(client, app_module, monkeypatch):
+    captured = {}
+
+    def fake_stream_agent_sse_lines(query, thread_id, business_id, on_chain_intent=None):
+        captured["business_id"] = business_id
+        yield 'data: {"type":"token","content":"ok"}\n\n'
+
+    monkeypatch.setattr(app_module, "stream_agent_sse_lines", fake_stream_agent_sse_lines)
+
+    response = client.post(
+        "/api/v1/query",
+        query_string={
+            "input-query": "How are sales?",
+            "thread-id": "thread-1",
+        },
+        headers=_bearer_token(app_module, business_id="business-from-token"),
+    )
+
+    assert response.status_code == 200
+    assert captured["business_id"] == "business-from-token"
+
+
+def test_query_route_prefers_jwt_business_context_over_query_param(client, app_module, monkeypatch):
+    captured = {}
+
+    def fake_stream_agent_sse_lines(query, thread_id, business_id, on_chain_intent=None):
+        captured["business_id"] = business_id
+        yield 'data: {"type":"token","content":"ok"}\n\n'
+
+    monkeypatch.setattr(app_module, "stream_agent_sse_lines", fake_stream_agent_sse_lines)
+
+    response = client.post(
+        "/api/v1/query",
+        query_string={
+            "input-query": "How are sales?",
+            "thread-id": "thread-1",
+            "business-id": "business-from-query",
+        },
+        headers=_bearer_token(app_module, business_id="business-from-token"),
+    )
+
+    assert response.status_code == 200
+    assert captured["business_id"] == "business-from-token"
