@@ -263,108 +263,164 @@ export default function ChatbotPage() {
         throw new Error(`HTTP ${res.status}: ${errText}`);
       }
 
+      // Define structured interfaces for Server-Sent Events (SSE) returned by Flask agent.
+      interface SSEEvent {
+        type: "chain_start" | "chain_step_complete" | "node_status" | "status" | "token" | "clarification" | "final" | "error";
+        content?: string;
+        node?: string;
+        message?: string;
+        status?: string;
+        clarification?: string;
+        intent_str?: string;
+        error?: string;
+      }
+
       const reader = res.body.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder("utf-8");
       let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done && !buffer) {
+          break;
+        }
 
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+        }
 
-        for (const part of parts) {
-          for (const line of part.split("\n")) {
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6);
-            if (!jsonStr) continue;
+        // Split incoming buffer into distinct lines using a regex that handles both CRLF (\r\n) and LF (\n).
+        // This is critical since network proxy layers or local developer environments can modify trailing newlines.
+        const lines = buffer.split(/\r?\n/);
+        
+        // The last segment might be an incomplete line segment (i.e. not terminated by a newline).
+        // Save it back into the buffer to be processed in tandem with the subsequent chunk.
+        buffer = lines.pop() ?? "";
 
-            try {
-              const evt = JSON.parse(jsonStr);
-              lastStreamActivityRef.current = Date.now();
-              switch (evt.type) {
-                case "chain_start":
-                  break;
-                case "chain_step_complete":
-                  break;
-                case "node_status": {
-                  const nodeName = (evt.node as string) || "";
-                  const msg = (evt.message as string) || "";
-                  if (msg) setStatus({ kind: "streaming", label: msg, node: nodeName });
-                  break;
-                }
-                case "status": {
-                  const nodeName = evt.node || "";
-                  setStatus({ kind: "streaming", label: evt.status, node: nodeName });
-                  if (nodeName && nodeName !== "__start__") {
-                    setCompletedNodes((prev) => {
-                      if (prev.some((n) => n.name === nodeName)) return prev;
-                      return [...prev, { name: nodeName, friendlyName: friendlyNodeName(nodeName) }];
-                    });
-                  }
-                  break;
-                }
-                case "token":
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: last.content + evt.content,
-                      };
-                    }
-                    return updated;
-                  });
-                  break;
-
-                case "clarification":
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: evt.clarification,
-                        intent: evt.intent_str,
-                      };
-                    }
-                    return updated;
-                  });
-                  setStatus({ kind: "clarification", text: evt.clarification });
-                  break;
-
-                case "final":
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = { ...last, intent: evt.intent_str };
-                    }
-                    return updated;
-                  });
-                  setStatus({ kind: "idle" });
-                  break;
-
-                case "error":
-                  updateActiveMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: last.content || `⚠ Error: ${evt.error}`,
-                      };
-                    }
-                    return updated;
-                  });
-                  setStatus({ kind: "idle" });
-                  break;
-              }
-            } catch { /* skip malformed */ }
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          
+          // Skip empty heartbeat keep-alives or comments, and filter for active data payloads.
+          if (!trimmedLine || !trimmedLine.startsWith("data:")) {
+            continue;
           }
+
+          // Extract content after the first colon separator. Per the HTML5 SSE Specification:
+          // The colon and any leading/trailing whitespace of the value field must be stripped.
+          const colonIndex = trimmedLine.indexOf(":");
+          const jsonPayload = trimmedLine.slice(colonIndex + 1).trim();
+          if (!jsonPayload) {
+            continue;
+          }
+
+          try {
+            const event: SSEEvent = JSON.parse(jsonPayload);
+            lastStreamActivityRef.current = Date.now();
+            
+            switch (event.type) {
+              case "chain_start":
+              case "chain_step_complete":
+                // Chain lifecycle events - can be hooked later for progression indicators.
+                break;
+              
+              case "node_status": {
+                const nodeName = event.node || "";
+                const message = event.message || "";
+                if (message) {
+                  setStatus({ kind: "streaming", label: message, node: nodeName });
+                }
+                break;
+              }
+              
+              case "status": {
+                const nodeName = event.node || "";
+                const statusMessage = event.status || "";
+                setStatus({ kind: "streaming", label: statusMessage, node: nodeName });
+                if (nodeName && nodeName !== "__start__") {
+                  setCompletedNodes((prev) => {
+                    if (prev.some((n) => n.name === nodeName)) {
+                      return prev;
+                    }
+                    return [...prev, { name: nodeName, friendlyName: friendlyNodeName(nodeName) }];
+                  });
+                }
+                break;
+              }
+              
+              case "token": {
+                const token = event.content || "";
+                updateActiveMessages((prev) => {
+                  const updated = [...prev];
+                  const lastMessage = updated[updated.length - 1];
+                  if (lastMessage?.role === "assistant") {
+                    updated[updated.length - 1] = {
+                      ...lastMessage,
+                      content: lastMessage.content + token,
+                    };
+                  }
+                  return updated;
+                });
+                break;
+              }
+
+              case "clarification": {
+                const text = event.clarification || "";
+                updateActiveMessages((prev) => {
+                  const updated = [...prev];
+                  const lastMessage = updated[updated.length - 1];
+                  if (lastMessage?.role === "assistant") {
+                    updated[updated.length - 1] = {
+                      ...lastMessage,
+                      content: text,
+                      intent: event.intent_str,
+                    };
+                  }
+                  return updated;
+                });
+                setStatus({ kind: "clarification", text });
+                break;
+              }
+
+              case "final":
+                updateActiveMessages((prev) => {
+                  const updated = [...prev];
+                  const lastMessage = updated[updated.length - 1];
+                  if (lastMessage?.role === "assistant") {
+                    updated[updated.length - 1] = { 
+                      ...lastMessage, 
+                      intent: event.intent_str 
+                    };
+                  }
+                  return updated;
+                });
+                setStatus({ kind: "idle" });
+                break;
+
+              case "error": {
+                const errorMsg = event.error || "Unknown error";
+                updateActiveMessages((prev) => {
+                  const updated = [...prev];
+                  const lastMessage = updated[updated.length - 1];
+                  if (lastMessage?.role === "assistant") {
+                    updated[updated.length - 1] = {
+                      ...lastMessage,
+                      content: lastMessage.content || `⚠ Error: ${errorMsg}`,
+                    };
+                  }
+                  return updated;
+                });
+                setStatus({ kind: "idle" });
+                break;
+              }
+            }
+          } catch (jsonErr) {
+            // Log warning internally using structured formatting for optimal log-aggregators analysis.
+            console.warn("[ChatbotPage] Failed to parse SSE event payload JSON:", jsonErr, "Line data:", line);
+          }
+        }
+
+        if (done) {
+          break;
         }
       }
       setStatus((cur) => (cur.kind === "idle" ? cur : { kind: "idle" }));
