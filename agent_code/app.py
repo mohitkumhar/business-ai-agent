@@ -47,6 +47,22 @@ from swagger_docs import register_swagger_docs
 load_dotenv()
 
 app = Flask(__name__)
+import os
+from flask_cors import CORS
+
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3001,http://localhost:5173"
+)
+allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
+CORS(
+    app,
+    origins=allowed_origins,
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
