@@ -1,1 +1,1 @@
-const var;
+console.log("f***k")
