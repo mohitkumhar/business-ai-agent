@@ -85,10 +85,30 @@ def _route_after_sql_validation(state: DatabaseRequestGraphState) -> str:
     try:
         if state.get("halt_pipeline") or state.get("emergency_reason"):
             return "emergency_exit"
+
         logger.info(f"Routing after SQL validation. State: {state}")
-        return state.get("route", "sql_valid")
+
+        valid_routes = {
+            "sql_valid",
+            "sql_invalid",
+            "sql_failed",
+            "emergency_exit",
+        }
+
+        route = state.get("route", "sql_valid")
+
+        if route not in valid_routes:
+            logger.warning(
+                f"Invalid route detected: {route}. Falling back to sql_invalid"
+            )
+            return "sql_invalid"
+
+        return route
+
     except Exception as e:
-        logger.error(f"Error in routing function after SQL validation: {e}", exc_info=True)
+        logger.error(
+            f"Error in routing function after SQL validation: {e}"
+        )
         return "sql_valid"
 
 
