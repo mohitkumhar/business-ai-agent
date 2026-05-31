@@ -29,3 +29,6 @@ COPY --from=builder /app/public ./public
 EXPOSE 5173
 
 CMD ["node", ".output/server/index.mjs"]
+
+
+nldglin
