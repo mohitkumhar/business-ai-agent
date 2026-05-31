@@ -1,1 +1,1 @@
-const v=12;
+const v=
