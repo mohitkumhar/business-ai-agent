@@ -321,6 +321,24 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         timeout=30,
     ).raise_for_status()
 
+# --- Helper Functions (From Kushal-Dev) ---
+def get_period_dates(period):
+    end_date = date.today()
+    if period == "this_month":
+        start_date = end_date.replace(day=1)
+    elif period == "last_month":
+        last_month_end = end_date.replace(day=1) - timedelta(days=1)
+        start_date = last_month_end.replace(day=1)
+        end_date = last_month_end
+    elif period == "last_7_days":
+        start_date = end_date - timedelta(days=7)
+    elif period == "last_30_days":
+        start_date = end_date - timedelta(days=30)
+    elif period == "ytd":
+        start_date = date(end_date.year, 1, 1)
+    else:
+        start_date = end_date - timedelta(days=30)
+    return start_date, end_date
 
 def _sse_stream_response(generator):
     response = Response(stream_with_context(generator), mimetype="text/event-stream")
@@ -764,21 +782,6 @@ def api_export_dashboard_csv():
         return jsonify({"message": exc.message}), exc.status_code
     except Exception as exc:
         return internal_error_response(exc)
-
-def get_period_dates(period):
-    end_date = datetime.now().date()
-    if period == "this_month":
-        start_date = end_date.replace(day=1)
-    elif period == "last_month":
-        start_date = (end_date.replace(day=1) - timedelta(days=1)).replace(day=1)
-        end_date = (end_date.replace(day=1) - timedelta(days=1))
-    elif period == "last_7_days":
-        start_date = end_date - timedelta(days=7)
-    elif period == "last_30_days":
-        start_date = end_date - timedelta(days=30)
-    else:
-        start_date = date(2000, 1, 1)
-    return start_date, end_date
 
 @app.route("/api/dashboard/summary-sql", methods=["GET", "OPTIONS"])
 @token_required

@@ -19,7 +19,7 @@ export const dashboardUrl =
     ? String(import.meta.env.VITE_DASHBOARD_URL).replace(/\/$/, "")
     : "http://localhost:3001";
 export const githubRepoUrl = "https://github.com/mohitkumhar/intelligent-business-agent";
-export const linkedInUrl = "https://github.com/mohitkumhar/intelligent-business-agent";
+export const linkedInUrl = "https://www.linkedin.com/in/mohitkumhar";
 export const discordUrl = "https://github.com/mohitkumhar/intelligent-business-agent";
 export const docsUrl = "https://github.com/mohitkumhar/intelligent-business-agent#readme";
 export const howToGetHelpUrl = "https://github.com/mohitkumhar/intelligent-business-agent/issues";

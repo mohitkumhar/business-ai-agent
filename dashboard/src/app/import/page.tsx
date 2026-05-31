@@ -24,12 +24,20 @@ function getUserEmail(): string | null {
 
 type TabId = "excel" | "accounting" | "manual" | "none";
 
+type PreviewRow = {
+  date?: string;
+  type?: string;
+  category?: string;
+  amount?: string | number;
+  description?: string;
+};
+
 export default function ImportPage() {
   const [activeTab, setActiveTab] = useState<TabId>("manual");
   const [flash, setFlash] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [previewData, setPreviewData] = useState<any[] | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const router = useRouter();
 
@@ -202,7 +210,7 @@ export default function ImportPage() {
               className={`import-tab-btn ${activeTab === "none" ? "active" : ""}`}
               onClick={() => router.push("/")}
             >
-              Don't track
+              Don&apos;t track
             </button>
           </div>
 
@@ -247,7 +255,7 @@ export default function ImportPage() {
               ) : (
                 <>
                   <p className="manual-upload-tagline">
-                    "No problem! Take a photo of your latest ledger entries and our AI will extract the data for you."
+                    &quot;No problem! Take a photo of your latest ledger entries and our AI will extract the data for you.&quot;
                   </p>
 
                   <div
@@ -328,7 +336,7 @@ export default function ImportPage() {
                   {activeTab === "excel" ? "Spreadsheet Upload" : "Accounting Software Export"}
                 </h3>
                 <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24 }}>
-                  Drop your exported .csv or .xlsx file here to sync transactions. Ensure you have 'date' and 'amount'
+                  Drop your exported .csv or .xlsx file here to sync transactions. Ensure you have &apos;date&apos; and &apos;amount&apos;
                   columns.
                 </p>
 
