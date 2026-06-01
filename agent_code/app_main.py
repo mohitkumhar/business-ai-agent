@@ -633,8 +633,8 @@ def get_employees():
             return jsonify(
                 {
                     "employees": [
-                        {"login": "engineer_a", ...},
-                        {"login": "engineer_b", ...},
+                        {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
+                        {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
                     ],
                     "degraded": True,
                     "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
