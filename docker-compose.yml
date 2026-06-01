@@ -156,7 +156,7 @@ services:
         condition: service_started
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.4.1
     container_name: grafana
     ports:
       - "3000:3000"
@@ -165,7 +165,7 @@ services:
       - prometheus
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.51.0
     container_name: prometheus
     restart: always
     ports:
