@@ -19,26 +19,31 @@ def _function_named(tree: ast.Module, name: str) -> ast.FunctionDef:
     raise AssertionError(f"{name} was not found")
 
 
-def _exception_name(node: ast.expr | None) -> str:
+def _exception_names(node: ast.expr | None) -> set[str]:
+    if node is None:
+        return {"bare-except"}
     if isinstance(node, ast.Name):
-        return node.id
+        return {node.id}
     if isinstance(node, ast.Attribute):
-        return node.attr
+        return {node.attr}
     if isinstance(node, ast.Tuple):
-        return ",".join(_exception_name(elt) for elt in node.elts)
-    return ""
+        names: set[str] = set()
+        for elt in node.elts:
+            names.update(_exception_names(elt))
+        return names
+    return set()
 
 
 def test_app_main_telegram_webhook_does_not_use_catch_all_handler():
     tree = ast.parse(APP_MAIN.read_text())
     route = _function_named(tree, "telegram_webhook")
 
-    caught_names = {
-        _exception_name(handler.type)
-        for handler in ast.walk(route)
-        if isinstance(handler, ast.ExceptHandler)
-    }
+    caught_names: set[str] = set()
+    for handler in ast.walk(route):
+        if isinstance(handler, ast.ExceptHandler):
+            caught_names.update(_exception_names(handler.type))
 
+    assert "bare-except" not in caught_names
     assert "Exception" not in caught_names
     assert "BaseException" not in caught_names
     assert "TELEGRAM_WEBHOOK_EXPECTED_ERRORS" in caught_names
