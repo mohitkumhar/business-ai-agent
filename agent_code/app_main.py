@@ -629,14 +629,19 @@ def get_employees():
         res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
         counts = get_assigned_counts()
         if res.status_code != 200:
+            logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
             return jsonify(
                 {
                     "employees": [
-                        {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
-                        {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
-                    ]
+                        {"login": "engineer_a", ...},
+                        {"login": "engineer_b", ...},
+                    ],
+                    "degraded": True,
+                    "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
                 }
             )
+    
+       
         contributors = res.json()
         return jsonify(
             {
