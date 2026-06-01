@@ -97,3 +97,83 @@ def test_categories_requires_token(client, recorded_queries):
     resp = client.get("/api/dashboard/categories")
     assert resp.status_code == 401
     assert recorded_queries == []
+
+
+# ---------------------------------------------------------------------------
+# /api/dashboard/financial-overview  (issue #224)
+# ---------------------------------------------------------------------------
+
+def test_financial_overview_requires_token(client, recorded_queries):
+    resp = client.get("/api/dashboard/financial-overview")
+    assert resp.status_code == 401
+    assert recorded_queries == []
+
+
+def test_financial_overview_rejects_email_fallback(client, recorded_queries):
+    resp = client.get("/api/dashboard/financial-overview?email=attacker@example.com")
+    assert resp.status_code == 401
+    assert recorded_queries == []
+
+
+def test_financial_overview_scoped_to_token_business(client, recorded_queries):
+    resp = client.get("/api/dashboard/financial-overview", headers=_auth(BUSINESS_A))
+    assert resp.status_code == 200
+    assert recorded_queries, "expected a DB query"
+    sql, params = recorded_queries[-1]
+    assert "business_id = %s" in sql
+    assert params[0] == BUSINESS_A
+
+
+# ---------------------------------------------------------------------------
+# /api/dashboard/health-scores  (issue #222)
+# ---------------------------------------------------------------------------
+
+def test_health_scores_requires_token(client, recorded_queries):
+    resp = client.get("/api/dashboard/health-scores")
+    assert resp.status_code == 401
+    assert recorded_queries == []
+
+
+def test_health_scores_rejects_email_fallback(client, recorded_queries):
+    resp = client.get("/api/dashboard/health-scores?email=attacker@example.com")
+    assert resp.status_code == 401
+    assert recorded_queries == []
+
+
+def test_health_scores_scoped_to_token_business(client, recorded_queries):
+    resp = client.get("/api/dashboard/health-scores", headers=_auth(BUSINESS_A))
+    assert resp.status_code == 200
+    assert recorded_queries, "expected a DB query"
+    sql, params = recorded_queries[-1]
+    assert "business_id = %s" in sql
+    assert params[0] == BUSINESS_A
+
+
+# ---------------------------------------------------------------------------
+# /api/dashboard/sales-trend  (issue #220)
+# ---------------------------------------------------------------------------
+
+def test_sales_trend_requires_token(client, recorded_queries):
+    resp = client.get("/api/dashboard/sales-trend?period=this_month")
+    assert resp.status_code == 401
+    assert recorded_queries == []
+
+
+def test_sales_trend_rejects_email_fallback(client, recorded_queries):
+    resp = client.get(
+        "/api/dashboard/sales-trend?period=this_month&email=attacker@example.com"
+    )
+    assert resp.status_code == 401
+    assert recorded_queries == []
+
+
+def test_sales_trend_scoped_to_token_business(client, recorded_queries):
+    resp = client.get(
+        "/api/dashboard/sales-trend?period=this_month",
+        headers=_auth(BUSINESS_A),
+    )
+    assert resp.status_code == 200
+    assert recorded_queries, "expected a DB query"
+    sql, params = recorded_queries[-1]
+    assert "business_id = %s" in sql
+    assert params[0] == BUSINESS_A
