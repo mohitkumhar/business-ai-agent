@@ -75,7 +75,6 @@ export interface AlertsBySeverity { labels: string[]; data: number[]; }
 export interface TopProducts { labels: string[]; stock: number[]; margin: number[]; margin_amount?: number[]; margin_pct?: number[]; }
 export interface EmployeeStats { labels: string[]; counts: number[]; avg_salary: number[]; }
 export interface SalesTarget { business_name: string; current_revenue: number; target_revenue: number; percentage: number; }
-export interface Alert { alert_id: number; created_at: string; alert_type: string; severity: string; message: string; status: string; }
 export interface HealthScore { name: string; overall: number; cash: number; profitability: number; growth: number; cost_control: number; risk: number; }
 export interface HealthScores { businesses: string[]; scores: HealthScore[]; }
 
@@ -124,12 +123,45 @@ function escapeCsvCell(cell: string): string {
 }
 
 // --- API Wrapper Object ---
+// --- API Wrapper Object ---
 function getHeaders() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
+  const token =
+    typeof window !== "undefined"
+      ? localStorage.getItem("profit_pilot_token")
+      : null;
+
   return {
     "Content-Type": "application/json",
-    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   } as HeadersInit;
+}
+
+async function safeFetchJson<T>(
+  url: string,
+  options?: RequestInit
+): Promise<T> {
+  const res = await fetch(url, options);
+
+  if (!res.ok) {
+    const contentType = res.headers.get("content-type") || "";
+
+    let message = `HTTP ${res.status}`;
+
+    try {
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        message = data?.message || JSON.stringify(data);
+      } else {
+        message = await res.text();
+      }
+    } catch {
+      // Ignore parsing failures
+    }
+
+    throw new Error(message);
+  }
+
+  return res.json();
 }
 
 export const api = {
@@ -140,27 +172,34 @@ export const api = {
   },
 
   getFinancialOverview: async (period?: string): Promise<FinancialOverview> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`), { headers: getHeaders() });
-    return res.json();
-  },
+  return safeFetchJson<FinancialOverview>(
+    appendUserEmail(
+      `/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`
+    ),
+    { headers: getHeaders() }
+  );
+},
 
-  getSalesTarget: async (period: string): Promise<SalesTarget> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/sales-target?period=${period}`), { headers: getHeaders() });
-    return res.json();
-  },
+getSalesTarget: async (period: string): Promise<SalesTarget> => {
+  return safeFetchJson<SalesTarget>(
+    appendUserEmail(`/api/dashboard/sales-target?period=${period}`),
+    { headers: getHeaders() }
+  );
+},
 
+getRevenueVsExpense: async (period: string) => {
+  return safeFetchJson(
+    appendUserEmail(`/api/dashboard/revenue-vs-expense?period=${period}`)
+  );
+},
 
-  getRevenueVsExpense: async (period: string) => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/revenue-vs-expense?period=${period}`));
-    return res.json();
-  },
+getSalesTrend: async (period: string) => {
+  return safeFetchJson(
+    appendUserEmail(`/api/dashboard/sales-trend?period=${period}`)
+  );
+},
 
-  getSalesTrend: async (period: string) => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/sales-trend?period=${period}`));
-    return res.json();
-  },
-
-  getForecast: async (period: string): Promise<Forecast> => {
+ getForecast: async (period: string): Promise<Forecast> => {
     const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`), { headers: getHeaders() });
     if (!res.ok) {
       const { mockForecast } = await import("./mockData");
@@ -169,34 +208,72 @@ export const api = {
     return res.json();
   },
 
-  getRecentTransactions: async (params: { search?: string; category?: string; limit?: number; period?: string; }) => {
-    const query = new URLSearchParams();
-    if (params.search) query.set("search", params.search);
-    if (params.category) query.set("category", params.category);
-    if (params.limit) query.set("limit", params.limit.toString());
-    if (params.period) query.set("period", params.period);
-    const res = await fetch(appendUserEmail(`/api/dashboard/recent-transactions?${query.toString()}`));
-    return res.json();
-  },
+getRecentTransactions: async (params: {
+  search?: string;
+  category?: string;
+  limit?: number;
+  period?: string;
+}) => {
+  const query = new URLSearchParams();
 
-  getAlertsList: async (period?: string) => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`));
-    return res.json();
-  },
+  if (params.search) query.set("search", params.search);
+  if (params.category) query.set("category", params.category);
+  if (params.limit) query.set("limit", params.limit.toString());
+  if (params.period) query.set("period", params.period);
 
+  return safeFetchJson(
+    appendUserEmail(
+      `/api/dashboard/recent-transactions?${query.toString()}`
+    )
+  );
+},
 
-  getBusinessInfo: async (): Promise<BusinessInfo> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/business-info`));
-    return res.json();
-  },
+getAlertsList: async (period?: string) => {
+  return safeFetchJson(
+    appendUserEmail(
+      `/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`
+    )
+  );
+},
 
-  // Other endpoints
-  getCategories: async () => (await fetch(appendUserEmail(`/api/dashboard/categories`))).json(),
-  getAlertsBySeverity: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`))).json(),
-  getHealthScores: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/health-scores${period ? `?period=${period}` : ""}`))).json(),
-  getTopProducts: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/top-products${period ? `?period=${period}` : ""}`))).json(),
-  getEmployeeStats: async (period?: string) => (await fetch(appendUserEmail(`/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`))).json(),
+getBusinessInfo: async (): Promise<BusinessInfo> => {
+  return safeFetchJson<BusinessInfo>(
+    appendUserEmail(`/api/dashboard/business-info`)
+  );
+},
 
+getCategories: async () =>
+  safeFetchJson(
+    appendUserEmail(`/api/dashboard/categories`)
+  ),
+
+getAlertsBySeverity: async (period?: string) =>
+  safeFetchJson(
+    appendUserEmail(
+      `/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`
+    )
+  ),
+
+getHealthScores: async (period?: string) =>
+  safeFetchJson(
+    appendUserEmail(
+      `/api/dashboard/health-scores${period ? `?period=${period}` : ""}`
+    )
+  ),
+
+getTopProducts: async (period?: string) =>
+  safeFetchJson(
+    appendUserEmail(
+      `/api/dashboard/top-products${period ? `?period=${period}` : ""}`
+    )
+  ),
+
+getEmployeeStats: async (period?: string) =>
+  safeFetchJson(
+    appendUserEmail(
+      `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`
+    )
+  ),
 
   /** Export data as CSV (Restored) */
   exportDashboardCsv: async (period: string) => {
