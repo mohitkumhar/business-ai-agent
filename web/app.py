@@ -428,8 +428,10 @@ def api_alerts_by_severity():
 
 
 @app.route("/api/dashboard/health-scores")
+@token_required
 def api_health_scores():
     """Latest health scores (radar chart)."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
@@ -439,9 +441,11 @@ def api_health_scores():
                    b.business_name
             FROM business_health_scores bhs
             JOIN businesses b ON b.business_id = bhs.business_id
+            WHERE bhs.business_id = %s
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
-            """
+            """,
+            (business_id,),
         )
         return jsonify(
             {
