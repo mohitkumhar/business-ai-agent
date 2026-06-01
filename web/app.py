@@ -378,8 +378,10 @@ def api_transactions_by_category():
 
 
 @app.route("/api/dashboard/sales-trend")
+@token_required
 def api_sales_trend():
     """Daily sales trend – last 7 days for context, highlight last 24 h."""
+    business_id = get_current_business_id()
     cutoff = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
     try:
         rows = _pg_query(
@@ -388,11 +390,12 @@ def api_sales_trend():
                    COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS revenue,
                    COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS expenses
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             GROUP BY transaction_date
             ORDER BY transaction_date
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         return jsonify(
             {
