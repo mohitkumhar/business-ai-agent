@@ -557,16 +557,18 @@ def import_notebook():
 @token_required
 def confirm_notebook():
     """
-    Handles the HTTP request to verify and confirm a notebook configuration.
+    Handles the HTTP request to confirm imported notebook transactions.
 
-    Extracts payload data from the incoming JSON request body and validates
-    that the structure is a valid dictionary format.
+    Extracts payload data from the incoming JSON request body, validates its 
+    structure, and processes the confirmation of transactions.
 
     Returns:
-        tuple: A JSON response containing an error message and a 400 
-        status code if the JSON body is invalid or missing.
+        tuple: A JSON response and an HTTP status code. 
+        - 200: Success response when transactions are confirmed.
+        - 400: If the JSON body is invalid/missing, or if there are no 
+               transactions to confirm.
+        - 500: Internal error response if processing fails.
     """
-
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
