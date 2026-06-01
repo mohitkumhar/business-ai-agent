@@ -540,7 +540,27 @@
             }
         };
     }
+function fallbackCopyText(text) {
+    const textarea = document.createElement("textarea");
 
+    textarea.value = text;
+
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+
+    document.body.appendChild(textarea);
+
+    textarea.focus();
+    textarea.select();
+
+    try {
+        document.execCommand("copy");
+    } catch (err) {
+        console.error("Fallback copy failed:", err);
+    }
+
+    document.body.removeChild(textarea);
+}
     function appendMessage(role, content, timestamp, intentStr) {
         const bubble = document.createElement("div");
         bubble.className = `message-bubble ${role}`;
@@ -556,18 +576,67 @@
             <div class="message-avatar">${avatar}</div>
             <div class="message-body">
                 ${intentHtml}
-                <div class="message-content"></div>
-                <div class="message-time">${timeStr}</div>
+                <div class="message-content-wrapper">
+    <div class="message-content"></div>
+
+    ${role === "assistant" ? `
+        <button class="copy-btn" title="Copy response">
+            <i class="fas fa-copy"></i>
+            <span>Copy</span>
+        </button>
+    ` : ""}
+</div>
+
+<div class="message-time">${timeStr}</div>
             </div>
         `;
 
         const contentDiv = bubble.querySelector(".message-content");
+        const copyBtn = bubble.querySelector(".copy-btn");
         if (role === "assistant") {
             renderMessageContent(contentDiv, content);
         } else {
             contentDiv.textContent = content;
         }
 
+        if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+        const textToCopy = contentDiv.innerText;
+
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+
+            copyBtn.innerHTML = `
+                <i class="fas fa-check"></i>
+                <span>Copied!</span>
+            `;
+
+            setTimeout(() => {
+                copyBtn.innerHTML = `
+                    <i class="fas fa-copy"></i>
+                    <span>Copy</span>
+                `;
+            }, 2000);
+
+        } catch (err) {
+            console.error("Copy failed:", err);
+
+            fallbackCopyText(textToCopy);
+
+            copyBtn.innerHTML = `
+                <i class="fas fa-check"></i>
+                <span>Copied!</span>
+            `;
+
+            setTimeout(() => {
+                copyBtn.innerHTML = `
+                    <i class="fas fa-copy"></i>
+                    <span>Copy</span>
+                `;
+            }, 2000);
+        }
+    });
+}
         chatMessages.appendChild(bubble);
         scrollToBottom();
     }

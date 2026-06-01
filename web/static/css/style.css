@@ -756,3 +756,24 @@ a:hover { text-decoration: underline; }
     animation: shimmer 1.5s infinite;
 }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.message-content-wrapper {
+    position: relative;
+}
+
+.copy-btn {
+    margin-top: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #666;
+    transition: color 0.2s ease;
+    padding: 4px 0;
+}
+
+.copy-btn:hover {
+    color: #000;
+}
