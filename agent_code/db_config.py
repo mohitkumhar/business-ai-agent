@@ -1,4 +1,5 @@
 import os
+import re # SECURITY FIX: Imported re for strict boundary matching
 
 import psycopg2
 import psycopg2.extras
@@ -51,15 +52,8 @@ def get_db_schema() -> str:
         return f"Error reading schema: {str(e)}"
 
 
-_FORBIDDEN = [
-    "insert ",
-    "update ",
-    "delete ",
-    "drop ",
-    "alter ",
-    "truncate ",
-    "create ",
-]
+# SECURITY FIX: Replaced weak string list with strict regex boundary matching
+_FORBIDDEN_PATTERN = re.compile(r'\b(insert|update|delete|drop|alter|truncate|create)\b')
 
 
 def _assert_read_only_select(sql: str) -> str:
@@ -70,9 +64,11 @@ def _assert_read_only_select(sql: str) -> str:
         raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
     if s.count(";") > 0:
         raise ValueError("Multiple SQL statements are not allowed.")
-    for keyword in _FORBIDDEN:
-        if keyword in cleaned:
-            raise ValueError(f"Forbidden SQL keyword detected: {keyword.strip()}")
+    
+    # SECURITY FIX: Execute regex search to catch newline/tab whitespace bypasses
+    if _FORBIDDEN_PATTERN.search(cleaned):
+        raise ValueError("Forbidden SQL keyword detected. Query blocked.")
+        
     return s
 
 
@@ -91,7 +87,6 @@ def explain_validate_select(sql: str) -> None:
             cur.close()
     finally:
         conn.close()
-
 
 
 def execute_read_query(sql: str) -> list[dict]:
@@ -133,3 +128,5 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
         raise RuntimeError(f"SQL execution error: {str(e)}")
     finally:
         conn.close()
+        
+        
