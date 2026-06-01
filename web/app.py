@@ -491,21 +491,25 @@ def api_top_products():
 
 
 @app.route("/api/dashboard/financial-overview")
+@token_required
 def api_financial_overview():
     """Monthly financial records for the most recent months."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
-            SELECT year, month, 
+            SELECT year, month,
                    COALESCE(SUM(total_revenue),0) AS total_revenue,
                    COALESCE(SUM(total_expenses),0) AS total_expenses,
                    COALESCE(SUM(net_profit),0) AS net_profit,
                    COALESCE(SUM(cash_balance),0) AS cash_balance
             FROM financial_records
+            WHERE business_id = %s
             GROUP BY year, month
             ORDER BY year DESC, month DESC
             LIMIT 12
-            """
+            """,
+            (business_id,),
         )
         rows.reverse()
         labels = [f"{r['year']}-{str(r['month']).zfill(2)}" for r in rows]
