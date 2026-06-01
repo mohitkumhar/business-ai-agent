@@ -41,6 +41,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 CORS(app)
 
 AGENT_REQUEST_COUNT = Counter(
