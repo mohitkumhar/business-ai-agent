@@ -40,3 +40,14 @@ def test_app_main_revenue_vs_expense_query_is_tenant_scoped():
     assert "bid = get_current_business_id()" in source
     assert "WHERE business_id = %s AND transaction_date BETWEEN %s AND %s" in source
     assert "(bid, start_date, end_date)" in source
+
+
+def test_app_main_employees_error_response_is_client_safe():
+    source = APP_MAIN.read_text()
+
+    assert '"code": "employees_unavailable"' in source
+    assert '"request_id": request_id' in source
+    assert "SAFE_INTERNAL_ERROR_MESSAGE" in source
+    assert "return internal_error_response(exc)" not in source[
+        source.index("def get_employees") : source.index('@app.route("/api/v1/escalate"')
+    ]

@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any
+from uuid import uuid4
 
 import requests
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ from flask_cors import CORS
 from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
-from api_errors import internal_error_response
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE, internal_error_response
 from db_config import execute_read_query_params, get_db_connection
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
@@ -617,6 +618,10 @@ def increment_assigned_count(username: str):
         json.dump(counts, f)
 
 
+def _request_id() -> str:
+    return request.headers.get("X-Request-Id") or uuid4().hex
+
+
 @app.route("/api/v1/employees", methods=["GET"])
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
@@ -646,7 +651,24 @@ def get_employees():
             }
         )
     except Exception as exc:
-        return internal_error_response(exc)
+        request_id = _request_id()
+        logger.error(
+            "Employees API failed request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
 
 @app.route("/api/v1/escalate", methods=["POST"])
