@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, FinancialOverview } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 
 Chart.register(...registerables);
 
@@ -22,17 +23,15 @@ export default function RevenueInsights() {
 
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const [data, setData] = useState<FinancialOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const loadFinancialOverview = useCallback(
+    () => api.getFinancialOverview(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<FinancialOverview>(
+    `financial-overview:${period}:${dataVersion}`,
+    loadFinancialOverview,
+  );
   const [view, setView] = useState<"monthly" | "yearly">("monthly");
-
-  useEffect(() => {
-    setLoading(true);
-    api.getFinancialOverview(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
 
   const chartPayload = useMemo(() => {
     if (!data) return null;

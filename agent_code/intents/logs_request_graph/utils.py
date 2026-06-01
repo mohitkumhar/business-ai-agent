@@ -28,6 +28,7 @@ load_dotenv()
 
 # Loki connection (Promtail pushes to this same instance)
 LOKI_URL = os.getenv("LOKI_URL", "http://loki:3100")
+LOKI_REQUEST_TIMEOUT = (5, 20)  # connect timeout, read timeout
 
 # LLMs with structured output
 logs_query_parse_llm = base_llm.with_structured_output(LogsQueryParseOutput)
@@ -138,7 +139,7 @@ def fetch_logs(state: LogsRequestGraphState):
                 "limit": str(limit),
                 "direction": "backward",   # newest first
             },
-            timeout=20,
+            timeout=LOKI_REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -174,9 +175,21 @@ def fetch_logs(state: LogsRequestGraphState):
             "log_line_count": log_line_count,
         }
 
+    except requests.exceptions.Timeout:
+        error_msg = (
+            f"Timed out fetching logs from Loki at {LOKI_URL} "
+            f"after connect/read timeouts {LOKI_REQUEST_TIMEOUT}."
+        )
+        logger.error(f"[logs] {error_msg}", exc_info=True)
+        return {
+            "raw_logs": "",
+            "fetch_error": error_msg,
+            "has_results": False,
+            "log_line_count": 0,
+        }
     except requests.exceptions.ConnectionError:
         error_msg = f"Cannot connect to Loki at {LOKI_URL}. Is Loki running?"
-        logger.error(f"[logs] {error_msg}")
+        logger.error(f"[logs] {error_msg}", exc_info=True)
         return {
             "raw_logs": "",
             "fetch_error": error_msg,
