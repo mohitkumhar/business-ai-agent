@@ -410,6 +410,23 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
+    """
+    Creates a new business and associated user account during the
+    onboarding process.
+
+    Expects a JSON request body containing business and user details,
+    including the business name and email address. The function validates
+    required fields, generates a unique business identifier, and stores
+    the business and user records in the database.
+
+    Returns:
+        Response: A JSON response indicating success or failure of the
+        onboarding operation.
+
+    Raises:
+        Exception: Any unexpected database or application error is caught
+        and returned as an internal error response.
+    """
     data = request.json
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
@@ -511,19 +528,20 @@ def import_transactions():
 @token_required
 def import_notebook():
     """
-    Import a notebook file for the current business.
+    Import a notebook image and extract transaction data for preview.
 
-    Expects a notebook file to be uploaded in the request under the
-    'file' field. The uploaded notebook is processed and associated
-    with the current business context.
+    The endpoint accepts an uploaded file through the ``file`` request
+    field, generates a hash to detect duplicate imports, processes the
+    image using OCR, and returns the extracted transactions without
+    permanently storing them.
 
     Returns:
-        Response: JSON response indicating success or failure of the
-        notebook import operation.
+        Response: A JSON response containing the extracted transaction
+        preview data or an error message if the import fails.
 
     Raises:
-        Exception: Any unexpected error encountered during processing
-        is logged and returned as an error response.
+        Exception: Any unexpected processing error is logged and
+        returned as an internal error response.
     """
     if "file" not in request.files: return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
