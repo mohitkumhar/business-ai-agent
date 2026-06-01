@@ -315,8 +315,10 @@ def api_dashboard_summary():
 
 
 @app.route("/api/dashboard/revenue-vs-expense")
+@token_required
 def api_revenue_vs_expense():
     """Hourly revenue vs expense for the last 24 h (grouped by category)."""
+    business_id = get_current_business_id()
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
     try:
         rows = _pg_query(
@@ -324,11 +326,12 @@ def api_revenue_vs_expense():
             SELECT category, type,
                    COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         revenue_cats = {}
         expense_cats = {}
