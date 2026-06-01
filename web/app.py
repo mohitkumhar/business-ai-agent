@@ -13,7 +13,9 @@ import time
 import sqlite3
 import requests
 from datetime import datetime, timedelta
+from functools import wraps
 
+import jwt
 import psycopg2
 import psycopg2.extras
 from flask import (
@@ -46,6 +48,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://admin:root@localhost:5432/test_db"
 )
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
+JWT_SECRET = os.getenv("JWT_SECRET")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key-change-me")
@@ -83,6 +86,35 @@ DASHBOARD_API_ERRORS = Counter(
     "Total errors from dashboard data API",
     ["endpoint"],
 )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# JWT authentication
+# ═══════════════════════════════════════════════════════════════════
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        scheme, _, token = auth_header.partition(" ")
+        if scheme.lower() != "bearer" or not token.strip():
+            return jsonify({"message": "Authorization header must use Bearer token"}), 401
+        if not JWT_SECRET:
+            return jsonify({"message": "Server misconfiguration: JWT_SECRET not set"}), 500
+        try:
+            payload = jwt.decode(token.strip(), JWT_SECRET, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Invalid authentication token"}), 401
+        user_id = payload.get("user_id")
+        business_id = payload.get("business_id")
+        if not user_id or not business_id:
+            return jsonify({"message": "Token is missing required identity claims"}), 401
+        g.user_id = str(user_id)
+        g.business_id = str(business_id)
+        return f(*args, **kwargs)
+    return decorated
 
 
 @app.before_request
@@ -248,8 +280,10 @@ def api_dashboard_summary():
 
 
 @app.route("/api/dashboard/revenue-vs-expense")
+@token_required
 def api_revenue_vs_expense():
     """Hourly revenue vs expense for the last 24 h (grouped by category)."""
+    bid = g.business_id
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
     try:
         rows = _pg_query(
@@ -257,11 +291,11 @@ def api_revenue_vs_expense():
             SELECT category, type,
                    COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date >= %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (bid, cutoff),
         )
         revenue_cats = {}
         expense_cats = {}
@@ -286,19 +320,21 @@ def api_revenue_vs_expense():
 
 
 @app.route("/api/dashboard/transactions-by-category")
+@token_required
 def api_transactions_by_category():
     """Pie chart data: transaction count by category (last 24 h)."""
+    bid = g.business_id
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
     try:
         rows = _pg_query(
             """
             SELECT category, COUNT(*) as cnt
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date >= %s
             GROUP BY category
             ORDER BY cnt DESC
             """,
-            (cutoff,),
+            (bid, cutoff),
         )
         return jsonify(
             {
@@ -311,8 +347,10 @@ def api_transactions_by_category():
 
 
 @app.route("/api/dashboard/sales-trend")
+@token_required
 def api_sales_trend():
     """Daily sales trend – last 7 days for context, highlight last 24 h."""
+    bid = g.business_id
     cutoff = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
     try:
         rows = _pg_query(
@@ -321,11 +359,11 @@ def api_sales_trend():
                    COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS revenue,
                    COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS expenses
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date >= %s
             GROUP BY transaction_date
             ORDER BY transaction_date
             """,
-            (cutoff,),
+            (bid, cutoff),
         )
         return jsonify(
             {
@@ -361,8 +399,10 @@ def api_alerts_by_severity():
 
 
 @app.route("/api/dashboard/health-scores")
+@token_required
 def api_health_scores():
     """Latest health scores (radar chart)."""
+    bid = g.business_id
     try:
         rows = _pg_query(
             """
@@ -372,9 +412,11 @@ def api_health_scores():
                    b.business_name
             FROM business_health_scores bhs
             JOIN businesses b ON b.business_id = bhs.business_id
+            WHERE bhs.business_id = %s
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
-            """
+            """,
+            (bid,),
         )
         return jsonify(
             {
@@ -424,21 +466,25 @@ def api_top_products():
 
 
 @app.route("/api/dashboard/financial-overview")
+@token_required
 def api_financial_overview():
     """Monthly financial records for the most recent months."""
+    bid = g.business_id
     try:
         rows = _pg_query(
             """
-            SELECT year, month, 
+            SELECT year, month,
                    COALESCE(SUM(total_revenue),0) AS total_revenue,
                    COALESCE(SUM(total_expenses),0) AS total_expenses,
                    COALESCE(SUM(net_profit),0) AS net_profit,
                    COALESCE(SUM(cash_balance),0) AS cash_balance
             FROM financial_records
+            WHERE business_id = %s
             GROUP BY year, month
             ORDER BY year DESC, month DESC
             LIMIT 12
-            """
+            """,
+            (bid,),
         )
         rows.reverse()
         labels = [f"{r['year']}-{str(r['month']).zfill(2)}" for r in rows]
@@ -543,10 +589,15 @@ def api_sales_target():
 
 
 @app.route("/api/dashboard/categories")
+@token_required
 def api_categories():
     """List distinct categories for filter dropdown."""
+    bid = g.business_id
     try:
-        rows = _pg_query("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
+        rows = _pg_query(
+            "SELECT DISTINCT category FROM daily_transactions WHERE business_id = %s ORDER BY category",
+            (bid,),
+        )
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
