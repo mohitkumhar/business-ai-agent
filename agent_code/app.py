@@ -68,7 +68,6 @@ IMPORT_RATE_LIMIT = os.getenv("RATE_LIMIT_IMPORT", "20 per hour")
 
 # --- Authentication Logic ---
 def token_required(f):
-    def token_required(f):
     """
     Decorator that validates a JWT token before allowing access to a protected route.
 
