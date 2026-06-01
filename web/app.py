@@ -353,19 +353,22 @@ def api_revenue_vs_expense():
 
 
 @app.route("/api/dashboard/transactions-by-category")
+@token_required
 def api_transactions_by_category():
     """Pie chart data: transaction count by category (last 24 h)."""
+    business_id = get_current_business_id()
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
     try:
         rows = _pg_query(
             """
             SELECT category, COUNT(*) as cnt
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             GROUP BY category
             ORDER BY cnt DESC
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         return jsonify(
             {
