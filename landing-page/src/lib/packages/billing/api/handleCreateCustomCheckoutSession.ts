@@ -15,12 +15,18 @@ export const createCustomCheckoutSessionInputSchema = z.object({
 
 export const handleCreateCustomCheckoutSession = async ({
   input,
-  context: { user },
+  context,
 }: {
   input: z.infer<typeof createCustomCheckoutSessionInputSchema>;
-  context: { user: Pick<User, "email" | "id"> };
+  context: {
+    user?: Pick<User, "email" | "id"> | null;
+    authenticate?: () => Promise<Pick<User, "email" | "id"> | null>;
+  };
 }) => {
   const { workspaceId, returnUrl, email } = input;
+  const user = context.user ?? (await context.authenticate?.());
+  if (!user)
+    throw new ORPCError("UNAUTHORIZED", { message: "You must be logged in" });
 
   if (!env.STRIPE_SECRET_KEY)
     throw new ORPCError("INTERNAL_SERVER_ERROR", {

@@ -18,12 +18,18 @@ export const updateSubscriptionInputSchema = z.object({
 
 export const handleUpdateSubscription = async ({
   input,
-  context: { user },
+  context,
 }: {
   input: z.infer<typeof updateSubscriptionInputSchema>;
-  context: { user: Pick<User, "email" | "id"> };
+  context: {
+    user?: Pick<User, "email" | "id"> | null;
+    authenticate?: () => Promise<Pick<User, "email" | "id"> | null>;
+  };
 }) => {
   const { workspaceId, plan, returnUrl } = input;
+  const user = context.user ?? (await context.authenticate?.());
+  if (!user)
+    throw new ORPCError("UNAUTHORIZED", { message: "You must be logged in" });
 
   if (!env.STRIPE_SECRET_KEY)
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
