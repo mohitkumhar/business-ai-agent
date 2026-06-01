@@ -9,8 +9,13 @@ from collections.abc import Callable, Iterator
 from langgraph.types import Command
 
 from nodes import intent_detection
-from nodes.intent_detection import map_app_intent_to_high_level, order_intents_for_execution
-from intents.general_information_graph.subgraph import general_information_graph_workflow
+from nodes.intent_detection import (
+    map_app_intent_to_high_level,
+    order_intents_for_execution,
+)
+from intents.general_information_graph.subgraph import (
+    general_information_graph_workflow,
+)
 from intents.database_request_graph.subgraph import database_request_graph_workflow
 from intents.logs_request_graph.subgraph import logs_request_graph_workflow
 from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
@@ -142,7 +147,9 @@ def _user_visible_body_from_graph_state(vals: dict) -> str:
     return ""
 
 
-def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names, resume_input=None):
+def _stream_graph(
+    workflow, initial_state, config, intent_dict, final_node_names, resume_input=None
+):
     intent_str = ",".join(intent_dict["intent"])
     clarification = None
     streamed_chars = 0
@@ -154,7 +161,9 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
         yield f"data: {json.dumps({'type': 'status', 'status': _start_label, 'node': '__start__', 'intent_str': intent_str})}\n\n"
         yield f"data: {json.dumps({'type': 'node_status', 'node': '__start__', 'message': _start_label, 'intent_str': intent_str, 'ts': utc_iso()})}\n\n"
 
-        for event in workflow.stream(inputs, config, stream_mode=["messages", "updates"]):
+        for event in workflow.stream(
+            inputs, config, stream_mode=["messages", "updates"]
+        ):
             mode = event[0]
             if mode == "messages":
                 chunk, metadata = event[1]
@@ -170,7 +179,11 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
                     friendly_name = node_name.replace("_", " ").title()
                     label_msg = SSE_NODE_LABELS.get(
                         node_name,
-                        f"✅ Completed: {friendly_name}" if node_name not in final_node_names else "✨ Almost done…",
+                        (
+                            f"✅ Completed: {friendly_name}"
+                            if node_name not in final_node_names
+                            else "✨ Almost done…"
+                        ),
                     )
                     if node_name not in final_node_names:
                         yield f"data: {json.dumps({'type': 'status', 'status': label_msg, 'node': node_name, 'intent_str': intent_str})}\n\n"
@@ -179,7 +192,7 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
                     yield f"data: {json.dumps({'type': 'node_status', 'node': node_name, 'message': label_msg, 'intent_str': intent_str, 'ts': utc_iso()})}\n\n"
         state = workflow.get_state(config)
         if state and state.next:
-            for task in (state.tasks or []):
+            for task in state.tasks or []:
                 if hasattr(task, "interrupts") and task.interrupts:
                     clarification = task.interrupts[0].value
                     break
@@ -197,7 +210,7 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
 
     except Exception as exc:
         logger.error(f"Error during stream: {exc}", exc_info=True)
-        yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_str})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again.', 'intent_str': intent_str})}\n\n"
 
 
 def _chain_thread_config(base_thread_id: str, step_index: int) -> dict:
@@ -262,9 +275,7 @@ def _invoke_intent_workflow(
 
     uq = input_query
     if chain_prior:
-        uq = (
-            f"{input_query}\n\n---\nContext from earlier steps in this same request:\n{chain_prior}"
-        )
+        uq = f"{input_query}\n\n---\nContext from earlier steps in this same request:\n{chain_prior}"
     if intent_name == "logs_request":
         initial = {"user_query": uq, "messages": [{"role": "user", "content": uq}]}
         return logs_request_graph_workflow.invoke(initial, config=cfg)
@@ -333,9 +344,7 @@ def _stream_single_intent(
 
     uq = input_query
     if chain_prior:
-        uq = (
-            f"{input_query}\n\n---\nContext from earlier steps in this same request:\n{chain_prior}"
-        )
+        uq = f"{input_query}\n\n---\nContext from earlier steps in this same request:\n{chain_prior}"
 
     if intent_name == "logs_request":
         initial = {"user_query": uq, "messages": [{"role": "user", "content": uq}]}
@@ -409,7 +418,9 @@ def stream_agent_sse_lines(
             exc_info=True,
         )
 
-    logger.info(f"No pending interrupt for thread_id: '{thread_id}'. Starting intent detection.")
+    logger.info(
+        f"No pending interrupt for thread_id: '{thread_id}'. Starting intent detection."
+    )
     intent = intent_detection.detect_intent(input_query)
     ordered = order_intents_for_execution(intent.get("intent") or [])
     intent["intent"] = ordered
@@ -418,7 +429,9 @@ def stream_agent_sse_lines(
     for intent_name in ordered:
         if intent_name not in _SUPPORTED_CHAIN:
             logger.warning(
-                "Unsupported intent in chain '%s' for query: '%s'", intent_name, input_query
+                "Unsupported intent in chain '%s' for query: '%s'",
+                intent_name,
+                input_query,
             )
             yield f"data: {json.dumps({'type': 'error', 'error': f'Intent {intent_name} is not supported.', 'intent_str': ','.join(ordered)})}\n\n"
             return
@@ -428,13 +441,21 @@ def stream_agent_sse_lines(
         n = len(ordered)
         intent_dict = {"intent": ordered}
         intent_str_joined = ",".join(ordered)
-        id_label = SSE_NODE_LABELS.get("intent_detection", "🔍 Understanding your question…")
+        id_label = SSE_NODE_LABELS.get(
+            "intent_detection", "🔍 Understanding your question…"
+        )
         yield f"data: {json.dumps({'type': 'status', 'status': id_label, 'node': 'intent_detection', 'intent_str': intent_str_joined})}\n\n"
         yield f"data: {json.dumps({'type': 'node_status', 'node': 'intent_detection', 'message': id_label, 'intent_str': intent_str_joined, 'ts': utc_iso()})}\n\n"
         yield f"data: {json.dumps({'type': 'chain_start', 'intents': ordered, 'total_steps': n})}\n\n"
 
         for idx, intent_name in enumerate(ordered):
-            logger.info("Chain step %s/%s: %s for thread_id=%s", idx + 1, n, intent_name, thread_id)
+            logger.info(
+                "Chain step %s/%s: %s for thread_id=%s",
+                idx + 1,
+                n,
+                intent_name,
+                thread_id,
+            )
             if on_chain_intent:
                 on_chain_intent(intent_name)
             cfg = _chain_thread_config(thread_id, idx)
@@ -456,11 +477,16 @@ def stream_agent_sse_lines(
                         exc,
                         exc_info=True,
                     )
-                    yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_name})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again.', 'intent_str': intent_name})}\n\n"
                     return
                 except Exception as exc:
-                    logger.error("Chained invoke failed at %s: %s", intent_name, exc, exc_info=True)
-                    yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_name})}\n\n"
+                    logger.error(
+                        "Chained invoke failed at %s: %s",
+                        intent_name,
+                        exc,
+                        exc_info=True,
+                    )
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again.', 'intent_str': intent_name})}\n\n"
                     return
                 artifact = _artifact_for_chain(result, intent_name)
                 prior = (prior + artifact).strip()
@@ -476,7 +502,12 @@ def stream_agent_sse_lines(
                         cfg,
                     )
                 except Exception as exc:
-                    logger.error("Chained stream failed at %s: %s", intent_name, exc, exc_info=True)
-                    yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_name})}\n\n"
+                    logger.error(
+                        "Chained stream failed at %s: %s",
+                        intent_name,
+                        exc,
+                        exc_info=True,
+                    )
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred. Please try again.', 'intent_str': intent_name})}\n\n"
 
     yield from generate_chained()
