@@ -510,6 +510,21 @@ def import_transactions():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def import_notebook():
+    """
+    Import a notebook file for the current business.
+
+    Expects a notebook file to be uploaded in the request under the
+    'file' field. The uploaded notebook is processed and associated
+    with the current business context.
+
+    Returns:
+        Response: JSON response indicating success or failure of the
+        notebook import operation.
+
+    Raises:
+        Exception: Any unexpected error encountered during processing
+        is logged and returned as an error response.
+    """
     if "file" not in request.files: return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
     bid = get_current_business_id()
