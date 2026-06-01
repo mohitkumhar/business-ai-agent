@@ -1258,6 +1258,29 @@ def get_business_info():
 @app.route("/api/dashboard/sales-target", methods=["GET", "OPTIONS"])
 @token_required
 def api_sales_target():
+    """
+    Endpoint that returns the current month's sales target progress for the
+    authenticated business.
+
+    Auth Context:
+        Protected by @token_required; business_id is sourced from Flask's g
+        via get_current_business_id().
+
+    Response Shape (JSON):
+        {
+            "current_revenue": float,  # Revenue earned so far this month
+            "target_revenue":  float,  # Monthly target set for the business
+            "percentage":      float   # Progress as a rounded percentage
+        }
+
+    Empty-State Behavior:
+        If no business_id is found or no matching record exists, returns
+        default values: current_revenue=0, target_revenue=100000, percentage=0.
+
+    Failure Behavior:
+        Any unexpected database or runtime error is handled by
+        internal_error_response, which returns a standardized JSON error response.
+    """
     bid = get_current_business_id()
     if not bid: return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
     try:
