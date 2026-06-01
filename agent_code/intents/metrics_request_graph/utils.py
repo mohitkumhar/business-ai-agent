@@ -20,6 +20,7 @@ from intents.metrics_request_graph.structures import (
     MetricsQueryParseOutput,
     MetricsAnalysisOutput,
 )
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 
 load_dotenv()
 
@@ -175,7 +176,7 @@ def fetch_metrics(state: MetricsRequestGraphState):
             logger.error(f"[metrics] PromQL '{promql}' failed: {exc}", exc_info=True)
             all_results.append({
                 "query": promql,
-                "error": str(exc),
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
             })
 
     has_any = any(r.get("result") for r in all_results if "error" not in r)

@@ -23,6 +23,7 @@ from intents.logs_request_graph.structures import (
     LogsQueryParseOutput,
     LogsAnalysisOutput,
 )
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 
 load_dotenv()
 
@@ -200,7 +201,7 @@ def fetch_logs(state: LogsRequestGraphState):
         logger.error(f"[logs] fetch_logs failed: {exc}", exc_info=True)
         return {
             "raw_logs": "",
-            "fetch_error": str(exc),
+            "fetch_error": SAFE_INTERNAL_ERROR_MESSAGE,
             "has_results": False,
             "log_line_count": 0,
         }
