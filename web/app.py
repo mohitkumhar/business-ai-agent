@@ -610,10 +610,15 @@ def api_sales_target():
 
 
 @app.route("/api/dashboard/categories")
+@token_required
 def api_categories():
     """List distinct categories for filter dropdown."""
+    business_id = get_current_business_id()
     try:
-        rows = _pg_query("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
+        rows = _pg_query(
+            "SELECT DISTINCT category FROM daily_transactions WHERE business_id = %s ORDER BY category",
+            (business_id,),
+        )
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
