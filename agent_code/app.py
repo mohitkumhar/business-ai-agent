@@ -68,6 +68,23 @@ IMPORT_RATE_LIMIT = os.getenv("RATE_LIMIT_IMPORT", "20 per hour")
 
 # --- Authentication Logic ---
 def token_required(f):
+    def token_required(f):
+    """
+    Decorator that validates a JWT token before allowing access to a protected route.
+
+    Token Validation Flow:
+        Reads the Authorization header and calls decode_jwt_identity to verify
+        the JWT. On success, stores user_id and business_id in Flask's request
+        context (g) for downstream use.
+
+    Wrapped Function Behavior:
+        If authentication succeeds, the decorated route function is called
+        normally with its original arguments.
+
+    Failure Responses:
+        Returns a JSON response with the AuthError message and corresponding
+        HTTP status code (e.g. 401) if the token is missing, invalid, or expired.
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
         try:
