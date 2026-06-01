@@ -84,6 +84,18 @@ def token_required(f):
     return decorated
 
 def get_current_business_id():
+    """
+    Helper that retrieves the active business ID from Flask's request context.
+
+    Source:
+        The business_id is populated in Flask's g object by the token_required
+        decorator during authenticated request handling.
+
+    Returns:
+        str: The business_id string if an authenticated request context exists.
+        None: If no business context is available (e.g. outside a request or
+              unauthenticated call).
+    """
     return getattr(g, "business_id", None)
 
 @app.route("/api/auth/signup", methods=["POST"])
