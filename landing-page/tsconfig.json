@@ -12,11 +12,14 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "noImplicitAny": false,
+    "types": ["node"],
     "lib": [
       "esnext",
       "dom",
       "DOM.Iterable"
     ],
+    "ignoreDeprecations": "6.0",
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
@@ -38,11 +41,14 @@
       "@typebot.io/emails/*": [
         "./src/lib/packages/emails/*"
       ],
-      "@typebot.io/env/*": [
-        "./src/lib/packages/env/*"
+      "@typebot.io/env": [
+        "./src/lib/packages/env/index.ts"
       ],
       "@typebot.io/lib/*": [
         "./src/lib/packages/lib/*"
+      ],
+      "@typebot.io/prisma": [
+        "./src/lib/packages/prisma/index.ts"
       ],
       "@typebot.io/prisma/*": [
         "./src/lib/packages/prisma/*"
@@ -59,8 +65,8 @@
       "@typebot.io/telemetry/*": [
         "./src/lib/packages/telemetry/*"
       ],
-      "@typebot.io/templates/*": [
-        "./src/lib/packages/templates/*"
+      "@typebot.io/templates": [
+        "./src/lib/packages/templates/index.ts"
       ],
       "@typebot.io/ui/*": [
         "./src/lib/packages/ui/*"

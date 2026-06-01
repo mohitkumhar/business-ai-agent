@@ -12,12 +12,18 @@ export const getBillingPortalUrlInputSchema = z.object({
 
 export const handleGetBillingPortalUrl = async ({
   input,
-  context: { user },
+  context,
 }: {
   input: z.infer<typeof getBillingPortalUrlInputSchema>;
-  context: { user: Pick<User, "email" | "id"> };
+  context: {
+    user?: Pick<User, "email" | "id"> | null;
+    authenticate?: () => Promise<Pick<User, "email" | "id"> | null>;
+  };
 }) => {
   const { workspaceId } = input;
+  const user = context.user ?? (await context.authenticate?.());
+  if (!user)
+    throw new ORPCError("UNAUTHORIZED", { message: "You must be logged in" });
 
   if (!env.STRIPE_SECRET_KEY)
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
