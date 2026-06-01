@@ -148,8 +148,25 @@ def _ensure_whatsapp_tables():
     finally:
         conn.close()
 
+_whatsapp_tables_initialized = False
 
-_ensure_whatsapp_tables()
+def _initialize_whatsapp_tables_safe():
+    global _whatsapp_tables_initialized
+
+    if _whatsapp_tables_initialized:
+        return
+
+    try:
+        _ensure_whatsapp_tables()
+        _whatsapp_tables_initialized = True
+        logger.info("WhatsApp tables initialized successfully.")
+    except Exception as exc:
+        logger.warning(
+            "WhatsApp table initialization failed: %s",
+            exc
+        )
+
+
 try:
     from slack_integration.flask_routes import register_slack_routes
 
@@ -1030,8 +1047,8 @@ def get_business_info():
     finally:
         conn.close()
 
-
 if __name__ == "__main__":
+    _initialize_whatsapp_tables_safe()
     logger.info("Starting Flask development server.")
     app.run(host="0.0.0.0", port=5000, debug=True)
 from flask import Flask, request, jsonify, Response, stream_with_context, g
@@ -1259,3 +1276,4 @@ def api_chat_send():
 _init_chat_db()
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+    
