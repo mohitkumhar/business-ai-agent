@@ -698,7 +698,14 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
+    """Verify WhatsApp webhook requests using the configured verify token.
+
+    Returns the challenge string when the supplied verification token matches
+    the configured WhatsApp verify token. Returns a 403 response when the
+    token validation fails.
+    """
+    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
+        return request.args.get("hub.challenge"), 200
     return "failed", 403
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
