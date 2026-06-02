@@ -89,7 +89,14 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
-    data = request.json
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({
+            "error": "Invalid or missing JSON body"
+        }), 400
+
+    email = data.get("email", "").lower().strip()
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -133,7 +140,15 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
-    data = request.json
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({
+            "message": "Invalid or missing JSON body"
+        }), 400
+
+    email = data.get("email", "").lower().strip()
+    password = data.get("password")
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -678,7 +693,15 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({
+            "error": "Invalid or missing JSON body"
+        }), 400
+
+    business_name = data.get("business_name")
+    email = data.get("email", "").lower().strip()
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -883,7 +906,23 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({
+            "error": "Invalid or missing JSON body"
+        }), 400
+
+    msg = data.get("message")
+    conv_id = data.get("conversation_id") or str(uuid.uuid4())
+    bid = get_current_business_id()
+
+    return Response(
+        stream_with_context(
+            stream_agent_sse_lines(msg, conv_id, bid)
+        ),
+        mimetype="text/event-stream"
+    )
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
