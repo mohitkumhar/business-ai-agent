@@ -303,9 +303,12 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
 
     response = "".join(chunks).strip()
     if response:
-        return response
+       return response
+
     if fallback_error:
-        return f"Sorry, I hit an error: {fallback_error}"
+       logger.error("Agent execution failed: %s", fallback_error)
+       return "Sorry, I couldn't complete your request."
+
     return "I could not generate a response."
 
 def _send_telegram_text(chat_id: int, text: str) -> None:
