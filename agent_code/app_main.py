@@ -76,6 +76,14 @@ def get_current_business_id():
     return getattr(g, "business_id", None)
 
 
+def _request_id() -> str:
+    request_id = (getattr(g, "request_id", None) or "").strip()
+    if not request_id:
+        request_id = uuid4().hex
+        g.request_id = request_id
+    return request_id
+
+
 @app.before_request
 def _start_timer():
     g.start_time = time.time()
@@ -90,7 +98,7 @@ def _record_metrics(response):
     endpoint = request.endpoint or "unknown"
     AGENT_REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     AGENT_REQUEST_LATENCY.labels(request.method, endpoint).observe(latency)
-    response.headers["X-Request-ID"] = getattr(g, "request_id", "")
+    response.headers["X-Request-ID"] = _request_id()
     return response
 
 
