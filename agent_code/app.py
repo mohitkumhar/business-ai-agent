@@ -824,6 +824,17 @@ def import_notebook():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def confirm_notebook():
+    """
+    Handles the HTTP request to verify and confirm a notebook configuration.
+
+    Extracts payload data from the incoming JSON request body and validates
+    that the structure is a valid dictionary format.
+
+    Returns:
+        tuple: A JSON response containing an error message and a 400 
+        status code if the JSON body is invalid or missing.
+    """
+
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
