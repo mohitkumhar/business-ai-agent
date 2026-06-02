@@ -28,16 +28,12 @@ def _resolve_business_id(state: DatabaseRequestGraphState) -> str:
         raw = (state.get("business_id") or os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
         if raw and _UUID_PATTERN.match(raw):
             return raw
-        for sql in (
-            "SELECT business_id FROM businesses LIMIT 1",
-            "SELECT business_id FROM business LIMIT 1",
-        ):
-            try:
-                rows = execute_read_query(sql)
-                if rows and len(rows) > 0:
-                    return str(rows[0].get("business_id", ""))
-            except Exception:
-                continue
+        try:
+            rows = execute_read_query("SELECT business_id FROM businesses LIMIT 1")
+            if rows and len(rows) > 0:
+                return str(rows[0].get("business_id", ""))
+        except Exception:
+            pass
         return ""
     except Exception as e:
         logger.warning("[WARN] Could not resolve business_id: %s. Proceeding without it.", e)
@@ -70,29 +66,19 @@ def fetch_financial_context(state: DatabaseRequestGraphState):
         }
 
     business_profile: dict | None = None
-    for profile_sql in (
-        f"""
+    profile_sql = f"""
 SELECT business_id, business_name, industry_type, owner_name,
        monthly_target_revenue, risk_appetite
 FROM businesses
 WHERE business_id = '{bid}'::uuid
 LIMIT 1
-""".strip(),
-        f"""
-SELECT business_id, business_name, industry_type, owner_name,
-       monthly_target_revenue, risk_appetite
-FROM business
-WHERE business_id = '{bid}'::uuid
-LIMIT 1
-""".strip(),
-    ):
-        try:
-            prof_rows = execute_read_query(profile_sql)
-            if prof_rows:
-                business_profile = prof_rows[0]
-                break
-        except Exception:
-            continue
+""".strip()
+    try:
+        prof_rows = execute_read_query(profile_sql)
+        if prof_rows:
+            business_profile = prof_rows[0]
+    except Exception:
+        pass
 
     sql = f"""
 SELECT
@@ -111,28 +97,8 @@ WHERE fr.business_id = '{bid}'::uuid
 ORDER BY fr.year DESC, fr.month DESC
 LIMIT 24
 """.strip()
-    sql_fallback = f"""
-SELECT
-  fr.business_id,
-  b.business_name,
-  fr.total_revenue,
-  fr.total_expenses,
-  fr.net_profit,
-  fr.cash_balance,
-  fr.loans_due,
-  fr.month,
-  fr.year
-FROM financial_records fr
-INNER JOIN business b ON fr.business_id = b.business_id
-WHERE fr.business_id = '{bid}'::uuid
-ORDER BY fr.year DESC, fr.month DESC
-LIMIT 24
-""".strip()
     try:
-        try:
-            rows = execute_read_query(sql)
-        except Exception:
-            rows = execute_read_query(sql_fallback)
+        rows = execute_read_query(sql)
         payload = {
             "business_id": bid,
             "business_profile": business_profile,
