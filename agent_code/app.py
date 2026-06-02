@@ -1256,7 +1256,15 @@ def get_business_info():
                 business_name,
                 industry_type,
                 owner_name,
-                monthly_target_revenue
+                city,
+                business_age,
+                employees_range,
+                monthly_revenue,
+                biggest_challenge,
+                finance_tracking_method,
+                onboarding_notes,
+                user_name,
+                user_email
             FROM businesses
             WHERE business_id = %s
             """,
