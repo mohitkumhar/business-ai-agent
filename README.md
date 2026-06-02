@@ -279,7 +279,55 @@ pip install -r requirements.txt
 python app.py
 # Runs on http://localhost:5001 — full SQL dashboard APIs
 ```
+---
 
+## 🖥️ Local Development Workflow
+
+When running without Docker, each service needs its own terminal. Start them in this order:
+
+> **Before anything else:** make sure Ollama is running on your host machine with the required model pulled:
+> ```bash
+> ollama pull llama3.2:3b
+> ollama serve
+> ```
+
+### Terminal 1 — Flask Agent Backend (start first)
+
+```bash
+cd agent_code
+source .venv/bin/activate      # Linux/Mac
+# .venv\Scripts\activate       # Windows
+
+python app.py
+# Running on http://localhost:5000
+```
+
+### Terminal 2 — Next.js Dashboard (start after backend is up)
+
+```bash
+cd dashboard
+npm run dev
+# Running on http://localhost:3001
+```
+
+### Terminal 3 — Landing Page (optional, only if working on onboarding)
+
+```bash
+cd landing-page
+npm run dev
+# Running on http://localhost:5173
+```
+
+### Startup order summary
+
+| Order | Service | Directory | Port |
+|-------|---------|-----------|------|
+| 1st | Ollama (host machine) | — | 11434 |
+| 2nd | Flask Agent | `agent_code/` | 5000 |
+| 3rd | Next.js Dashboard | `dashboard/` | 3001 |
+| 4th | Landing Page (optional) | `landing-page/` | 5173 |
+
+> The dashboard proxies all `/api/*` requests to the Flask agent, so the agent must be running before you open the dashboard or it will show connection errors.
 ---
 
 ## 🗄️ Database Setup
