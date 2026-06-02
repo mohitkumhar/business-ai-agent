@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, SalesTrend as SalesTrendData } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 import { LineChartIcon } from "./Icons";
 
 Chart.register(...registerables);
@@ -14,16 +15,14 @@ export default function SalesTrend() {
   const { theme } = useTheme();
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const [data, setData] = useState<SalesTrendData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.getSalesTrend(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
+  const loadSalesTrend = useCallback(
+    () => api.getSalesTrend(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<SalesTrendData>(
+    `sales-trend:${period}:${dataVersion}`,
+    loadSalesTrend,
+  );
 
   useEffect(() => {
     if (!data || !chartRef.current) return;

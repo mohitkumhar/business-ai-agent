@@ -123,9 +123,11 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(s, params or ())
-        results = cur.fetchall()
-        cur.close()
+        try:
+            cur.execute(s, params or ())
+            results = cur.fetchall()
+        finally:
+            cur.close()
         return [dict(row) for row in results]
     except Exception as e:
         raise RuntimeError(f"SQL execution error: {str(e)}")
