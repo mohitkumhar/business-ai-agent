@@ -778,6 +778,22 @@ def import_transactions():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def import_notebook():
+        """
+    Import a notebook image and extract transaction data for preview.
+
+    The endpoint accepts an uploaded file through the ``file`` request
+    field, generates a hash to detect duplicate imports, processes the
+    image using OCR, and returns the extracted transactions without
+    permanently storing them.
+
+    Returns:
+        Response: A JSON response containing the extracted transaction
+        preview data or an error message if the import fails.
+
+    Raises:
+        Exception: Any unexpected processing error is logged and
+        returned as an internal error response.
+    """
     if "file" not in request.files: return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
     bid = get_current_business_id()
