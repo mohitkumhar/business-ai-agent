@@ -7,6 +7,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import requests
 from dotenv import load_dotenv
@@ -53,6 +54,7 @@ DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 @app.before_request
 def _start_timer():
     g.start_time = time.time()
+    g.request_id = (request.headers.get("X-Request-ID") or "").strip() or uuid4().hex
 
 
 @app.after_request
@@ -63,6 +65,7 @@ def _record_metrics(response):
     endpoint = request.endpoint or "unknown"
     AGENT_REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     AGENT_REQUEST_LATENCY.labels(request.method, endpoint).observe(latency)
+    response.headers["X-Request-ID"] = getattr(g, "request_id", "")
     return response
 
 

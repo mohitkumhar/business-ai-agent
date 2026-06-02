@@ -16,6 +16,7 @@ def test_internal_error_response_hides_raw_exception_message():
 
     assert status == 500
     assert response.get_json() == {"error": api_errors.SAFE_INTERNAL_ERROR_MESSAGE}
+    assert response.headers["X-Request-ID"] == "req-123"
     assert "secret" not in response.get_data(as_text=True)
     assert "internal.example" not in response.get_data(as_text=True)
 
@@ -29,6 +30,7 @@ def test_internal_error_response_supports_message_field_for_auth_routes():
 
     assert status == 500
     assert response.get_json() == {"message": api_errors.SAFE_INTERNAL_ERROR_MESSAGE}
+    assert response.headers["X-Request-ID"] == "req-123"
 
 
 def test_api_routes_do_not_return_raw_exception_strings_for_500s():
@@ -43,6 +45,7 @@ def _load_api_errors_with_fake_flask():
     class FakeResponse:
         def __init__(self, payload):
             self._payload = payload
+            self.headers = {}
 
         def get_json(self):
             return self._payload
@@ -52,6 +55,7 @@ def _load_api_errors_with_fake_flask():
             return data if as_text else data.encode()
 
     fake_flask = types.ModuleType("flask")
+    fake_flask.g = types.SimpleNamespace(request_id="req-123")
     fake_flask.jsonify = lambda payload: FakeResponse(payload)
     sys.modules["flask"] = fake_flask
     sys.modules.pop("agent_code.api_errors", None)
