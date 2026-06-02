@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import { api, BusinessInfo } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import type { DashboardPeriod } from "@/lib/dashboardPeriod";
@@ -61,7 +62,7 @@ export default function WelcomeBanner() {
             className="filter-dropdown"
             style={{ appearance: "none", paddingRight: "12px" }}
             value={period}
-            onChange={(e: any) => setPeriod(e.target.value as DashboardPeriod)}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => setPeriod(e.target.value as DashboardPeriod)}
             aria-label="Reporting period"
           >
             <option value="this_month">This Month</option>

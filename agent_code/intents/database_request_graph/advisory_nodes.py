@@ -23,6 +23,17 @@ _UUID_PATTERN = re.compile(
 )
 
 
+def _log_query_failure(operation: str, table_name: str, exc: Exception) -> None:
+    logger.warning(
+        "Database query failed | operation=%s table=%s error_type=%s error_message=%s",
+        operation,
+        table_name,
+        type(exc).__name__,
+        str(exc),
+        exc_info=True,
+    )
+
+
 def _resolve_business_id(state: DatabaseRequestGraphState) -> str:
     try:
         raw = (state.get("business_id") or os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
@@ -34,9 +45,30 @@ def _resolve_business_id(state: DatabaseRequestGraphState) -> str:
                 return str(rows[0].get("business_id", ""))
         except Exception:
             pass
+        for table_name, sql in (
+            ("businesses", "SELECT business_id FROM businesses LIMIT 1"),
+            ("business", "SELECT business_id FROM business LIMIT 1"),
+        ):
+            try:
+                rows = execute_read_query(sql)
+                if rows and len(rows) > 0:
+                    return str(rows[0].get("business_id", ""))
+            except Exception as exc:
+                _log_query_failure(
+                    operation="resolve_business_id_lookup",
+                    table_name=table_name,
+                    exc=exc,
+                )
+                continue
         return ""
     except Exception as e:
-        logger.warning("[WARN] Could not resolve business_id: %s. Proceeding without it.", e)
+        logger.warning(
+            "[WARN] Could not resolve business_id. operation=%s error_type=%s error_message=%s. Proceeding without it.",
+            "resolve_business_id",
+            type(e).__name__,
+            str(e),
+            exc_info=True,
+        )
         return ""
 
 
@@ -67,6 +99,10 @@ def fetch_financial_context(state: DatabaseRequestGraphState):
 
     business_profile: dict | None = None
     profile_sql = f"""
+    for table_name, profile_sql in (
+        (
+            "businesses",
+            f"""
 SELECT business_id, business_name, industry_type, owner_name,
        monthly_target_revenue, risk_appetite
 FROM businesses
@@ -79,6 +115,31 @@ LIMIT 1
             business_profile = prof_rows[0]
     except Exception:
         pass
+""".strip(),
+        ),
+        (
+            "business",
+            f"""
+SELECT business_id, business_name, industry_type, owner_name,
+       monthly_target_revenue, risk_appetite
+FROM business
+WHERE business_id = '{bid}'::uuid
+LIMIT 1
+""".strip(),
+        ),
+    ):
+        try:
+            prof_rows = execute_read_query(profile_sql)
+            if prof_rows:
+                business_profile = prof_rows[0]
+                break
+        except Exception as exc:
+            _log_query_failure(
+                operation="fetch_financial_context_profile_lookup",
+                table_name=table_name,
+                exc=exc,
+            )
+            continue
 
     sql = f"""
 SELECT
@@ -99,6 +160,23 @@ LIMIT 24
 """.strip()
     try:
         rows = execute_read_query(sql)
+        try:
+            rows = execute_read_query(sql)
+        except Exception as exc:
+            _log_query_failure(
+                operation="fetch_financial_context_primary_query",
+                table_name="financial_records + businesses",
+                exc=exc,
+            )
+            try:
+                rows = execute_read_query(sql_fallback)
+            except Exception as fallback_exc:
+                _log_query_failure(
+                    operation="fetch_financial_context_fallback_query",
+                    table_name="financial_records + business",
+                    exc=fallback_exc,
+                )
+                raise
         payload = {
             "business_id": bid,
             "business_profile": business_profile,
