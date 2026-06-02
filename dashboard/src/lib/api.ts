@@ -93,7 +93,6 @@ function getHeaders() {
   } as HeadersInit;
 }
 
-<<<<<<< HEAD
 async function safeFetchJson<T>(
   url: string,
   options?: RequestInit
@@ -120,7 +119,16 @@ async function safeFetchJson<T>(
   }
 
   return res.json();
-=======
+
+function getHeaders() {
+  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+  } as HeadersInit;
+
+}
+
 function getAuthHeaders() {
   const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
   return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
@@ -137,7 +145,6 @@ async function readJsonOrThrow<T>(input: RequestInfo | URL, init?: RequestInit):
 
 function chatApiPath(path: string): string {
   return AGENT_API_BASE ? `${AGENT_API_BASE}${path}` : path;
->>>>>>> upstream/main
 }
 
 export const api = {
@@ -148,7 +155,6 @@ export const api = {
   },
 
   getFinancialOverview: async (period?: string): Promise<FinancialOverview> => {
-<<<<<<< HEAD
   return safeFetchJson<FinancialOverview>(
     appendUserEmail(
       `/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`
@@ -163,7 +169,6 @@ getSalesTarget: async (period: string): Promise<SalesTarget> => {
     { headers: getHeaders() }
   );
 },
-=======
     const res = await fetch(`/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`, { headers: getHeaders() });
     return res.json();
   },
@@ -172,7 +177,7 @@ getSalesTarget: async (period: string): Promise<SalesTarget> => {
     const res = await fetch(`/api/dashboard/sales-target?period=${period}`, { headers: getHeaders() });
     return res.json();
   },
->>>>>>> upstream/main
+
 
 getRevenueVsExpense: async (period: string) => {
   return safeFetchJson(
@@ -180,7 +185,6 @@ getRevenueVsExpense: async (period: string) => {
   );
 },
 
-<<<<<<< HEAD
 getSalesTrend: async (period: string) => {
   return safeFetchJson(
     appendUserEmail(`/api/dashboard/sales-trend?period=${period}`)
@@ -189,20 +193,7 @@ getSalesTrend: async (period: string) => {
 
  getForecast: async (period: string): Promise<Forecast> => {
     const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`), { headers: getHeaders() });
-=======
-  getRevenueVsExpense: async (period: string) => {
-    const res = await fetch(`/api/dashboard/revenue-vs-expense?period=${period}`, { headers: getHeaders() });
-    return res.json();
-  },
 
-  getSalesTrend: async (period: string) => {
-    const res = await fetch(`/api/dashboard/sales-trend?period=${period}`, { headers: getHeaders() });
-    return res.json();
-  },
-
-  getForecast: async (period: string): Promise<Forecast> => {
-    const res = await fetch(`/api/dashboard/forecast?period=${period}`, { headers: getHeaders() });
->>>>>>> upstream/main
     if (!res.ok) {
       const { mockForecast } = await import("./mockData");
       return mockForecast;
@@ -210,35 +201,6 @@ getSalesTrend: async (period: string) => {
     return res.json();
   },
 
-<<<<<<< HEAD
-getRecentTransactions: async (params: {
-  search?: string;
-  category?: string;
-  limit?: number;
-  period?: string;
-}) => {
-  const query = new URLSearchParams();
-
-  if (params.search) query.set("search", params.search);
-  if (params.category) query.set("category", params.category);
-  if (params.limit) query.set("limit", params.limit.toString());
-  if (params.period) query.set("period", params.period);
-=======
-  getRecentTransactions: async (params: { search?: string; category?: string; limit?: number; period?: string; }) => {
-    const query = new URLSearchParams();
-    if (params.search) query.set("search", params.search);
-    if (params.category) query.set("category", params.category);
-    if (params.limit) query.set("limit", params.limit.toString());
-    if (params.period) query.set("period", params.period);
-    const res = await fetch(`/api/dashboard/recent-transactions?${query.toString()}`, { headers: getHeaders() });
-    return res.json();
-  },
-
-  getAlertsList: async (period?: string) => {
-    const res = await fetch(`/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`, { headers: getHeaders() });
-    return res.json();
-  },
->>>>>>> upstream/main
 
   return safeFetchJson(
     appendUserEmail(
@@ -247,7 +209,7 @@ getRecentTransactions: async (params: {
   );
 },
 
-<<<<<<< HEAD
+
 getAlertsList: async (period?: string) => {
   return safeFetchJson(
     appendUserEmail(
@@ -261,19 +223,8 @@ getBusinessInfo: async (): Promise<BusinessInfo> => {
     appendUserEmail(`/api/dashboard/business-info`)
   );
 },
-=======
-  getBusinessInfo: async (): Promise<BusinessInfo> => {
-    const res = await fetch(`/api/dashboard/business-info`, { headers: getHeaders() });
-    return res.json();
-  },
 
-  // Other endpoints
-  getCategories: async () => (await fetch(`/api/dashboard/categories`, { headers: getHeaders() })).json(),
-  getAlertsBySeverity: async (period?: string) => (await fetch(`/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
-  getHealthScores: async (period?: string) => (await fetch(`/api/dashboard/health-scores${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
-  getTopProducts: async (period?: string) => (await fetch(`/api/dashboard/top-products${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
-  getEmployeeStats: async (period?: string) => (await fetch(`/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`, { headers: getHeaders() })).json(),
->>>>>>> upstream/main
+ 
 
 getCategories: async () =>
   safeFetchJson(
@@ -307,6 +258,9 @@ getEmployeeStats: async (period?: string) =>
       `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`
     )
   ),
+=======
+
+
 
   /** Export data as CSV (Restored) */
   exportDashboardCsv: async (period: string) => {
