@@ -575,6 +575,17 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
 
 # --- Helper Functions (From Kushal-Dev) ---
 def get_period_dates(period):
+    """Returns start and end dates based on the given period.
+
+    Args:
+        period (str): The time period, one of 'this_month', 'last_month', 'last_7_days', 'last_30_days', or 'ytd'.
+
+    Returns:
+        tuple: A tuple of (start_date, end_date) as datetime.date objects.
+
+    Note:
+        If an invalid period is provided, defaults to 'last_30_days'.
+    """
     end_date = date.today()
     if period == "this_month":
         start_date = end_date.replace(day=1)
