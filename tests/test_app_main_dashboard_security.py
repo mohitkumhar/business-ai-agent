@@ -40,3 +40,12 @@ def test_app_main_revenue_vs_expense_query_is_tenant_scoped():
     assert "bid = get_current_business_id()" in source
     assert "WHERE business_id = %s AND transaction_date BETWEEN %s AND %s" in source
     assert "(bid, start_date, end_date)" in source
+
+
+def test_app_main_financial_overview_is_tenant_scoped():
+    source = APP_MAIN.read_text()
+
+    assert '@app.route("/api/dashboard/financial-overview", methods=["GET", "OPTIONS"])' in source
+    assert "@token_required" in source
+    assert "WHERE business_id = %s" in source
+    assert "(bid,)" in source

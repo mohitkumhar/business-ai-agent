@@ -719,7 +719,9 @@ def api_dashboard_summary():
 
 
 @app.route("/api/dashboard/financial-overview", methods=["GET", "OPTIONS"])
+@token_required
 def api_financial_overview():
+    bid = get_current_business_id()
     try:
         rows = execute_read_query_params(
             """
@@ -729,10 +731,12 @@ def api_financial_overview():
                    COALESCE(SUM(net_profit),0) AS net_profit,
                    COALESCE(SUM(cash_balance),0) AS cash_balance
             FROM financial_records
+            WHERE business_id = %s
             GROUP BY year, month
             ORDER BY year DESC, month DESC
             LIMIT 12
-            """
+            """,
+            (bid,)
         )
         rows = list(rows)
         rows.reverse()
