@@ -1,28 +1,28 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import { ChatbotIcon } from "@/components/Icons";
-import { streamChatSend } from "@/lib/api";
+import {
+  appendChatMessage,
+  listChatConversations,
+  removeChatConversation,
+  upsertChatConversation,
+} from "@/lib/api";
+import {
+  clearPendingDelete,
+  createConversation,
+  deriveTitle,
+  loadConversations,
+  loadPendingDeletes,
+  mergeConversations,
+  queuePendingDelete,
+  saveConversations,
+  savePendingDeletes,
+  type ChatConversation,
+  type ChatMessage,
+} from "@/lib/chatHistory";
 import MessageRenderer from "@/components/MessageRenderer";
-
-/* ─── Types ─── */
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  intent?: string;
-  timestamp: number;
-}
-
-interface Conversation {
-  id: string;
-  title: string;
-  messages: Message[];
-  createdAt: number;
-  updatedAt: number;
-}
 
 interface CompletedNode {
   name: string;
@@ -35,51 +35,23 @@ type AgentStatus =
   | { kind: "streaming"; label: string; node?: string }
   | { kind: "clarification"; text: string };
 
-/* ─── Local-storage helpers ─── */
-const STORAGE_KEY = "iba_chat_history";
-
-function loadConversations(): Conversation[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveConversations(conversations: Conversation[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-  } catch { /* quota exceeded */ }
-}
-
-function createConversation(): Conversation {
-  return {
-    id: crypto.randomUUID(),
-    title: "New Chat",
-    messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-}
-
-function deriveTitle(msg: string): string {
-  const trimmed = msg.trim();
-  return trimmed.length > 40 ? trimmed.slice(0, 40) + "…" : trimmed;
-}
-
 function friendlyNodeName(node: string): string {
   return node.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+type SyncStatus =
+  | { kind: "loading"; label: string }
+  | { kind: "syncing"; label: string }
+  | { kind: "synced"; label: string }
+  | { kind: "local"; label: string };
+
 /* ─── Component ─── */
 export default function ChatbotPage() {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [status, setStatus] = useState<AgentStatus>({ kind: "idle" });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({ kind: "loading", label: "Loading history…" });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [completedNodes, setCompletedNodes] = useState<CompletedNode[]>([]);
 
@@ -99,27 +71,133 @@ export default function ChatbotPage() {
   const abortRef = useRef<AbortController | null>(null);
   const lastStreamActivityRef = useRef<number>(0);
   const streamWatchdogFiredRef = useRef(false);
-
-  /* Load from localStorage on mount */
-  useEffect(() => {
-    const saved = loadConversations();
-    if (saved.length > 0) {
-      setConversations(saved);
-      setActiveId(saved[0].id);
-    } else {
+  const applyConversationState = useCallback((nextConversations: ChatConversation[], preferredId?: string | null) => {
+    if (nextConversations.length === 0) {
       const fresh = createConversation();
       setConversations([fresh]);
       setActiveId(fresh.id);
+      return;
     }
+
+    setConversations(nextConversations);
+    setActiveId((current) => {
+      const desiredId = preferredId ?? current;
+      return desiredId && nextConversations.some((conversation) => conversation.id === desiredId)
+        ? desiredId
+        : nextConversations[0].id;
+    });
   }, []);
+
+  const syncStoredHistory = useCallback(
+    async (sourceConversations: ChatConversation[], label = "Syncing history…") => {
+      const pendingDeletes = loadPendingDeletes();
+      const conversationsToSync = sourceConversations.filter(
+        (conversation) => conversation.messages.length > 0 && !pendingDeletes.includes(conversation.id)
+      );
+
+      if (pendingDeletes.length === 0 && conversationsToSync.length === 0) {
+        setSyncStatus({ kind: "synced", label: "Synced" });
+        return;
+      }
+
+      setSyncStatus({ kind: "syncing", label });
+
+      const remainingDeletes: string[] = [];
+      let hadSyncError = false;
+
+      for (const conversationId of pendingDeletes) {
+        try {
+          await removeChatConversation(conversationId);
+        } catch {
+          hadSyncError = true;
+          remainingDeletes.push(conversationId);
+        }
+      }
+
+      savePendingDeletes(remainingDeletes);
+
+      for (const conversation of conversationsToSync) {
+        try {
+          await upsertChatConversation(conversation);
+        } catch {
+          hadSyncError = true;
+        }
+      }
+
+      setSyncStatus(
+        hadSyncError
+          ? { kind: "local", label: "Offline (Local only)" }
+          : { kind: "synced", label: "Synced" }
+      );
+    },
+    []
+  );
+
+  /* Load from localStorage on mount, then reconcile with backend */
+  useEffect(() => {
+    const pendingDeletes = loadPendingDeletes();
+    const localConversations = loadConversations().filter(
+      (conversation) => !pendingDeletes.includes(conversation.id)
+    );
+
+    applyConversationState(localConversations);
+    if (localConversations.length > 0 || pendingDeletes.length > 0) {
+      setSyncStatus({ kind: "local", label: "Syncing cached history…" });
+    }
+
+    let cancelled = false;
+
+    const hydrateFromBackend = async () => {
+      try {
+        setSyncStatus({ kind: "syncing", label: "Syncing history…" });
+        const remoteConversations = (await listChatConversations()).filter(
+          (conversation) => !pendingDeletes.includes(conversation.id)
+        );
+        if (cancelled) return;
+
+        const mergedConversations = mergeConversations(remoteConversations, localConversations);
+        applyConversationState(mergedConversations);
+        await syncStoredHistory(mergedConversations);
+      } catch {
+        if (!cancelled) {
+          setSyncStatus({ kind: "local", label: "Offline (Local only)" });
+        }
+      }
+    };
+
+    void hydrateFromBackend();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyConversationState, syncStoredHistory]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      void syncStoredHistory(conversations, "Back online — syncing…");
+    };
+    const handleOffline = () => {
+      setSyncStatus({ kind: "local", label: "Offline (Local only)" });
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [conversations, syncStoredHistory]);
 
   /* Persist whenever conversations change */
   useEffect(() => {
     if (conversations.length > 0) saveConversations(conversations);
   }, [conversations]);
 
-  const activeConv = conversations.find((c) => c.id === activeId);
-  const messages = activeConv?.messages ?? [];
+  const activeConv = useMemo(
+    () => conversations.find((conversation) => conversation.id === activeId) ?? null,
+    [conversations, activeId]
+  );
+  const messages = useMemo(() => activeConv?.messages ?? [], [activeConv]);
 
   /* Auto-scroll */
   const scrollToBottom = useCallback(() => {
@@ -129,7 +207,7 @@ export default function ChatbotPage() {
 
   /* Conversation mutators */
   const updateActiveMessages = useCallback(
-    (updater: (prev: Message[]) => Message[]) => {
+    (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
       setConversations((convs) =>
         convs.map((c) =>
           c.id === activeId
@@ -192,7 +270,7 @@ export default function ChatbotPage() {
           .then(d => { if (d.employees) setEmployees(d.employees); })
           .catch(console.error);
       }
-    } catch (error) {
+    } catch {
       alert("Error escalating conversation.");
     }
   }, [messages]);
@@ -209,6 +287,7 @@ export default function ChatbotPage() {
 
   const deleteChat = useCallback(
     (id: string) => {
+      queuePendingDelete(id);
       setConversations((prev) => {
         const filtered = prev.filter((c) => c.id !== id);
         if (filtered.length === 0) {
@@ -219,6 +298,14 @@ export default function ChatbotPage() {
         if (id === activeId) setActiveId(filtered[0].id);
         return filtered;
       });
+      void removeChatConversation(id)
+        .then(() => {
+          clearPendingDelete(id);
+          setSyncStatus({ kind: "synced", label: "Synced" });
+        })
+        .catch(() => {
+          setSyncStatus({ kind: "local", label: "Offline (Delete pending)" });
+        });
     },
     [activeId]
   );
@@ -226,19 +313,42 @@ export default function ChatbotPage() {
   /* ─── Send message & consume SSE stream ─── */
   const sendMessage = useCallback(async () => {
     const userMsg = input.trim();
-    if (!userMsg || status.kind !== "idle" || !activeId) return;
+    if (!userMsg || status.kind !== "idle" || !activeId || !activeConv) return;
 
     const now = Date.now();
+    const assistantTimestamp = now + 1;
+    const conversationTitle = messages.length === 0 ? deriveTitle(userMsg) : activeConv.title;
+    const createdAt = activeConv.createdAt || now;
+    const userMessage: ChatMessage = {
+      role: "user",
+      content: userMsg,
+      timestamp: now,
+    };
+    let assistantContent = "";
+    let assistantIntent: string | null = null;
+    let shouldPersistAssistant = false;
+
     setInput("");
     setCompletedNodes([]);
 
-    if (messages.length === 0) setActiveTitle(deriveTitle(userMsg));
+    if (messages.length === 0) setActiveTitle(conversationTitle);
 
     updateActiveMessages((prev) => [
       ...prev,
-      { role: "user", content: userMsg, timestamp: now },
-      { role: "assistant", content: "", timestamp: now + 1 },
+      userMessage,
+      { role: "assistant", content: "", timestamp: assistantTimestamp },
     ]);
+    setSyncStatus({ kind: "syncing", label: "Saving chat…" });
+    void appendChatMessage(activeId, conversationTitle, userMessage, {
+      createdAt,
+      updatedAt: now,
+    })
+      .then(() => {
+        setSyncStatus({ kind: "synced", label: "Synced" });
+      })
+      .catch(() => {
+        setSyncStatus({ kind: "local", label: "Offline (Local only)" });
+      });
 
     setStatus({ kind: "connecting" });
     streamWatchdogFiredRef.current = false;
@@ -252,10 +362,14 @@ export default function ChatbotPage() {
         "thread-id": activeId,
       });
 
+      const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
       const res = await fetch(`/api/chat?${params.toString()}`, {
         method: "POST",
         signal: ctrl.signal,
-        headers: { Accept: "text/event-stream" },
+        headers: {
+          Accept: "text/event-stream",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
 
       if (!res.ok || !res.body) {
@@ -307,6 +421,7 @@ export default function ChatbotPage() {
                   break;
                 }
                 case "token":
+                  assistantContent += evt.content;
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
@@ -321,6 +436,9 @@ export default function ChatbotPage() {
                   break;
 
                 case "clarification":
+                  assistantContent = evt.clarification;
+                  assistantIntent = evt.intent_str ?? null;
+                  shouldPersistAssistant = true;
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
@@ -337,6 +455,8 @@ export default function ChatbotPage() {
                   break;
 
                 case "final":
+                  assistantIntent = evt.intent_str ?? null;
+                  shouldPersistAssistant = assistantContent.trim().length > 0;
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
@@ -349,13 +469,16 @@ export default function ChatbotPage() {
                   break;
 
                 case "error":
+                  shouldPersistAssistant = false;
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
                     if (last?.role === "assistant") {
+                      const nextContent = last.content || `⚠ Error: ${evt.error}`;
+                      assistantContent = nextContent;
                       updated[updated.length - 1] = {
                         ...last,
-                        content: last.content || `⚠ Error: ${evt.error}`,
+                        content: nextContent,
                       };
                     }
                     return updated;
@@ -367,6 +490,28 @@ export default function ChatbotPage() {
           }
         }
       }
+
+      if (shouldPersistAssistant && assistantContent.trim()) {
+        setSyncStatus({ kind: "syncing", label: "Syncing reply…" });
+        await upsertChatConversation({
+          id: activeId,
+          title: conversationTitle,
+          createdAt,
+          updatedAt: Math.max(assistantTimestamp, Date.now()),
+          messages: [
+            ...messages,
+            userMessage,
+            {
+              role: "assistant",
+              content: assistantContent,
+              intent: assistantIntent,
+              timestamp: assistantTimestamp,
+            },
+          ],
+        });
+        setSyncStatus({ kind: "synced", label: "Synced" });
+      }
+
       setStatus((cur) => (cur.kind === "idle" ? cur : { kind: "idle" }));
     } catch (err: unknown) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
@@ -379,15 +524,17 @@ export default function ChatbotPage() {
               ...last,
               content: last.content || `Error: Could not reach the AI agent. ${errMsg}`,
             };
+            assistantContent = updated[updated.length - 1].content;
           }
           return updated;
         });
+        setSyncStatus({ kind: "local", label: "Offline (Local only)" });
       }
       setStatus({ kind: "idle" });
     } finally {
       abortRef.current = null;
     }
-  }, [input, status.kind, activeId, messages.length, updateActiveMessages, setActiveTitle]);
+  }, [input, status.kind, activeId, activeConv, messages, updateActiveMessages, setActiveTitle]);
 
   const cancelStream = useCallback(() => {
     abortRef.current?.abort();
@@ -506,6 +653,36 @@ export default function ChatbotPage() {
                 </>
               ) : null}
             </p>
+            <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: syncStatus.kind === "local" ? "#b45309" : "#475569",
+                  background: syncStatus.kind === "local" ? "rgba(245, 158, 11, 0.12)" : "rgba(148, 163, 184, 0.12)",
+                  borderRadius: "999px",
+                  padding: "4px 10px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "999px",
+                    background:
+                      syncStatus.kind === "synced"
+                        ? "#16a34a"
+                        : syncStatus.kind === "syncing" || syncStatus.kind === "loading"
+                          ? "#2563eb"
+                          : "#f59e0b",
+                  }}
+                />
+                {syncStatus.label}
+              </span>
+            </div>
           </div>
 
           <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
@@ -557,7 +734,7 @@ export default function ChatbotPage() {
                         <>
                           <MessageRenderer
                             content={msg.content}
-                            intent={msg.intent}
+                            intent={msg.intent ?? undefined}
                             onFollowUpClick={(q) => {
                               setInput(q);
                               setTimeout(() => {

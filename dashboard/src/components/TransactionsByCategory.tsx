@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, RevenueVsExpense } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 import { PieChartIcon } from "./Icons";
 
 Chart.register(...registerables);
@@ -15,17 +16,14 @@ export default function TransactionsByCategory() {
   
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const [data, setData] = useState<RevenueVsExpense | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // dataVersion ko dependency mein rakha taaki import ke baad refresh ho
-  useEffect(() => {
-    setLoading(true);
-    api.getRevenueVsExpense(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
+  const loadRevenueVsExpense = useCallback(
+    () => api.getRevenueVsExpense(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<RevenueVsExpense>(
+    `transactions-by-category:${period}:${dataVersion}`,
+    loadRevenueVsExpense,
+  );
 
   useEffect(() => {
     if (!data || !chartRef.current) return;

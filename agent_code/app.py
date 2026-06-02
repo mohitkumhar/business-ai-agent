@@ -18,7 +18,7 @@ import bcrypt
 import hashlib
 from functools import wraps
 import numpy as np
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 
@@ -193,10 +193,26 @@ def _get_chat_db():
     if "chat_db" not in g:
         g.chat_db = sqlite3.connect(CHAT_DB_PATH)
         g.chat_db.row_factory = sqlite3.Row
+        g.chat_db.execute("PRAGMA foreign_keys = ON")
     return g.chat_db
+
+@app.teardown_appcontext
+def _close_chat_db(_exc):
+    db = g.pop("chat_db", None)
+    if db is not None:
+        db.close()
+
+def _chat_table_columns(db: sqlite3.Connection, table_name: str) -> set[str]:
+    return {row["name"] for row in db.execute(f"PRAGMA table_info({table_name})")}
+
+def _ensure_chat_table_column(db: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+    if column_name not in _chat_table_columns(db, table_name):
+        db.execute(f"ALTER TABLE {table_name} ADD COLUMN {definition}")
 
 def _init_chat_db():
     db = sqlite3.connect(CHAT_DB_PATH)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS conversations (
             conversation_id TEXT PRIMARY KEY,
@@ -214,7 +230,259 @@ def _init_chat_db():
             FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id)
         );
     """)
+    _ensure_chat_table_column(db, "conversations", "business_id", "business_id TEXT NOT NULL DEFAULT ''")
+    _ensure_chat_table_column(db, "conversations", "user_id", "user_id TEXT NOT NULL DEFAULT ''")
+    _ensure_chat_table_column(db, "conversations", "client_created_at", "client_created_at INTEGER")
+    _ensure_chat_table_column(db, "conversations", "client_updated_at", "client_updated_at INTEGER")
+    _ensure_chat_table_column(db, "messages", "client_timestamp", "client_timestamp INTEGER")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_owner "
+        "ON conversations (business_id, user_id, client_updated_at DESC, updated_at DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_conversation "
+        "ON messages (conversation_id, client_timestamp, message_id)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedupe "
+        "ON messages (conversation_id, role, client_timestamp)"
+    )
+    db.commit()
     db.close()
+
+def _parse_sqlite_timestamp(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return int(time.time() * 1000)
+    if isinstance(value, str):
+        for parser in (
+            lambda raw: datetime.fromisoformat(raw.replace("Z", "+00:00")),
+            lambda raw: datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc),
+        ):
+            try:
+                parsed = parser(value)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return int(parsed.timestamp() * 1000)
+            except ValueError:
+                continue
+    return int(time.time() * 1000)
+
+def _to_sqlite_timestamp(value: int | None) -> str:
+    if value is None:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+def _normalize_client_timestamp(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("timestamp must be an integer") from exc
+
+def _normalize_chat_message(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("message payload is required")
+
+    role = (payload.get("role") or "").strip()
+    if role not in {"user", "assistant"}:
+        raise ValueError("message role must be 'user' or 'assistant'")
+
+    content = str(payload.get("content") or "").strip()
+    if not content:
+        raise ValueError("message content is required")
+
+    return {
+        "role": role,
+        "content": content,
+        "intent": payload.get("intent"),
+        "timestamp": _normalize_client_timestamp(payload.get("timestamp")),
+    }
+
+def _chat_payload_error(exc: ValueError):
+    message = exc.args[0] if exc.args else "Invalid chat payload"
+    return jsonify({"error": message}), 400
+
+def _chat_owner_filter() -> tuple[str, str]:
+    return getattr(g, "business_id", ""), getattr(g, "user_id", "")
+
+def _get_conversation_row(
+    db: sqlite3.Connection,
+    conversation_id: str,
+    *,
+    business_id: str,
+    user_id: str,
+) -> sqlite3.Row | None:
+    return db.execute(
+        """
+        SELECT conversation_id, title, business_id, user_id, created_at, updated_at,
+               client_created_at, client_updated_at
+        FROM conversations
+        WHERE conversation_id = ? AND business_id = ? AND user_id = ?
+        """,
+        (conversation_id, business_id, user_id),
+    ).fetchone()
+
+def _serialize_chat_message(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "role": row["role"],
+        "content": row["content"],
+        "intent": row["intent"],
+        "timestamp": _normalize_client_timestamp(row["client_timestamp"]) or _parse_sqlite_timestamp(row["created_at"]),
+    }
+
+def _serialize_conversation(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+    messages = db.execute(
+        """
+        SELECT role, content, intent, client_timestamp, created_at, message_id
+        FROM messages
+        WHERE conversation_id = ?
+        ORDER BY COALESCE(client_timestamp, 0), message_id
+        """,
+        (row["conversation_id"],),
+    ).fetchall()
+    serialized_messages = [_serialize_chat_message(message) for message in messages]
+    created_at = _normalize_client_timestamp(row["client_created_at"]) or _parse_sqlite_timestamp(row["created_at"])
+    latest_message_ts = serialized_messages[-1]["timestamp"] if serialized_messages else None
+    updated_at = (
+        _normalize_client_timestamp(row["client_updated_at"])
+        or latest_message_ts
+        or _parse_sqlite_timestamp(row["updated_at"])
+    )
+    return {
+        "id": row["conversation_id"],
+        "title": row["title"],
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+        "messages": serialized_messages,
+    }
+
+def _upsert_chat_conversation(
+    db: sqlite3.Connection,
+    conversation_id: str,
+    *,
+    business_id: str,
+    user_id: str,
+    title: str,
+    created_at: int | None,
+    updated_at: int | None,
+) -> sqlite3.Row:
+    existing = db.execute(
+        """
+        SELECT conversation_id, business_id, user_id
+        FROM conversations
+        WHERE conversation_id = ?
+        """,
+        (conversation_id,),
+    ).fetchone()
+
+    if existing and (existing["business_id"] != business_id or existing["user_id"] != user_id):
+        raise PermissionError("conversation does not belong to the current user")
+
+    normalized_title = title.strip() or "New Chat"
+    created_ms = created_at or updated_at or int(time.time() * 1000)
+    updated_ms = updated_at or created_ms
+
+    if existing:
+        db.execute(
+            """
+            UPDATE conversations
+            SET title = ?,
+                client_created_at = COALESCE(client_created_at, ?),
+                client_updated_at = ?,
+                updated_at = ?
+            WHERE conversation_id = ?
+            """,
+            (
+                normalized_title,
+                created_ms,
+                updated_ms,
+                _to_sqlite_timestamp(updated_ms),
+                conversation_id,
+            ),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO conversations (
+                conversation_id,
+                business_id,
+                user_id,
+                title,
+                client_created_at,
+                client_updated_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                conversation_id,
+                business_id,
+                user_id,
+                normalized_title,
+                created_ms,
+                updated_ms,
+                _to_sqlite_timestamp(created_ms),
+                _to_sqlite_timestamp(updated_ms),
+            ),
+        )
+
+    row = _get_conversation_row(
+        db,
+        conversation_id,
+        business_id=business_id,
+        user_id=user_id,
+    )
+    if row is None:
+        raise RuntimeError("conversation was not created")
+    return row
+
+def _save_chat_message(
+    db: sqlite3.Connection,
+    conversation_id: str,
+    message: dict[str, Any],
+) -> None:
+    timestamp = message["timestamp"] or int(time.time() * 1000)
+    db.execute(
+        """
+        INSERT INTO messages (
+            conversation_id,
+            role,
+            content,
+            intent,
+            client_timestamp,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(conversation_id, role, client_timestamp)
+        DO UPDATE SET
+            content = excluded.content,
+            intent = COALESCE(excluded.intent, messages.intent)
+        """,
+        (
+            conversation_id,
+            message["role"],
+            message["content"],
+            message.get("intent"),
+            timestamp,
+            _to_sqlite_timestamp(timestamp),
+        ),
+    )
+
+def _list_serialized_conversations(db: sqlite3.Connection, *, business_id: str, user_id: str) -> list[dict[str, Any]]:
+    rows = db.execute(
+        """
+        SELECT conversation_id, title, created_at, updated_at, client_created_at, client_updated_at
+        FROM conversations
+        WHERE business_id = ? AND user_id = ?
+        ORDER BY COALESCE(client_updated_at, 0) DESC, updated_at DESC
+        """,
+        (business_id, user_id),
+    ).fetchall()
+    return [_serialize_conversation(db, row) for row in rows]
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
@@ -620,6 +888,145 @@ def api_chat_send():
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
     return Response(stream_with_context(stream_agent_sse_lines(msg, conv_id, bid)), mimetype="text/event-stream")
+
+@app.route("/api/chat/conversations", methods=["GET"])
+@limiter.limit(CHAT_RATE_LIMIT)
+@token_required
+def api_chat_conversations():
+    business_id, user_id = _chat_owner_filter()
+    db = _get_chat_db()
+    conversations = _list_serialized_conversations(
+        db,
+        business_id=business_id,
+        user_id=user_id,
+    )
+    return jsonify({"conversations": conversations})
+
+@app.route("/api/chat/conversations/<conversation_id>", methods=["GET", "PUT", "DELETE"])
+@limiter.limit(CHAT_RATE_LIMIT)
+@token_required
+def api_chat_conversation(conversation_id: str):
+    business_id, user_id = _chat_owner_filter()
+    db = _get_chat_db()
+
+    if request.method == "GET":
+        row = _get_conversation_row(
+            db,
+            conversation_id,
+            business_id=business_id,
+            user_id=user_id,
+        )
+        if row is None:
+            return jsonify({"error": "Conversation not found"}), 404
+        return jsonify({"conversation": _serialize_conversation(db, row)})
+
+    if request.method == "DELETE":
+        row = _get_conversation_row(
+            db,
+            conversation_id,
+            business_id=business_id,
+            user_id=user_id,
+        )
+        if row is None:
+            return jsonify({"error": "Conversation not found"}), 404
+        db.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        db.execute(
+            "DELETE FROM conversations WHERE conversation_id = ? AND business_id = ? AND user_id = ?",
+            (conversation_id, business_id, user_id),
+        )
+        db.commit()
+        return ("", 204)
+
+    data = request.get_json(silent=True) or {}
+    raw_messages = data.get("messages") or []
+    if not isinstance(raw_messages, list):
+        return jsonify({"error": "messages must be an array"}), 400
+
+    try:
+        messages = [_normalize_chat_message(message) for message in raw_messages]
+        created_at = _normalize_client_timestamp(data.get("createdAt"))
+        updated_at = _normalize_client_timestamp(data.get("updatedAt"))
+    except ValueError as exc:
+        return _chat_payload_error(exc)
+
+    try:
+        row = _upsert_chat_conversation(
+            db,
+            conversation_id,
+            business_id=business_id,
+            user_id=user_id,
+            title=str(data.get("title") or "New Chat"),
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+    except PermissionError:
+        return jsonify({"error": "Conversation is not accessible"}), 403
+
+    for message in messages:
+        _save_chat_message(db, conversation_id, message)
+    db.commit()
+
+    row = _get_conversation_row(
+        db,
+        conversation_id,
+        business_id=business_id,
+        user_id=user_id,
+    )
+    return jsonify({"conversation": _serialize_conversation(db, row)})
+
+@app.route("/api/chat/conversations/<conversation_id>/messages", methods=["POST"])
+@limiter.limit(CHAT_RATE_LIMIT)
+@token_required
+def api_chat_conversation_messages(conversation_id: str):
+    business_id, user_id = _chat_owner_filter()
+    data = request.get_json(silent=True) or {}
+    db = _get_chat_db()
+
+    try:
+        message = _normalize_chat_message(data.get("message"))
+        created_at = _normalize_client_timestamp(data.get("createdAt")) or message["timestamp"]
+        updated_at = _normalize_client_timestamp(data.get("updatedAt")) or message["timestamp"]
+    except ValueError as exc:
+        return _chat_payload_error(exc)
+
+    try:
+        _upsert_chat_conversation(
+            db,
+            conversation_id,
+            business_id=business_id,
+            user_id=user_id,
+            title=str(data.get("title") or "New Chat"),
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+    except PermissionError:
+        return jsonify({"error": "Conversation is not accessible"}), 403
+
+    _save_chat_message(db, conversation_id, message)
+    db.execute(
+        """
+        UPDATE conversations
+        SET client_updated_at = ?, updated_at = ?, title = ?
+        WHERE conversation_id = ? AND business_id = ? AND user_id = ?
+        """,
+        (
+            updated_at or message["timestamp"] or int(time.time() * 1000),
+            _to_sqlite_timestamp(updated_at or message["timestamp"]),
+            str(data.get("title") or "New Chat").strip() or "New Chat",
+            conversation_id,
+            business_id,
+            user_id,
+        ),
+    )
+    db.commit()
+
+    row = _get_conversation_row(
+        db,
+        conversation_id,
+        business_id=business_id,
+        user_id=user_id,
+    )
+    return jsonify({"conversation": _serialize_conversation(db, row)}), 201
 
 @app.route("/api/dashboard/financial-overview", methods=["GET", "OPTIONS"])
 @token_required

@@ -1,9 +1,7 @@
 "use client";
 
 import { AGENT_API_BASE } from "./publicUrls";
-import type { DashboardPeriod } from "./dashboardPeriod";
-import { getPeriodBounds, periodLabel } from "./dashboardPeriod";
-import { mockSummaryForPeriod, filterTransactionsByPeriod } from "./mockPeriod";
+import type { ChatConversation, ChatMessage } from "./chatHistory";
 
 /**
  * Common Types for ProfitPilot API
@@ -82,29 +80,6 @@ export interface HealthScores { businesses: string[]; scores: HealthScore[]; }
 
 
 
-// --- Helpers ---
-function withPeriod(baseUrl: string, period: DashboardPeriod): string {
-  const sep = baseUrl.includes("?") ? "&" : "?";
-  return `${baseUrl}${sep}period=${period}`;
-}
-
-async function fetchWithFallback<T>(url: string, fallback: T): Promise<T> {
-  try {
-    const res = await fetch(url, { headers: getHeaders() });
-    if (!res.ok) return fallback;
-    return res.json();
-  } catch {
-    return fallback;
-  }
-}
-
-function escapeCsvCell(cell: string): string {
-  if (cell.includes(",") || cell.includes("\"") || cell.includes("\n")) {
-    return `"${cell.replace(/"/g, "\"\"")}"`;
-  }
-  return cell;
-}
-
 // --- API Wrapper Object ---
 function getHeaders() {
   const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
@@ -112,6 +87,24 @@ function getHeaders() {
     "Content-Type": "application/json",
     ...(token ? { "Authorization": `Bearer ${token}` } : {}),
   } as HeadersInit;
+}
+
+function getAuthHeaders() {
+  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
+  return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
+}
+
+async function readJsonOrThrow<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(errorText || `Request failed with status ${response.status}`);
+  }
+  return response.json();
+}
+
+function chatApiPath(path: string): string {
+  return AGENT_API_BASE ? `${AGENT_API_BASE}${path}` : path;
 }
 
 export const api = {
@@ -201,11 +194,22 @@ export const api = {
 /**
  * Chat Streaming Logic (Testsparkhack)
  */
-export async function* streamChatSend(conversationId: string, message: string) {
-  const res = await fetch(`${AGENT_API_BASE}/api/chat/send`, {
+export async function* streamChatSend(
+  conversationId: string,
+  message: string,
+  options?: { signal?: AbortSignal }
+) {
+  const params = new URLSearchParams({
+    "input-query": message,
+    "thread-id": conversationId,
+  });
+  const res = await fetch(chatApiPath(`/api/chat?${params.toString()}`), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversation_id: conversationId, message }),
+    signal: options?.signal,
+    headers: {
+      Accept: "text/event-stream",
+      ...getAuthHeaders(),
+    },
   });
   if (!res.ok) throw new Error("Chat sequence failed");
   const reader = res.body?.getReader();
@@ -222,5 +226,80 @@ export async function* streamChatSend(conversationId: string, message: string) {
       if (raw.startsWith("data: ")) yield JSON.parse(raw.slice(6));
     }
     if (done) break;
+  }
+}
+
+export async function listChatConversations(): Promise<ChatConversation[]> {
+  const payload = await readJsonOrThrow<{ conversations: ChatConversation[] }>(
+    chatApiPath("/api/chat/conversations"),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    }
+  );
+  return payload.conversations ?? [];
+}
+
+export async function getChatConversation(conversationId: string): Promise<ChatConversation> {
+  const payload = await readJsonOrThrow<{ conversation: ChatConversation }>(
+    chatApiPath(`/api/chat/conversations/${encodeURIComponent(conversationId)}`),
+    {
+      cache: "no-store",
+      headers: getHeaders(),
+    }
+  );
+  return payload.conversation;
+}
+
+export async function upsertChatConversation(conversation: ChatConversation): Promise<ChatConversation> {
+  const payload = await readJsonOrThrow<{ conversation: ChatConversation }>(
+    chatApiPath(`/api/chat/conversations/${encodeURIComponent(conversation.id)}`),
+    {
+      method: "PUT",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        title: conversation.title,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        messages: conversation.messages,
+      }),
+    }
+  );
+  return payload.conversation;
+}
+
+export async function appendChatMessage(
+  conversationId: string,
+  title: string,
+  message: ChatMessage,
+  metadata?: { createdAt?: number; updatedAt?: number }
+): Promise<ChatConversation> {
+  const payload = await readJsonOrThrow<{ conversation: ChatConversation }>(
+    chatApiPath(`/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`),
+    {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        title,
+        createdAt: metadata?.createdAt,
+        updatedAt: metadata?.updatedAt ?? message.timestamp,
+        message,
+      }),
+    }
+  );
+  return payload.conversation;
+}
+
+export async function removeChatConversation(conversationId: string): Promise<void> {
+  const response = await fetch(
+    chatApiPath(`/api/chat/conversations/${encodeURIComponent(conversationId)}`),
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+    }
+  );
+  if (!response.ok && response.status !== 404) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(errorText || `Delete failed with status ${response.status}`);
   }
 }
