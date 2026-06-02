@@ -883,6 +883,26 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
+    """
+    Send a chat message to the AI agent and stream the response.
+
+    This endpoint accepts a user message, creates or reuses a
+    conversation ID, and streams AI-generated responses back to
+    the client using Server-Sent Events (SSE).
+
+    Returns:
+        flask.Response:
+            SSE stream containing generated response tokens.
+
+    Side Effects:
+        - Invokes the AI agent workflow.
+        - Streams response data to the client.
+        - Uses the authenticated business context.
+
+    Raises:
+        Exceptions raised during response generation are handled
+        by the underlying streaming workflow.
+    """
     data = request.json
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
@@ -1235,6 +1255,35 @@ def api_dashboard_summary():
 @app.route("/api/dashboard/alerts-list", methods=["GET"])
 @token_required
 def api_alerts_list():
+    """
+    Retrieve recent alerts for the authenticated business.
+
+    This endpoint returns up to 50 alerts associated with the
+    authenticated business, ordered by creation time in descending
+    order. Alert timestamps are formatted before being returned
+    in the response.
+
+    Returns:
+        flask.Response:
+            A JSON response containing:
+            - alerts: List of alert objects with:
+                - alert_id
+                - message
+                - severity
+                - status
+                - created_at
+
+    Side Effects:
+        - Executes a database query against the alerts table.
+        - Formats alert timestamps for API responses.
+        - Uses the authenticated user's business ID to filter results.
+
+    Raises:
+        Exceptions raised during database access or response
+        processing are handled and returned via
+        internal_error_response().
+    """
+
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params("SELECT alert_id, message, severity, status, created_at FROM alerts WHERE business_id = %s ORDER BY created_at DESC LIMIT 50", (bid,))
@@ -1357,6 +1406,7 @@ def api_employee_stats():
             "counts": [int(r["cnt"]) for r in rows],
             "avg_salary": [round(float(r["avg_salary"]), 2) for r in rows]
         })
+    
     except Exception as exc:
         return internal_error_response(exc)
 
