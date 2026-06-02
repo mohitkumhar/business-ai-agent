@@ -1250,7 +1250,18 @@ def get_business_info():
     bid = get_current_business_id()
     if not bid: return jsonify({"error": "No business found"}), 404
     try:
-        rows = execute_read_query_params("SELECT * FROM businesses WHERE business_id = %s", (bid,))
+        rows = execute_read_query_params("""
+            SELECT
+                business_id,
+                business_name,
+                industry_type,
+                owner_name,
+                monthly_target_revenue
+            FROM businesses
+            WHERE business_id = %s
+            """,
+            (bid,),
+        )
         return jsonify(rows[0] if rows else {})
     except Exception as exc:
         return internal_error_response(exc)
