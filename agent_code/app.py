@@ -133,6 +133,27 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
+    """
+    Authenticate an existing user and return a JWT access token.
+
+    Expects a JSON request body with:
+        email (str): The user's registered email address (case-insensitive).
+        password (str): The user's plain-text password.
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): The authenticated user's business UUID.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 200 on success.
+        HTTP 400 if email or password fields are missing.
+        HTTP 401 if credentials are invalid or user does not exist.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Queries the PostgreSQL users table to validate credentials.
+        Rate-limited to RATE_LIMIT_AUTH (default: 5 per minute) per IP.
+    """
     data = request.json
     email = data.get("email", "").lower().strip()
     password = data.get("password")
