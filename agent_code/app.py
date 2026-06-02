@@ -89,7 +89,9 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -133,7 +135,9 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -695,7 +699,9 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -731,9 +737,13 @@ def whatsapp_events():
     return jsonify({"ok": True})
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
+@app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        update = request.get_json(force=True) or {}
+        update = data
         message = update.get("message") or update.get("edited_message") or {}
         chat_id = (message.get("chat") or {}).get("id")
 
@@ -758,7 +768,7 @@ def telegram_webhook():
     except Exception as e:
         logger.error("Telegram webhook failed: %s", e, exc_info=True)
         try:
-            update = request.get_json(silent=True) or {}
+            update = data
             message = update.get("message") or update.get("edited_message") or {}
             chat_id = (message.get("chat") or {}).get("id")
             if chat_id is not None:
@@ -907,7 +917,9 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
@@ -961,7 +973,9 @@ def api_chat_conversation(conversation_id: str):
         db.commit()
         return ("", 204)
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     raw_messages = data.get("messages") or []
     if not isinstance(raw_messages, list):
         return jsonify({"error": "messages must be an array"}), 400
@@ -1003,7 +1017,9 @@ def api_chat_conversation(conversation_id: str):
 @token_required
 def api_chat_conversation_messages(conversation_id: str):
     business_id, user_id = _chat_owner_filter()
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     db = _get_chat_db()
 
     try:

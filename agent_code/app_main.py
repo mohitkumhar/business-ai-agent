@@ -486,7 +486,9 @@ def query_agent():
 
 @app.route("/api/v1/billing/analyze-all", methods=["POST"])
 def billing_analyze_all():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     question = (data.get("question") or "Analyze all business billing data").strip()
     business_id = (data.get("business_id") or "").strip() or _resolve_business_id(None)
     try:
@@ -509,8 +511,11 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        payload = request.get_json(force=True) or {}
+        payload = data
         entries = payload.get("entry") or []
         for entry in entries:
             for change in entry.get("changes") or []:
@@ -561,8 +566,11 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        update = request.get_json(force=True) or {}
+        update = data
         msg = update.get("message") or update.get("edited_message") or {}
         if not msg:
             return jsonify({"ok": True})
@@ -695,8 +703,10 @@ def get_employees():
 
 @app.route("/api/v1/escalate", methods=["POST"])
 def escalate_to_slack():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        data = request.get_json() or {}
         query = data.get("query", "No specific query")
         summary = data.get("summary", "No summary provided")
         from slack_integration.slack_handler import SlackDelivery
@@ -1247,7 +1257,9 @@ def api_forecast():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -1276,7 +1288,9 @@ def iter_query_sse(input_query, thread_id):
 
 @app.route("/api/chat/send", methods=["POST"])
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     conv_id = data.get("conversation_id")
     msg = data.get("message")
     # Wrap iter_query_sse in SSE Response
