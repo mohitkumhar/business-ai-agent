@@ -75,7 +75,6 @@ export interface AlertsBySeverity { labels: string[]; data: number[]; }
 export interface TopProducts { labels: string[]; stock: number[]; margin: number[]; margin_amount?: number[]; margin_pct?: number[]; }
 export interface EmployeeStats { labels: string[]; counts: number[]; avg_salary: number[]; }
 export interface SalesTarget { business_name: string; current_revenue: number; target_revenue: number; percentage: number; }
-export interface Alert { alert_id: number; created_at: string; alert_type: string; severity: string; message: string; status: string; }
 export interface HealthScore { name: string; overall: number; cash: number; profitability: number; growth: number; cost_control: number; risk: number; }
 export interface HealthScores { businesses: string[]; scores: HealthScore[]; }
 
@@ -142,13 +141,22 @@ export const api = {
     return res.json();
   },
 
-  getForecast: async (period: string): Promise<Forecast> => {
+  // FIXED: Returns Promise<Forecast[]> to handle arrays safely, maps fallbacks via nullish coalescing (??)
+  getForecast: async (period: string): Promise<Forecast[]> => {
     const res = await fetch(`/api/dashboard/forecast?period=${period}`, { headers: getHeaders() });
     if (!res.ok) {
       const { mockForecast } = await import("./mockData");
-      return mockForecast;
+      return Array.isArray(mockForecast) ? mockForecast : [mockForecast];
     }
-    return res.json();
+    const data = await res.json();
+    const rawList = Array.isArray(data) ? data : [data];
+    
+    return rawList.map((item: any) => ({
+      date: item.date,
+      predicted_value: item.predicted_value,
+      lower_bound: item.lower_bound ?? item.predicted_value,
+      upper_bound: item.upper_bound ?? item.predicted_value,
+    }));
   },
 
   getRecentTransactions: async (params: { search?: string; category?: string; limit?: number; period?: string; }) => {
@@ -219,7 +227,9 @@ export async function* streamChatSend(conversationId: string, message: string) {
       const i = buffer.indexOf("\n\n");
       const raw = buffer.slice(0, i).trim();
       buffer = buffer.slice(i + 2);
-      if (raw.startsWith("data: ")) yield JSON.parse(raw.slice(6));
+      if (raw.startsWith("data: ")) {
+         yield raw.slice(6);
+      }
     }
     if (done) break;
   }
