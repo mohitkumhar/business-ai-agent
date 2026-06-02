@@ -43,12 +43,12 @@ export interface Alert {
 export type ForecastTrend = "up" | "down" | "stable" | "flat";
 
 export interface Forecast {
-  historical: { date: string; actual: number }[];
-  forecast: { date: string; predicted: number; lower_bound: number; upper_bound: number }[];
-  trend_direction: ForecastTrend;
-  trend_percent: number;
-  insight: string;
+  date: string;
+  predicted_value: number;
+  lower_bound?: number; 
+  upper_bound?: number; 
 }
+
 
 export interface BusinessInfo {
   business_id: string;
