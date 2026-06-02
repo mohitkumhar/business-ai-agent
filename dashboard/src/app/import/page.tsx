@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DragEvent } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -24,12 +24,19 @@ function getUserEmail(): string | null {
 
 type TabId = "excel" | "accounting" | "manual" | "none";
 
-type PreviewRow = {
-  date?: string;
-  type?: string;
+type PreviewTransaction = {
+  amount?: number | string;
   category?: string;
-  amount?: string | number;
+  date?: string;
   description?: string;
+  type?: string;
+};
+
+type NotebookImportResponse = {
+  error?: string;
+  hash?: string;
+  message?: string;
+  transactions?: PreviewTransaction[];
 };
 
 export default function ImportPage() {
@@ -37,7 +44,7 @@ export default function ImportPage() {
   const [flash, setFlash] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewTransaction[] | null>(null);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const router = useRouter();
 
@@ -92,11 +99,11 @@ export default function ImportPage() {
         headers,
         body: fd,
       });
-      const data = await res.json();
+      const data = (await res.json()) as NotebookImportResponse;
 
       if (res.ok) {
-        setPreviewData(data.transactions);
-        setPreviewHash(data.hash);
+        setPreviewData(data.transactions || []);
+        setPreviewHash(data.hash || null);
         setFlash({ kind: "success", text: "Handwriting extracted! Please review below." });
       } else {
         setFlash({ kind: "error", text: data.error || "Processing failed." });
@@ -409,4 +416,3 @@ export default function ImportPage() {
     </div>
   );
 }
-
