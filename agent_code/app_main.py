@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import base64
-import bcrypt
 import json
 import os
 import time
 from datetime import datetime, timedelta
+from functools import wraps
 from typing import Any
 
 import requests
@@ -15,15 +15,18 @@ from flask_cors import CORS
 from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
-from db_config import execute_read_query_params, get_db_connection
 from api_errors import internal_error_response
+from db_config import execute_read_query_params, get_db_connection
+from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
+from auth import AuthError, decode_jwt_identity, require_jwt_secret
 
 load_dotenv()
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
 
 AGENT_REQUEST_COUNT = Counter(
@@ -48,6 +51,28 @@ WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        try:
+            identity = decode_jwt_identity(
+                request.headers.get("Authorization"),
+                app.config["SECRET_KEY"],
+            )
+        except AuthError as exc:
+            return jsonify({"message": exc.message}), exc.status_code
+
+        g.user_id = identity["user_id"]
+        g.business_id = identity["business_id"]
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def get_current_business_id():
+    return getattr(g, "business_id", None)
 
 
 @app.before_request
@@ -726,18 +751,21 @@ def api_financial_overview():
 
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
+@token_required
 def api_revenue_vs_expense():
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    bid = get_current_business_id()
+    period = request.args.get("period", "this_month")
+    start_date, end_date = get_period_dates(period)
     try:
         rows = execute_read_query_params(
             """
             SELECT category, type, COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (bid, start_date, end_date),
         )
         revenue_cats: dict[str, float] = {}
         expense_cats: dict[str, float] = {}
@@ -1089,11 +1117,11 @@ def api_dashboard_summary():
             COUNT(*) AS total_transactions
         FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
     """, (bid, start_date, end_date))
-    
+
     alerts = execute_read_query_params("SELECT COUNT(*) AS active_alerts FROM alerts WHERE business_id = %s AND status = 'Active'", (bid,))
-    
+
     curr = txn[0] if txn else {}
-    
+
     # Parse dates to compute prev period
     dt_start = datetime.strptime(start_date, "%Y-%m-%d").date()
     if period == "this_month":
@@ -1105,28 +1133,28 @@ def api_dashboard_summary():
     else:
         p_start = dt_start - timedelta(days=30)
         p_end = dt_start - timedelta(days=1)
-        
+
     p_start_str = p_start.strftime("%Y-%m-%d")
     p_end_str = p_end.strftime("%Y-%m-%d")
-    
+
     prev_txn = execute_read_query_params("""
-        SELECT 
+        SELECT
             COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS total_revenue,
             COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS total_expenses
         FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
     """, (bid, p_start_str, p_end_str))
-    
+
     prev = prev_txn[0] if prev_txn else {}
-    
+
     def calc_change(curr_val, prev_val):
         if not prev_val: return 100.0 if curr_val else 0.0
         return round(((curr_val - prev_val) / prev_val) * 100.0, 1)
-        
+
     rev = float(curr.get("total_revenue", 0))
     exp = float(curr.get("total_expenses", 0))
     prev_rev = float(prev.get("total_revenue", 0))
     prev_exp = float(prev.get("total_expenses", 0))
-    
+
     return jsonify({
         "total_revenue": rev,
         "total_expenses": exp,
@@ -1181,12 +1209,8 @@ def onboarding():
         bid = str(uuid.uuid4())
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
-        oauth_password_hash = bcrypt.hashpw(
-            uuid.uuid4().hex.encode("utf-8"),
-            bcrypt.gensalt(),
-        ).decode("utf-8")
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
-                   (bid, data.get("full_name"), email, oauth_password_hash))
+                   (bid, data.get("full_name"), email, SOCIAL_LOGIN_PASSWORD_HASH))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
     finally:
