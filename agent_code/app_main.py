@@ -15,6 +15,7 @@ from flask import Flask, Response, jsonify, request, stream_with_context, g
 from flask_cors import CORS
 from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
+from werkzeug.exceptions import BadRequest
 
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE, internal_error_response
 from db_config import execute_read_query_params, get_db_connection
@@ -46,12 +47,34 @@ AGENT_INTENT_COUNT = Counter(
     "Total intent detections by type",
     ["intent"],
 )
+WEBHOOK_FAILURE_COUNT = Counter(
+    "agent_webhook_failures_total",
+    "Total webhook processing failures by platform, stage, and exception type",
+    ["platform", "stage", "exception_type"],
+)
 
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
+
+TELEGRAM_WEBHOOK_ERROR_CODE = "telegram_webhook_processing_failed"
+TELEGRAM_WEBHOOK_EXPECTED_ERRORS = (
+    BadRequest,
+    RuntimeError,
+    ValueError,
+    json.JSONDecodeError,
+    requests.RequestException,
+)
+TELEGRAM_WEBHOOK_CLIENT_ERROR_STAGES = {
+    "parse_update",
+    "extract_message",
+    "extract_chat",
+    "parse_content",
+    "select_photo",
+}
+_MISSING = object()
 
 
 def token_required(f):
@@ -98,6 +121,109 @@ def _sse_stream_response(generator):
     resp.headers["X-Accel-Buffering"] = "no"
     resp.headers["Connection"] = "keep-alive"
     return resp
+
+
+def _telegram_webhook_context(
+    update: dict[str, Any] | None,
+    msg: dict[str, Any] | None,
+    stage: str,
+    exc: BaseException,
+) -> dict[str, Any]:
+    update = update if isinstance(update, dict) else {}
+    msg = msg if isinstance(msg, dict) else {}
+    chat = msg.get("chat") if isinstance(msg.get("chat"), dict) else {}
+    photos = msg.get("photo") if isinstance(msg.get("photo"), list) else []
+    text = str(msg.get("text") or msg.get("caption") or "").strip()
+    return {
+        "platform": "telegram",
+        "handler": "telegram_webhook",
+        "stage": stage,
+        "exception_type": type(exc).__name__,
+        "update_id": update.get("update_id"),
+        "message_id": msg.get("message_id"),
+        "chat_id": chat.get("id"),
+        "has_text": bool(text),
+        "photo_count": len(photos),
+    }
+
+
+def _record_telegram_webhook_failure(
+    exc: BaseException,
+    *,
+    stage: str,
+    update: dict[str, Any] | None,
+    msg: dict[str, Any] | None,
+) -> None:
+    exception_type = type(exc).__name__
+    WEBHOOK_FAILURE_COUNT.labels("telegram", stage, exception_type).inc()
+    logger.error(
+        "Telegram webhook failed: %s",
+        json.dumps(
+            _telegram_webhook_context(update, msg, stage, exc),
+            default=str,
+            sort_keys=True,
+        ),
+        exc_info=True,
+    )
+
+
+def _telegram_photo_file_size(photo: dict[str, Any]) -> int:
+    try:
+        return int(photo.get("file_size") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Telegram photo file_size must be numeric.") from exc
+
+
+def _telegram_optional_object(
+    container: dict[str, Any],
+    key: str,
+    description: str,
+) -> dict[str, Any] | None:
+    value = container.get(key, _MISSING)
+    if value is _MISSING:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"Telegram {description} payload must be a JSON object.")
+    return value
+
+
+def _telegram_optional_text(
+    container: dict[str, Any],
+    key: str,
+    description: str,
+) -> str:
+    value = container.get(key, _MISSING)
+    if value is _MISSING:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"Telegram {description} must be a string.")
+    return value.strip()
+
+
+def _telegram_webhook_error_response(stage: str, exc: BaseException):
+    status_code = (
+        400
+        if isinstance(exc, BadRequest)
+        or (isinstance(exc, ValueError) and stage in TELEGRAM_WEBHOOK_CLIENT_ERROR_STAGES)
+        else 500
+    )
+    message = (
+        "Invalid Telegram webhook payload."
+        if status_code == 400
+        else SAFE_INTERNAL_ERROR_MESSAGE
+    )
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": message,
+                "error_code": TELEGRAM_WEBHOOK_ERROR_CODE,
+                "stage": stage,
+                "error_type": type(exc).__name__,
+            }
+        ),
+        status_code,
+    )
 
 
 def _json_from_llm_text(text: str) -> dict[str, Any]:
@@ -423,16 +549,12 @@ def _send_whatsapp_text(to_number: str, text: str):
 
 def _send_telegram_text(chat_id: int, text: str):
     if not TELEGRAM_BOT_TOKEN:
-        logger.warning("Telegram send skipped; TELEGRAM_BOT_TOKEN not configured.")
-        return
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text[:4096]},
-            timeout=30,
-        ).raise_for_status()
-    except Exception as exc:
-        logger.error("Failed to send Telegram message: %s", exc, exc_info=True)
+        raise ValueError("TELEGRAM_BOT_TOKEN is not configured.")
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        json={"chat_id": chat_id, "text": text[:4096]},
+        timeout=30,
+    ).raise_for_status()
 
 
 @app.route("/")
@@ -540,62 +662,101 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    stage = "parse_update"
+    update: dict[str, Any] = {}
+    msg: dict[str, Any] = {}
     try:
-        update = request.get_json(force=True) or {}
-        msg = update.get("message") or update.get("edited_message") or {}
-        if not msg:
+        raw_update = request.get_json(force=True)
+        if not isinstance(raw_update, dict):
+            raise ValueError("Telegram update payload must be a JSON object.")
+        update = raw_update
+
+        stage = "extract_message"
+        msg = (
+            _telegram_optional_object(update, "message", "message")
+            or _telegram_optional_object(update, "edited_message", "edited_message")
+        )
+        if msg is None:
             return jsonify({"ok": True})
 
-        chat = msg.get("chat") or {}
+        stage = "extract_chat"
+        chat = _telegram_optional_object(msg, "chat", "chat")
+        if chat is None:
+            return jsonify({"ok": True})
         chat_id = chat.get("id")
         if chat_id is None:
             return jsonify({"ok": True})
+        if isinstance(chat_id, bool) or not isinstance(chat_id, (int, str)):
+            raise ValueError("Telegram chat id must be a string or integer.")
+        if isinstance(chat_id, str):
+            chat_id = chat_id.strip()
+            if not chat_id:
+                raise ValueError("Telegram chat id cannot be empty.")
 
+        stage = "resolve_business"
         business_id = _resolve_business_id(None)
 
-        photos = msg.get("photo") or []
-        caption = (msg.get("caption") or "").strip()
-        text = (msg.get("text") or "").strip()
+        stage = "parse_content"
+        photos_raw = msg.get("photo", _MISSING)
+        photos = [] if photos_raw is _MISSING else photos_raw
+        if not isinstance(photos, list):
+            raise ValueError("Telegram photo payload must be a list.")
+        if any(not isinstance(photo, dict) for photo in photos):
+            raise ValueError("Telegram photo entries must be JSON objects.")
+        caption = _telegram_optional_text(msg, "caption", "caption")
+        text = _telegram_optional_text(msg, "text", "text")
 
         if photos:
-            largest = max(photos, key=lambda p: p.get("file_size", 0))
+            stage = "select_photo"
+            largest = max(photos, key=_telegram_photo_file_size)
             file_id = largest.get("file_id")
-            if file_id:
-                image_bytes, mime_type = _download_telegram_file(file_id)
-                extracted = _extract_bill_data_from_image(image_bytes, mime_type)
-                normalized = _normalize_bill_fields(extracted)
-                tx_id = _insert_bill_transaction(
-                    business_id,
-                    None,
-                    file_id,
-                    normalized,
-                    extracted,
-                )
-                analysis = _analyze_transaction(tx_id, business_id)
-                reply = (
-                    f"Bill recorded successfully.\n"
-                    f"Transaction ID: {tx_id}\n"
-                    f"Amount: {normalized['amount']}\n"
-                    f"Type: {normalized['type']}\n"
-                    f"Category: {normalized['category']}\n\n"
-                    f"Analysis:\n{analysis}"
-                )
-                _send_telegram_text(chat_id, reply)
-                return jsonify({"ok": True})
+            if not isinstance(file_id, str) or not file_id.strip():
+                raise ValueError("Telegram photo file_id is required.")
+            file_id = file_id.strip()
+            stage = "download_file"
+            image_bytes, mime_type = _download_telegram_file(file_id)
+            stage = "extract_bill"
+            extracted = _extract_bill_data_from_image(image_bytes, mime_type)
+            stage = "normalize_bill"
+            normalized = _normalize_bill_fields(extracted)
+            stage = "insert_transaction"
+            tx_id = _insert_bill_transaction(
+                business_id,
+                None,
+                file_id,
+                normalized,
+                extracted,
+            )
+            stage = "analyze_transaction"
+            analysis = _analyze_transaction(tx_id, business_id)
+            reply = (
+                f"Bill recorded successfully.\n"
+                f"Transaction ID: {tx_id}\n"
+                f"Amount: {normalized['amount']}\n"
+                f"Type: {normalized['type']}\n"
+                f"Category: {normalized['category']}\n\n"
+                f"Analysis:\n{analysis}"
+            )
+            stage = "send_reply"
+            _send_telegram_text(chat_id, reply)
+            return jsonify({"ok": True})
 
         content = text or caption
         if content:
             if content.lower().startswith("analyze all"):
+                stage = "analyze_business"
                 answer = _analyze_business_data(business_id, content)
             else:
+                stage = "run_agent"
                 thread_id = f"tg-{chat_id}"
                 answer = _run_agent_to_text(content, thread_id, business_id)
+            stage = "send_reply"
             _send_telegram_text(chat_id, answer)
 
         return jsonify({"ok": True})
-    except Exception as exc:
-        logger.error("Telegram webhook failed: %s", exc, exc_info=True)
-        return internal_error_response(exc)
+    except TELEGRAM_WEBHOOK_EXPECTED_ERRORS as exc:
+        _record_telegram_webhook_failure(exc, stage=stage, update=update, msg=msg)
+        return _telegram_webhook_error_response(stage, exc)
 
 
 ASSIGNMENTS_FILE = "assigned_issues.json"
