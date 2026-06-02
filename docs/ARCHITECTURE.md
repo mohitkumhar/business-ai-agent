@@ -1,229 +1,150 @@
-# 🏗️ ProfitPilot — Architecture Documentation
+# ProfitPilot — Architecture
 
-> This document is intended for new contributors who want to understand how ProfitPilot's components fit together before diving into the code.
+This document explains how ProfitPilot's components fit together so new contributors can find
+their way around quickly. For setup instructions see the [README](../README.md) and
+[CONTRIBUTING](../CONTRIBUTING.md).
 
----
-
-## Table of Contents
-
-- [System Overview](#system-overview)
-- [Full System Diagram](#full-system-diagram)
-- [Chat / Query Flow](#chat--query-flow)
-- [Layer-by-Layer Explanation](#layer-by-layer-explanation)
-- [Key Files for Contributors](#key-files-for-contributors)
-- [Docker vs Manual Setup](#docker-vs-manual-setup)
+ProfitPilot is an AI business-advisory platform: users ask questions in natural language, a Flask
+backend routes each query through a **LangGraph intent router** to a specialized subgraph (database
+SQL, advice, logs, or metrics), and the answer is streamed back over Server-Sent Events (SSE).
 
 ---
 
-## System Overview
-
-ProfitPilot is composed of five logical layers:
-
-1. **Frontend** — a landing page (Vite + TanStack) and an analytics dashboard (Next.js)
-2. **Agent Backend** — a Flask server that hosts a LangGraph intent router and streams AI responses via SSE
-3. **LLM Runtime** — Ollama running `llama3.2:3b` locally (outside Docker)
-4. **Data Layer** — PostgreSQL for business data, SQLite for chat history
-5. **Observability Stack** — Prometheus, Grafana, Loki, and Promtail for metrics and log monitoring
-
----
-
-## Full System Diagram
+## 1. System overview
 
 ```mermaid
 flowchart TD
-    subgraph Browser["🌐 Browser / Client"]
-        LP["Landing Page\nVite + TanStack\n:5173"]
-        DB["Dashboard\nNext.js 14\n:3001"]
+    subgraph Frontend
+        LP["Landing Page<br/>Vite + TanStack · :5173"]
+        DASH["Dashboard<br/>Next.js · :3001"]
     end
 
-    subgraph Agent["🤖 Flask Agent :5000"]
-        direction TB
-        IR["Intent Router\n(LangGraph + Ollama)"]
-        GI["general_information_graph\nDuckDuckGo Web Search"]
-        DQ["database_request_graph\nSQL Generation + Execution"]
-        LQ["logs_request_graph\nLogQL → Loki"]
-        MQ["metrics_request_graph\nPromQL → Prometheus"]
-        IR --> GI
-        IR --> DQ
-        IR --> LQ
-        IR --> MQ
-    end
-
-    subgraph LLM["🧠 LLM Runtime (Host Machine)"]
-        OL["Ollama\nllama3.2:3b\n:11434"]
-    end
-
-    subgraph Data["🗄️ Data Layer"]
-        PG["PostgreSQL 16\n:5432\nBusiness Data"]
-        SQ["SQLite\nChat History"]
-    end
-
-    subgraph Obs["📈 Observability Stack"]
-        PR["Prometheus\n:9090"]
-        GR["Grafana\n:3000"]
-        LK["Loki\n:3100"]
-        PT["Promtail"]
-    end
-
-    subgraph Integrations["🔗 Integrations"]
+    subgraph Integrations
         WA["WhatsApp Gateway"]
-        SL["Slack Bot"]
+        SL["Slack Integration"]
+        TG["Telegram Bot"]
     end
 
-    LP -- "POST /api/v1/onboarding\nGoogle OAuth" --> Agent
-    DB -- "API rewrites (next.config.ts)" --> Agent
-    Agent -- "LLM inference" --> OL
-    DQ -- "SQL queries" --> PG
-    Agent -- "write history" --> SQ
-    LQ -- "LogQL" --> LK
-    MQ -- "PromQL" --> PR
-    PR -- "scrapes metrics" --> Agent
-    PR -- "scrapes metrics" --> DB
-    PT -- "ships logs" --> LK
-    GR -- "reads" --> PR
-    GR -- "reads" --> LK
-    WA --> Agent
-    SL --> Agent
+    subgraph Backend
+        API["Flask Agent API · :5000<br/>LangGraph Intent Router<br/>POST /api/v1/query (SSE)"]
+        LLM["LLM Layer<br/>OpenAI-compatible client<br/>(OpenRouter default · Ollama/Groq/Gemini configurable)"]
+    end
+
+    subgraph Data
+        PG[("PostgreSQL 16 · :5432<br/>business data")]
+        SQLITE[("SQLite<br/>chat history")]
+    end
+
+    subgraph Observability
+        PROM["Prometheus · :9090"]
+        LOKI["Loki · :3100"]
+        PT["Promtail"]
+        GRAF["Grafana · :3000"]
+    end
+
+    LP -->|onboarding / API| API
+    DASH -->|chat + analytics| API
+    WA --> API
+    SL --> API
+    TG --> API
+
+    API --> LLM
+    API --> PG
+    API --> SQLITE
+    API -->|/metrics| PROM
+    API -->|app logs| PT
+    PT --> LOKI
+    PROM --> GRAF
+    LOKI --> GRAF
 ```
+
+> Ports reflect `docker-compose.yml`. Grafana and the Next.js dashboard both listen on `3000`
+> *inside* their containers; the dashboard is published on host port **3001** to avoid a clash.
 
 ---
 
-## Chat / Query Flow
+## 2. Chat / query flow
 
-This diagram shows what happens from the moment a user types a message to when the streamed response appears in the browser.
+Every query flows through the same pipeline: authenticate → detect intent → run one or more
+subgraphs in execution order → format → stream.
 
 ```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Frontend (Dashboard / Landing)
-    participant Flask as Flask Agent (:5000)
-    participant Router as LangGraph Intent Router
-    participant LLM as Ollama llama3.2:3b
-    participant Sub as LangGraph Subgraph
-    participant DS as Data Source<br/>(PG / Loki / Prometheus / Web)
-
-    User->>FE: Types a question
-    FE->>Flask: POST /chat (SSE request)
-    Flask->>Router: Passes user message + history
-    Router->>LLM: "Classify intent for: <message>"
-    LLM-->>Router: Intent = database | logs | metrics | general
-    Router->>Sub: Dispatches to matching subgraph
-    Sub->>DS: Executes SQL / LogQL / PromQL / DuckDuckGo search
-    DS-->>Sub: Returns raw data
-    Sub->>LLM: "Summarise this data for the user"
-    LLM-->>Sub: Streaming tokens
-    Sub-->>Flask: Token stream
-    Flask-->>FE: SSE text/event-stream chunks
-    FE-->>User: Response rendered token-by-token
+flowchart LR
+    U["User query"] --> AUTH["authenticate_request"]
+    AUTH --> ID["intent_detection<br/>(regex fast-path → LLM fallback)"]
+    ID -->|database_request| DB["Database subgraph<br/>SQL gen → validate → execute → insight"]
+    ID -->|general_information_request| GI["General Info subgraph<br/>web search / advice"]
+    ID -->|logs_request| LG["Logs subgraph<br/>query Loki"]
+    ID -->|metrics_request| MET["Metrics subgraph<br/>query Prometheus / health score"]
+    ID -->|greeting / out_of_scope| GR["Direct reply"]
+    DB --> FMT["format_response"]
+    GI --> FMT
+    LG --> FMT
+    MET --> FMT
+    GR --> FMT
+    FMT --> SSE["SSE stream → client"]
 ```
 
-### Intent Categories
+**Intent detection** (`agent_code/nodes/intent_detection.py`) first tries cheap regex fast-paths
+(greetings, out-of-scope, logs, metrics, database facts, advisory). If none match, it calls the LLM
+with structured output to return an *ordered* list of intents. Compound questions run data intents
+(`database`, `logs`, `metrics`) before advice (`general_information`, `hybrid`, `advisory`), capped
+at four intents via `order_intents_for_execution()`.
 
-| Intent | Trigger keywords (examples) | Subgraph | Data source |
-|---|---|---|---|
-| `database` | sales, revenue, employees, expenses | `database_request_graph` | PostgreSQL |
-| `logs` | errors, logs, warnings, crashes | `logs_request_graph` | Loki (LogQL) |
-| `metrics` | CPU, memory, latency, uptime | `metrics_request_graph` | Prometheus (PromQL) |
-| `general` | anything else / web knowledge | `general_information_graph` | DuckDuckGo |
+**Database subgraph** (`agent_code/intents/database_request_graph/subgraph.py`) is the deepest path:
+`resolve_data_range → validate_entities → fetch_table_schema → SQL_generation → SQL_validation →
+execute_query → post_query_operations → business_insight_generator → format_response`. SQL is
+validated read-only before execution (see `db_config.py`'s `_assert_read_only_select`).
 
 ---
 
-## Layer-by-Layer Explanation
+## 3. Layer-by-layer
 
-### 1. Landing Page (`landing-page/` · port 5173)
+| Layer | What it does | Where |
+|-------|--------------|-------|
+| **Frontend** | Landing/onboarding (Vite + TanStack) and the analytics + chat dashboard (Next.js). | `landing-page/`, `dashboard/` |
+| **API / orchestration** | Flask app exposing `/api/v1/query` (SSE) and dashboard endpoints; builds and runs the LangGraph router. | `agent_code/app_main.py`, `agent_code/query_execution.py` |
+| **Intent router** | Classifies the query and dispatches to subgraphs. | `agent_code/nodes/`, `agent_code/intents/` |
+| **LLM** | OpenAI-compatible client (`ChatOpenAI`); OpenRouter by default, swappable to Ollama/Groq/Gemini via env. | `agent_code/llm/base_llm.py` |
+| **Data** | PostgreSQL for business data; SQLite for chat history. | `company_db_schema.sql`, `agent_code/seed_db.py`, `db_config.py` |
+| **Observability** | App emits `/metrics` (Prometheus) and writes logs shipped by Promtail to Loki; Grafana visualizes both. | `prometheus.yml`, `promtail-config.yaml`, `agent_code/logger/` |
+| **Integrations** | WhatsApp, Slack, Telegram gateways that forward to the Flask API. | `whatsapp_gateway/`, `agent_code/slack_integration/` |
 
-Built with **Vite** and **TanStack Router**. Serves as the marketing site and business onboarding entry point. The `get-started.tsx` route sends onboarding form data to the Flask agent (`POST /api/v1/onboarding`) and handles Google OAuth on the client side.
+---
 
-### 2. Next.js Dashboard (`dashboard/` · port 3001)
+## 4. Key files for contributors
 
-Built with **Next.js 14 (App Router)**. Displays KPIs, charts, employee stats, and the AI chatbot interface. All `/api/*` requests are rewritten to the Flask agent via `next.config.ts`, so the dashboard never talks to PostgreSQL directly. Prometheus also scrapes the Next.js service for frontend metrics.
+| File / dir | Purpose |
+|------------|---------|
+| `docker-compose.yml` | Single source of truth for services, ports, and env wiring. |
+| `agent_code/app_main.py` | Main Flask app; SSE endpoints, dashboard APIs. |
+| `agent_code/query_execution.py` | Assembles the graph and `stream_agent_sse_lines`. |
+| `agent_code/nodes/intent_detection.py` | Intent classification (regex fast-path + LLM). |
+| `agent_code/intents/<name>_graph/subgraph.py` | One subgraph per intent (database, general info, logs, metrics). |
+| `agent_code/llm/base_llm.py` | LLM client configuration. |
+| `agent_code/db_config.py` | DB connection (`DATABASE_URL`) and read-only query helpers. |
+| `agent_code/seed_db.py` | Seeds demo business data into PostgreSQL. |
+| `company_db_schema.sql` | PostgreSQL schema. |
+| `.env.example` | All required environment variables. |
+| `*.mmd` (repo root) | Source Mermaid diagrams for the graph flows. |
 
-### 3. Flask Agent (`agent_code/` · port 5000)
+---
 
-The core backend. Responsibilities:
+## 5. Docker vs. manual setup
 
-- Exposes REST endpoints consumed by both frontends
-- Hosts the **LangGraph intent router** that classifies and routes user queries
-- Streams AI responses back to the client using **Server-Sent Events (SSE)**
-- Connects to PostgreSQL, Loki, and Prometheus on behalf of subgraphs
-
-The `app.py` file is the entry point. Each intent lives in its own directory under `agent_code/intents/`.
-
-### 4. LangGraph Intent Router (`agent_code/intents/`)
-
-LangGraph orchestrates a stateful graph where:
-
-1. An **intent detection node** calls Ollama to classify the user's query.
-2. A **router node** dispatches to one of four subgraphs.
-3. Each **subgraph** generates the appropriate query (SQL / LogQL / PromQL / search), executes it, then calls the LLM again to produce a human-readable answer.
-4. The final **SSE node** streams tokens back through Flask.
-
-State is defined in `agent_code/state/` and shared across all nodes in a subgraph.
-
-### 5. Ollama LLM (host machine · port 11434)
-
-Ollama runs **outside Docker** on the host machine and is reached by the Flask container via `host.docker.internal:11434`. The model in use is `llama3.2:3b` — a small, fast model suited for intent detection and concise business Q&A. The LLM abstraction lives in `agent_code/llm/`.
-
-### 6. Data Layer
-
-| Store | Purpose | Access |
+| | Docker Compose (recommended) | Manual |
 |---|---|---|
-| PostgreSQL 16 (`:5432`) | Business data — sales, employees, expenses, products | Flask agent via `db_config.py` |
-| SQLite | Chat history per session | Flask agent, local file |
+| **Command** | `docker compose up --build` | Run each service yourself |
+| **PostgreSQL** | `db` service auto-started | Install/run PostgreSQL 16 locally |
+| **Networking** | Services reach each other by name (`db`, `backend`, …) | Use `localhost` + the host ports |
+| **`DATABASE_URL` host** | `db` | `localhost` |
+| **Observability stack** | Prometheus/Loki/Promtail/Grafana included | Start each manually (often skipped in dev) |
+| **Best for** | Full end-to-end runs, matching CI | Iterating on a single service |
 
-Schema is defined in `company_db_schema.sql`; seed data in `inserts.sql`.
-
-### 7. Observability Stack
-
-| Component | Role |
-|---|---|
-| **Prometheus** (`:9090`) | Scrapes metrics from Flask and Next.js; stores time-series data |
-| **Promtail** | Tails log files and ships them to Loki |
-| **Loki** (`:3100`) | Log aggregation backend; queried via LogQL |
-| **Grafana** (`:3000`) | Unified dashboard reading from both Prometheus and Loki |
-
-Config files: `prometheus.yml` (scrape targets), `promtail-config.yaml` (log paths).
-
-### 8. Integrations
-
-- **WhatsApp Gateway** (`whatsapp_gateway/`) — routes incoming WhatsApp messages to the Flask agent.
-- **Slack Bot** (`agent_code/slack_integration/`) — allows querying ProfitPilot from a Slack workspace.
+For both paths, copy `.env.example` to `.env` and fill in the values first. Seed the database with
+`python agent_code/seed_db.py` once PostgreSQL is up.
 
 ---
 
-## Key Files for Contributors
-
-| File | What it does | Why it matters |
-|---|---|---|
-| `agent_code/app.py` | Flask entry point, all API routes, SSE streaming | Start here to understand the backend |
-| `agent_code/intents/database_request_graph/subgraph.py` | SQL generation + execution subgraph | Core query flow; known `AVAILABLE_TABLES` bug lives here |
-| `agent_code/intents/logs_request_graph/utils.py` | Loki LogQL helper | Missing `import requests` (open bug) |
-| `agent_code/intents/metrics_request_graph/utils.py` | Prometheus PromQL helper | Missing `import time` (open bug) |
-| `agent_code/llm/` | Ollama LLM wrapper | Used by all subgraphs for inference |
-| `agent_code/state/` | LangGraph shared state types | Required reading before editing any node |
-| `agent_code/db_config.py` | PostgreSQL connection helpers | Referenced by database subgraph |
-| `dashboard/src/app/chatbot/page.tsx` | Next.js chatbot UI | Critical SSE bug — open for contribution |
-| `dashboard/next.config.ts` | API rewrites to Flask agent | Understand how Dashboard → Agent routing works |
-| `landing-page/src/routes/get-started.tsx` | Onboarding form | Hardcodes `localhost:5000` (open bug) |
-| `docker-compose.yml` | Full service orchestration | All ports, volumes, env wiring in one file |
-| `prometheus.yml` | Prometheus scrape configuration | Controls which services are monitored |
-| `company_db_schema.sql` | PostgreSQL DDL | Understand the data model before writing SQL subgraphs |
-
----
-
-## Docker vs Manual Setup
-
-| Aspect | Docker (`docker compose up`) | Manual |
-|---|---|---|
-| **Best for** | Full system testing, demos | Active development on a single service |
-| **Services started** | All (Flask, Next.js, Landing, PostgreSQL, Grafana, Prometheus, Loki, Promtail, pgAdmin) | Only what you run |
-| **Ollama** | Must run on host machine either way (`ollama serve`) | Must run on host machine |
-| **Database setup** | Requires manual `docker cp` + `psql` steps after containers start | Requires local PostgreSQL + manual schema import |
-| **Env files needed** | `.env` (root) + `agent_code/.env` | `agent_code/.env` with `localhost` URLs |
-| **Port conflicts** | Watch for Grafana `:3000` vs Next.js `:3001` | Only active services occupy ports |
-
-> **Tip for new contributors:** Run `docker compose up --build` once to verify everything works end-to-end, then stop the service you're editing and run it manually so you get fast reload cycles.
-
----
-
-*Last updated for GSSoC'26. If you find anything out of date, please open an issue or PR!*
+*Diagrams use [Mermaid](https://mermaid.js.org/), which GitHub renders natively. Keep this document
+in sync with `docker-compose.yml` and the `*.mmd` sources when the architecture changes.*

@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 type Theme = "light" | "dark";
 
@@ -13,35 +13,25 @@ const ThemeContext = createContext<ThemeContextType>({
   toggleTheme: () => {},
 });
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
-  const [mounted, setMounted] = useState(false);
+function readInitialTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const saved = localStorage.getItem("pp-theme") as Theme | null;
+  return saved === "light" || saved === "dark" ? saved : "dark";
+}
 
-  // Load saved theme from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("pp-theme") as Theme | null;
-    if (saved && (saved === "light" || saved === "dark")) {
-      setTheme(saved);
-    }
-    setMounted(true);
-  }, []);
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(readInitialTheme);
 
   // Apply theme class to html element
   useEffect(() => {
-    if (!mounted) return;
     const root = document.documentElement;
     root.setAttribute("data-theme", theme);
     localStorage.setItem("pp-theme", theme);
-  }, [theme, mounted]);
+  }, [theme]);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
-
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return <div style={{ visibility: "hidden" }}>{children}</div>;
-  }
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>

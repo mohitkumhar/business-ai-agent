@@ -5,7 +5,9 @@ import json
 import os
 import time
 from datetime import datetime, timedelta
+from functools import wraps
 from typing import Any
+from uuid import uuid4
 
 import requests
 from dotenv import load_dotenv
@@ -14,16 +16,18 @@ from flask_cors import CORS
 from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
-from api_errors import internal_error_response
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE, internal_error_response
 from db_config import execute_read_query_params, get_db_connection
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
 from logger.logger import logger
 from query_execution import stream_agent_sse_lines
+from auth import AuthError, decode_jwt_identity, require_jwt_secret
 
 load_dotenv()
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
 
 AGENT_REQUEST_COUNT = Counter(
@@ -48,6 +52,28 @@ WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        try:
+            identity = decode_jwt_identity(
+                request.headers.get("Authorization"),
+                app.config["SECRET_KEY"],
+            )
+        except AuthError as exc:
+            return jsonify({"message": exc.message}), exc.status_code
+
+        g.user_id = identity["user_id"]
+        g.business_id = identity["business_id"]
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def get_current_business_id():
+    return getattr(g, "business_id", None)
 
 
 @app.before_request
@@ -592,6 +618,10 @@ def increment_assigned_count(username: str):
         json.dump(counts, f)
 
 
+def _request_id() -> str:
+    return request.headers.get("X-Request-Id") or uuid4().hex
+
+
 @app.route("/api/v1/employees", methods=["GET"])
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
@@ -621,7 +651,24 @@ def get_employees():
             }
         )
     except Exception as exc:
-        return internal_error_response(exc)
+        request_id = _request_id()
+        logger.error(
+            "Employees API failed request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
 
 @app.route("/api/v1/escalate", methods=["POST"])
@@ -726,18 +773,21 @@ def api_financial_overview():
 
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
+@token_required
 def api_revenue_vs_expense():
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    bid = get_current_business_id()
+    period = request.args.get("period", "this_month")
+    start_date, end_date = get_period_dates(period)
     try:
         rows = execute_read_query_params(
             """
             SELECT category, type, COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (bid, start_date, end_date),
         )
         revenue_cats: dict[str, float] = {}
         expense_cats: dict[str, float] = {}

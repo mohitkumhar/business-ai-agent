@@ -32,9 +32,11 @@ export function DashboardPeriodProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (consumeDashboardRefreshPending()) {
-      bumpDataVersion();
-    }
+    queueMicrotask(() => {
+      if (consumeDashboardRefreshPending()) {
+        bumpDataVersion();
+      }
+    });
   }, [bumpDataVersion]);
 
   useEffect(() => {
