@@ -89,7 +89,24 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
-    data = request.json
+    """
+    Register a new user and create an associated business account.
+
+    Expects a JSON request body with:
+        email (str): The new user's email address (stored lowercase).
+        password (str): The user's plain-text password (bcrypt-hashed before storage).
+        name (str): The user's full name.
+        business_name (str): The name of the user's business.
+        industry (str, optional): Industry type for the business (default: "Other").
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): UUID of the newly created business.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 201 on successful registration.
+        HTTP 400 if any of email, password, name, or business_name are missing.
+        HTTP
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
