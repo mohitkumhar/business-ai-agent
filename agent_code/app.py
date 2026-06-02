@@ -678,6 +678,20 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
+    """
+    Creates a new business and associated user account during onboarding.
+
+    Expects a JSON request containing business and user information.
+    Validates required fields, generates a unique business identifier,
+    and stores the business and user records in the database.
+
+    Returns:
+        Response: JSON response indicating success or failure.
+
+    Raises:
+        Exception: Any unexpected database or application error is
+        handled and returned as an internal error response.
+    """
     data = request.json
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
