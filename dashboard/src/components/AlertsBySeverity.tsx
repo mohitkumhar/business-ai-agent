@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, AlertsBySeverity as AlertsData } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 import { AlertTriangleIcon } from "./Icons";
 
 Chart.register(...registerables);
@@ -11,16 +12,14 @@ export default function AlertsBySeverity() {
   const { period, dataVersion } = useDashboardPeriod();
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const [data, setData] = useState<AlertsData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.getAlertsBySeverity(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
+  const loadAlertsBySeverity = useCallback(
+    () => api.getAlertsBySeverity(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<AlertsData>(
+    `alerts-by-severity:${period}:${dataVersion}`,
+    loadAlertsBySeverity,
+  );
 
   useEffect(() => {
     if (!data || !chartRef.current) return;
