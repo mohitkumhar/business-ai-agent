@@ -9,6 +9,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from dotenv import load_dotenv
 
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from logger.logger import logger
 from llm.base_llm import base_llm
 from db_config import execute_read_query
@@ -197,7 +198,7 @@ LIMIT 24
         return {
             "financial_context": json.dumps(
                 {
-                    "error": str(exc),
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
                     "business_id": bid,
                     "business_profile": business_profile,
                     "rows": [],
