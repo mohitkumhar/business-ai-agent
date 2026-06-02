@@ -86,23 +86,6 @@ def token_required(f):
 def get_current_business_id():
     return getattr(g, "business_id", None)
 
-def resolve_dashboard_business_id():
-    auth_header = request.headers.get("Authorization")
-    if auth_header:
-        identity = decode_jwt_identity(auth_header, app.config["SECRET_KEY"])
-        return identity["business_id"]
-
-    email = request.args.get("email", "").lower().strip()
-    if email:
-        rows = execute_read_query_params(
-            "SELECT business_id FROM users WHERE LOWER(email) = %s LIMIT 1",
-            (email,),
-        )
-        if rows:
-            return rows[0]["business_id"]
-
-    return get_current_business_id()
-
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
