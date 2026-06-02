@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SearchIcon, HelpCircleIcon, BellIcon, SunIcon, MoonIcon, MenuIcon } from "./Icons";
 import { LANDING_PAGE_URL } from "@/lib/publicUrls";
 import { syncUserEmailFromUrl, syncUserNameFromApi } from "@/lib/syncDashboardUser";
@@ -44,34 +44,34 @@ function clearSessionAndGoLanding() {
 
 export default function Topbar({ onSearch, title = "Overview", onMenuClick }: TopbarProps) {
   const [query, setQuery] = useState("");
-  const [displayName, setDisplayName] = useState("User");
-  const [userEmail, setUserEmail] = useState("");
+  const [displayName, setDisplayName] = useState(readStoredName);
+  const [userEmail, setUserEmail] = useState(readStoredEmail);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
   // Theme context from kushal-dev
   const { theme, toggleTheme } = useTheme();
 
+  const refreshUserState = useCallback(() => {
+    setDisplayName(readStoredName());
+    setUserEmail(readStoredEmail());
+  }, []);
+
   // User sync logic from testsparkhack
   useEffect(() => {
     syncUserEmailFromUrl();
-    setDisplayName(readStoredName());
-    setUserEmail(readStoredEmail());
-    void syncUserNameFromApi().then(() => {
-      setDisplayName(readStoredName());
-      setUserEmail(readStoredEmail());
-    });
-    const onUpdate = () => {
-      setDisplayName(readStoredName());
-      setUserEmail(readStoredEmail());
-    };
+    queueMicrotask(refreshUserState);
+    void syncUserNameFromApi().then(refreshUserState);
     window.addEventListener("profitpilot-user", onUpdate);
     window.addEventListener("storage", onUpdate);
+    function onUpdate() {
+      refreshUserState();
+    }
     return () => {
       window.removeEventListener("profitpilot-user", onUpdate);
       window.removeEventListener("storage", onUpdate);
     };
-  }, []);
+  }, [refreshUserState]);
 
   // Dropdown click outside logic
   useEffect(() => {
