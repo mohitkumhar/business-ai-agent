@@ -7,7 +7,6 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any
-from uuid import uuid4
 
 import requests
 from dotenv import load_dotenv
@@ -21,6 +20,7 @@ from db_config import execute_read_query_params, get_db_connection
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
 from logger.logger import logger
+from request_ids import get_request_id
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
 
@@ -30,22 +30,33 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
 
-AGENT_REQUEST_COUNT = Counter(
-    "agent_requests_total",
-    "Total requests to the agent API",
-    ["method", "endpoint", "status"],
-)
-AGENT_REQUEST_LATENCY = Histogram(
-    "agent_request_duration_seconds",
-    "Agent API request latency",
-    ["method", "endpoint"],
-    buckets=[0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120],
-)
-AGENT_INTENT_COUNT = Counter(
-    "agent_intent_detections_total",
-    "Total intent detections by type",
-    ["intent"],
-)
+if "agent_requests_total" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
+else:
+    AGENT_REQUEST_COUNT = Counter(
+        "agent_requests_total",
+        "Total requests to the agent API",
+        ["method", "endpoint", "status"],
+    )
+
+if "agent_request_duration_seconds" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_LATENCY = REGISTRY._names_to_collectors["agent_request_duration_seconds"]
+else:
+    AGENT_REQUEST_LATENCY = Histogram(
+        "agent_request_duration_seconds",
+        "Agent API request latency",
+        ["method", "endpoint"],
+        buckets=[0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120],
+    )
+
+if "agent_intent_detections_total" in REGISTRY._names_to_collectors:
+    AGENT_INTENT_COUNT = REGISTRY._names_to_collectors["agent_intent_detections_total"]
+else:
+    AGENT_INTENT_COUNT = Counter(
+        "agent_intent_detections_total",
+        "Total intent detections by type",
+        ["intent"],
+    )
 
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
@@ -57,6 +68,8 @@ DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
         try:
             identity = decode_jwt_identity(
                 request.headers.get("Authorization"),
@@ -79,6 +92,7 @@ def get_current_business_id():
 @app.before_request
 def _start_timer():
     g.start_time = time.time()
+    g.request_id = get_request_id(request.headers.get("X-Request-ID"), getattr(g, "request_id", None))
 
 
 @app.after_request
@@ -89,6 +103,7 @@ def _record_metrics(response):
     endpoint = request.endpoint or "unknown"
     AGENT_REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     AGENT_REQUEST_LATENCY.labels(request.method, endpoint).observe(latency)
+    response.headers["X-Request-ID"] = get_request_id(getattr(g, "request_id", None))
     return response
 
 
@@ -148,8 +163,25 @@ def _ensure_whatsapp_tables():
     finally:
         conn.close()
 
+_whatsapp_tables_initialized = False
 
-_ensure_whatsapp_tables()
+def _initialize_whatsapp_tables_safe():
+    global _whatsapp_tables_initialized
+
+    if _whatsapp_tables_initialized:
+        return
+
+    try:
+        _ensure_whatsapp_tables()
+        _whatsapp_tables_initialized = True
+        logger.info("WhatsApp tables initialized successfully.")
+    except Exception as exc:
+        logger.warning(
+            "WhatsApp table initialization failed: %s",
+            exc
+        )
+
+
 try:
     from slack_integration.flask_routes import register_slack_routes
 
@@ -466,7 +498,9 @@ def query_agent():
 
 @app.route("/api/v1/billing/analyze-all", methods=["POST"])
 def billing_analyze_all():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     question = (data.get("question") or "Analyze all business billing data").strip()
     business_id = (data.get("business_id") or "").strip() or _resolve_business_id(None)
     try:
@@ -489,8 +523,11 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        payload = request.get_json(force=True) or {}
+        payload = data
         entries = payload.get("entry") or []
         for entry in entries:
             for change in entry.get("changes") or []:
@@ -541,8 +578,11 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        update = request.get_json(force=True) or {}
+        update = data
         msg = update.get("message") or update.get("edited_message") or {}
         if not msg:
             return jsonify({"ok": True})
@@ -619,10 +659,6 @@ def increment_assigned_count(username: str):
         json.dump(counts, f)
 
 
-def _request_id() -> str:
-    return request.headers.get("X-Request-Id") or uuid4().hex
-
-
 @app.route("/api/v1/employees", methods=["GET"])
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
@@ -630,14 +666,19 @@ def get_employees():
         res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
         counts = get_assigned_counts()
         if res.status_code != 200:
+            logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
             return jsonify(
                 {
                     "employees": [
                         {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
                         {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
-                    ]
+                    ],
+                    "degraded": True,
+                    "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
                 }
             )
+    
+       
         contributors = res.json()
         return jsonify(
             {
@@ -652,7 +693,7 @@ def get_employees():
             }
         )
     except Exception as exc:
-        request_id = _request_id()
+        request_id = get_request_id(getattr(g, "request_id", None))
         logger.error(
             "Employees API failed request_id=%s repo=%s: %s",
             request_id,
@@ -674,8 +715,10 @@ def get_employees():
 
 @app.route("/api/v1/escalate", methods=["POST"])
 def escalate_to_slack():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        data = request.get_json() or {}
         query = data.get("query", "No specific query")
         summary = data.get("summary", "No summary provided")
         from slack_integration.slack_handler import SlackDelivery
@@ -1038,10 +1081,10 @@ def get_business_info():
     finally:
         conn.close()
 
-
 if __name__ == "__main__":
+    _initialize_whatsapp_tables_safe()
     logger.info("Starting Flask development server.")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 import os
@@ -1073,9 +1116,8 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 
 load_dotenv()
 
-app = Flask(__name__)
+# Use the existing app object defined at the top of the file
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
-CORS(app)
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -1134,7 +1176,7 @@ def get_latest_business_id():
 # --- Dashboard API Endpoints ---
 
 @app.route("/api/dashboard/summary-sql", methods=["GET"])
-def api_dashboard_summary():
+def api_dashboard_summary_sql():
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
     bid = get_latest_business_id()
@@ -1228,7 +1270,9 @@ def api_forecast():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -1257,7 +1301,9 @@ def iter_query_sse(input_query, thread_id):
 
 @app.route("/api/chat/send", methods=["POST"])
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     conv_id = data.get("conversation_id")
     msg = data.get("message")
     # Wrap iter_query_sse in SSE Response
@@ -1266,4 +1312,5 @@ def api_chat_send():
 # Start Server
 _init_chat_db()
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    logger.info("Starting Flask development server.")
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")

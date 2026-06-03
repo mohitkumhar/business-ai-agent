@@ -105,7 +105,7 @@ function GetStartedPage() {
     }
 
     try {
-      const apiBase = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const apiBase = agentApiBaseUrl;
       const response = await fetch(`${apiBase}/api/v1/onboarding`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
