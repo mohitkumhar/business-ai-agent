@@ -69,6 +69,11 @@
                 throw { status: resp.status, message: errorText };
             }
             return await resp.json();
+        } catch (err) {
+            console.error("API error:", err);
+            return null;
+         }
+    }
          
 
     // ── Conversation List ──────────────────────────────────────────
