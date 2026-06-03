@@ -824,6 +824,19 @@ def import_notebook():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def confirm_notebook():
+    """
+    Handles the HTTP request to confirm imported notebook transactions.
+
+    Extracts payload data from the incoming JSON request body, validates its 
+    structure, and processes the confirmation of transactions.
+
+    Returns:
+        tuple: A JSON response and an HTTP status code. 
+        - 200: Success response when transactions are confirmed.
+        - 400: If the JSON body is invalid/missing, or if there are no 
+               transactions to confirm.
+        - 500: Internal error response if processing fails.
+    """
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
