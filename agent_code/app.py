@@ -486,12 +486,28 @@ def _list_serialized_conversations(db: sqlite3.Connection, *, business_id: str, 
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
-    if not WHATSAPP_ACCESS_TOKEN: raise ValueError("WhatsApp token missing")
-    meta = requests.get(f"https://graph.facebook.com/v21.0/{media_id}", headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"}).json()
-    url = meta.get("url")
-    if not url: raise ValueError("Media URL missing")
-    blob = requests.get(url, headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"})
-    return blob.content, meta.get("mime_type", "image/jpeg")
+    if not WHATSAPP_ACCESS_TOKEN:
+        raise ValueError("WhatsApp token missing")
+    try:
+        meta = requests.get(
+            f"https://graph.facebook.com/v21.0/{media_id}",
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            timeout=(5, 30),
+        ).json()
+        url = meta.get("url")
+        if not url:
+            raise ValueError("Media URL missing")
+        blob = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            timeout=(5, 60),
+        )
+        blob.raise_for_status()
+        return blob.content, meta.get("mime_type", "image/jpeg")
+    except requests.exceptions.Timeout:
+        raise ValueError("WhatsApp media download timed out.")
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"WhatsApp media download failed: {e}")
 
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     extension_by_mime = {
@@ -556,7 +572,8 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
 
     response = "".join(chunks).strip()
     if response:
-        return response
+       return response
+
     if fallback_error:
         logger.error("Agent execution failed: %s", fallback_error)
         return "Sorry, something went wrong while generating the response."
@@ -698,7 +715,14 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
+    """Verify WhatsApp webhook requests using the configured verify token.
+
+    Returns the challenge string when the supplied verification token matches
+    the configured WhatsApp verify token. Returns a 403 response when the
+    token validation fails.
+    """
+    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
+        return request.args.get("hub.challenge"), 200
     return "failed", 403
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
@@ -1294,22 +1318,28 @@ def api_health_scores():
     try:
         rows = execute_read_query_params("""
             SELECT bhs.overall_score, bhs.cash_score, bhs.profitability_score, bhs.growth_score,
-                   bhs.cost_control_score, bhs.risk_score, b.business_name
+                   bhs.cost_control_score, bhs.risk_score, bhs.calculated_at, b.business_name
             FROM business_health_scores bhs
             JOIN businesses b ON b.business_id = bhs.business_id
             WHERE b.business_id = %s
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
         """, (bid,))
-        
+
         if not rows:
             return jsonify({"businesses": [], "scores": []})
-            
+
         return jsonify({
-            "businesses": [r["business_name"] for r in rows],
+            "businesses": [
+                r["calculated_at"].strftime("%Y-%m-%d") if r["calculated_at"] else "N/A"
+                for r in rows
+            ],
             "scores": [
                 {
-                    "name": r["business_name"],
+                    "name": (
+                        r["calculated_at"].strftime("%Y-%m-%d")
+                        if r["calculated_at"] else "N/A"
+                    ),
                     "overall": float(r["overall_score"] or 0),
                     "cash": float(r["cash_score"] or 0),
                     "profitability": float(r["profitability_score"] or 0),
