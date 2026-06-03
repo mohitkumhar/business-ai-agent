@@ -111,3 +111,43 @@ if "llm.base_llm" not in sys.modules and importlib.util.find_spec("langchain_ope
 
     base_llm_module.base_llm = _FakeLLM()
     sys.modules["llm.base_llm"] = base_llm_module
+
+
+# Install stubs for optional heavy dependencies if they are not installed in the environment
+if importlib.util.find_spec("numpy") is None:
+    numpy = types.ModuleType("numpy")
+    sys.modules["numpy"] = numpy
+
+if importlib.util.find_spec("langchain_openai") is None:
+    langchain_openai = types.ModuleType("langchain_openai")
+    class ChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+    langchain_openai.ChatOpenAI = ChatOpenAI
+    sys.modules["langchain_openai"] = langchain_openai
+
+if importlib.util.find_spec("langgraph") is None:
+    langgraph = types.ModuleType("langgraph")
+    langgraph_types = types.ModuleType("langgraph.types")
+    class Command(dict):
+        pass
+    langgraph_types.Command = Command
+    sys.modules["langgraph"] = langgraph
+    sys.modules["langgraph.types"] = langgraph_types
+
+# Stub graph workflows that are imported by agent_code/app.py
+workflow_modules = {
+    "intents.general_information_graph.subgraph": "general_information_graph_workflow",
+    "intents.database_request_graph.subgraph": "database_request_graph_workflow",
+    "intents.logs_request_graph.subgraph": "logs_request_graph_workflow",
+    "intents.metrics_request_graph.subgraph": "metrics_request_graph_workflow",
+}
+class _NoopWorkflow:
+    def stream(self, *args, **kwargs):
+        return iter(())
+
+for module_name, workflow_name in workflow_modules.items():
+    if module_name not in sys.modules:
+        module = types.ModuleType(module_name)
+        setattr(module, workflow_name, _NoopWorkflow())
+        sys.modules[module_name] = module
