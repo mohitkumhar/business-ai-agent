@@ -645,8 +645,14 @@ def api_list_conversations():
 @app.route("/api/chat/conversations", methods=["POST"])
 def api_create_conversation():
     """Create a new conversation."""
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    else:
+        data = {}
     conv_id = str(uuid.uuid4())
-    title = request.json.get("title", "New Chat") if request.is_json else "New Chat"
+    title = data.get("title", "New Chat") if data else "New Chat"
     db = _get_chat_db()
     db.execute(
         "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
@@ -683,7 +689,9 @@ def api_chat_send():
     Send a message to the agent and store the exchange.
     Expects JSON: { conversation_id, message }
     """
-    data = request.get_json(force=True)
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     conv_id = data.get("conversation_id")
     user_msg = data.get("message", "").strip()
 

@@ -63,8 +63,10 @@ if importlib.util.find_spec("pydantic") is None:
 
 if importlib.util.find_spec("langchain_core") is None:
     langchain_core = types.ModuleType("langchain_core")
+    langchain_core.__path__ = []  # Make it a package
     prompts = types.ModuleType("langchain_core.prompts")
     runnables = types.ModuleType("langchain_core.runnables")
+    messages = types.ModuleType("langchain_core.messages")
 
     class _Prompt:
         def __init__(self, messages):
@@ -87,13 +89,31 @@ if importlib.util.find_spec("langchain_core") is None:
     class RunnableConfig:
         pass
 
+    class HumanMessage:
+        def __init__(self, content="", **kwargs):
+            self.content = content
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    class SystemMessage:
+        def __init__(self, content="", **kwargs):
+            self.content = content
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
     prompts.ChatPromptTemplate = ChatPromptTemplate
     runnables.RunnableConfig = RunnableConfig
+    messages.HumanMessage = HumanMessage
+    messages.SystemMessage = SystemMessage
+
     langchain_core.prompts = prompts
     langchain_core.runnables = runnables
+    langchain_core.messages = messages
+
     sys.modules["langchain_core"] = langchain_core
     sys.modules["langchain_core.prompts"] = prompts
     sys.modules["langchain_core.runnables"] = runnables
+    sys.modules["langchain_core.messages"] = messages
 
 
 if "llm.base_llm" not in sys.modules and importlib.util.find_spec("langchain_openai") is None:
@@ -111,3 +131,52 @@ if "llm.base_llm" not in sys.modules and importlib.util.find_spec("langchain_ope
 
     base_llm_module.base_llm = _FakeLLM()
     sys.modules["llm.base_llm"] = base_llm_module
+
+
+# Install stubs for optional heavy dependencies if they are not installed in the environment
+if importlib.util.find_spec("numpy") is None:
+    class DummyNumpy(types.ModuleType):
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            class DummyAttr:
+                def __init__(self, *args, **kwargs):
+                    pass
+            setattr(self, name, DummyAttr)
+            return DummyAttr
+    numpy = DummyNumpy("numpy")
+    sys.modules["numpy"] = numpy
+
+if importlib.util.find_spec("langchain_openai") is None:
+    langchain_openai = types.ModuleType("langchain_openai")
+    class ChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+    langchain_openai.ChatOpenAI = ChatOpenAI
+    sys.modules["langchain_openai"] = langchain_openai
+
+if importlib.util.find_spec("langgraph") is None:
+    langgraph = types.ModuleType("langgraph")
+    langgraph_types = types.ModuleType("langgraph.types")
+    class Command(dict):
+        pass
+    langgraph_types.Command = Command
+    sys.modules["langgraph"] = langgraph
+    sys.modules["langgraph.types"] = langgraph_types
+
+# Stub graph workflows that are imported by agent_code/app.py
+workflow_modules = {
+    "intents.general_information_graph.subgraph": "general_information_graph_workflow",
+    "intents.database_request_graph.subgraph": "database_request_graph_workflow",
+    "intents.logs_request_graph.subgraph": "logs_request_graph_workflow",
+    "intents.metrics_request_graph.subgraph": "metrics_request_graph_workflow",
+}
+class _NoopWorkflow:
+    def stream(self, *args, **kwargs):
+        return iter(())
+
+for module_name, workflow_name in workflow_modules.items():
+    if module_name not in sys.modules:
+        module = types.ModuleType(module_name)
+        setattr(module, workflow_name, _NoopWorkflow())
+        sys.modules[module_name] = module

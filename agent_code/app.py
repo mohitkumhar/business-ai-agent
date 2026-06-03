@@ -29,12 +29,9 @@ from ocr_processor import extract_transactions_from_image
 from langchain_openai import ChatOpenAI
 
 # Chatbot/LangGraph Imports
-from nodes import intent_detection, format_response
 from intents.general_information_graph.subgraph import general_information_graph_workflow
 from intents.database_request_graph.subgraph import database_request_graph_workflow
-from intents.logs_request_graph.subgraph import logs_request_graph_workflow
-from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
-from langgraph.types import Command
+
 
 from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
@@ -89,7 +86,9 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -133,7 +132,9 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -171,9 +172,20 @@ TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 # --- Metrics ---
-AGENT_REQUEST_COUNT = Counter("agent_requests_total", "Total requests", ["method", "endpoint", "status"])
-AGENT_REQUEST_LATENCY = Histogram("agent_request_duration_seconds", "Request latency", ["method", "endpoint"])
-AGENT_INTENT_COUNT = Counter("agent_intent_detections_total", "Intent detections", ["intent"])
+if "agent_requests_total" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
+else:
+    AGENT_REQUEST_COUNT = Counter("agent_requests_total", "Total requests", ["method", "endpoint", "status"])
+
+if "agent_request_duration_seconds" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_LATENCY = REGISTRY._names_to_collectors["agent_request_duration_seconds"]
+else:
+    AGENT_REQUEST_LATENCY = Histogram("agent_request_duration_seconds", "Request latency", ["method", "endpoint"])
+
+if "agent_intent_detections_total" in REGISTRY._names_to_collectors:
+    AGENT_INTENT_COUNT = REGISTRY._names_to_collectors["agent_intent_detections_total"]
+else:
+    AGENT_INTENT_COUNT = Counter("agent_intent_detections_total", "Intent detections", ["intent"])
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -695,7 +707,9 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -732,8 +746,11 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        update = request.get_json(force=True) or {}
+        update = data
         message = update.get("message") or update.get("edited_message") or {}
         chat_id = (message.get("chat") or {}).get("id")
 
@@ -758,7 +775,7 @@ def telegram_webhook():
     except Exception as e:
         logger.error("Telegram webhook failed: %s", e, exc_info=True)
         try:
-            update = request.get_json(silent=True) or {}
+            update = data
             message = update.get("message") or update.get("edited_message") or {}
             chat_id = (message.get("chat") or {}).get("id")
             if chat_id is not None:
@@ -907,7 +924,9 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
@@ -961,7 +980,9 @@ def api_chat_conversation(conversation_id: str):
         db.commit()
         return ("", 204)
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     raw_messages = data.get("messages") or []
     if not isinstance(raw_messages, list):
         return jsonify({"error": "messages must be an array"}), 400
@@ -1003,7 +1024,9 @@ def api_chat_conversation(conversation_id: str):
 @token_required
 def api_chat_conversation_messages(conversation_id: str):
     business_id, user_id = _chat_owner_filter()
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     db = _get_chat_db()
 
     try:
