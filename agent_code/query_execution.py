@@ -1,7 +1,7 @@
 """Shared LangGraph → SSE streaming logic for HTTP and Slack (no Flask request object)."""
 
 from __future__ import annotations
-
+import uuid
 import json
 import os
 from collections.abc import Callable, Iterator
@@ -195,9 +195,10 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
 
         yield f"data: {json.dumps({'type': 'final', 'intent_str': intent_str})}\n\n"
 
-    except Exception as exc:
-        logger.error(f"Error during stream: {exc}", exc_info=True)
-        yield f"data: {json.dumps({'type': 'error', 'error': str(exc), 'intent_str': intent_str})}\n\n"
+ except Exception as exc:
+                request_id = str(uuid.uuid4())
+                logger.error(f"[{request_id}] Error during stream: {exc}", exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.', 'request_id': request_id, 'intent_str': intent_str})}\n\n"
 
 
 def _chain_thread_config(base_thread_id: str, step_index: int) -> dict:

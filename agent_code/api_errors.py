@@ -4,10 +4,13 @@ from flask import jsonify
 from flask import g
 
 from logger.logger import logger
+import uuid
 from request_ids import get_request_id
 
 
 SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try again later."
+
+
 
 
 def internal_error_response(exc: BaseException | None = None, *, field: str = "error"):
