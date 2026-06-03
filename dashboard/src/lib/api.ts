@@ -92,7 +92,10 @@ function getHeaders() {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   } as HeadersInit;
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 async function safeFetchJson<T>(
   url: string,
   options?: RequestInit
@@ -101,7 +104,6 @@ async function safeFetchJson<T>(
 
   if (!res.ok) {
     const contentType = res.headers.get("content-type") || "";
-
     let message = `HTTP ${res.status}`;
 
     try {
@@ -119,6 +121,7 @@ async function safeFetchJson<T>(
   }
 
   return res.json();
+<<<<<<< HEAD
 
 function getHeaders() {
   const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
@@ -132,14 +135,32 @@ function getHeaders() {
 function getAuthHeaders() {
   const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
   return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
+=======
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 }
 
-async function readJsonOrThrow<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+function getAuthHeaders() {
+  const token =
+    typeof window !== "undefined"
+      ? localStorage.getItem("profit_pilot_token")
+      : null;
+
+  return token
+    ? ({ Authorization: `Bearer ${token}` } as HeadersInit)
+    : ({} as HeadersInit);
+}
+
+async function readJsonOrThrow<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<T> {
   const response = await fetch(input, init);
+
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
     throw new Error(errorText || `Request failed with status ${response.status}`);
   }
+
   return response.json();
 }
 
@@ -148,6 +169,7 @@ function chatApiPath(path: string): string {
 }
 
 export const api = {
+<<<<<<< HEAD
   getSummary: async (period: string): Promise<DashboardSummary> => {
     const res = await fetch(`/api/dashboard/summary-sql?period=${period}`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Summary API failed");
@@ -159,15 +181,61 @@ export const api = {
     appendUserEmail(
       `/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`
     ),
+=======
+  getSummary: async (
+  period: string
+): Promise<DashboardSummary> => {
+  const res = await fetch(
+    `/api/dashboard/summary-sql?period=${period}`,
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
     { headers: getHeaders() }
+  );
+
+ if (!res.ok) {
+  const text = await res.text();
+  throw new Error(
+    `Summary API failed (${res.status}): ${text}`
+  );
+}
+  return res.json();
+},
+  getFinancialOverview: async (
+    period?: string
+  ): Promise<FinancialOverview> => {
+    return safeFetchJson<FinancialOverview>(
+      `/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`,
+      { headers: getHeaders() }
+    );
+  },
+  getRevenueVsExpense: async (
+  period: string
+): Promise<RevenueVsExpense> =>
+  safeFetchJson<RevenueVsExpense>(
+    `/api/dashboard/revenue-vs-expense?period=${period}`
+  ),
+
+  getSalesTarget: async (
+    period: string
+  ): Promise<SalesTarget> => {
+    return safeFetchJson<SalesTarget>(
+      `/api/dashboard/sales-target?period=${period}`,
+      { headers: getHeaders() }
+    );
+  },
+ getSalesTrend: async (
+  period: string
+): Promise<SalesTrend> => {
+  return safeFetchJson<SalesTrend>(
+    `/api/dashboard/sales-trend?period=${period}`
   );
 },
 
-getSalesTarget: async (period: string): Promise<SalesTarget> => {
-  return safeFetchJson<SalesTarget>(
-    appendUserEmail(`/api/dashboard/sales-target?period=${period}`),
+getForecast: async (period: string): Promise<Forecast> => {
+  const res = await fetch(
+    `/api/dashboard/forecast?period=${period}`,
     { headers: getHeaders() }
   );
+<<<<<<< HEAD
 },
     const res = await fetch(`/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`, { headers: getHeaders() });
     return res.json();
@@ -178,13 +246,18 @@ getSalesTarget: async (period: string): Promise<SalesTarget> => {
     return res.json();
   },
 
+=======
 
-getRevenueVsExpense: async (period: string) => {
-  return safeFetchJson(
-    appendUserEmail(`/api/dashboard/revenue-vs-expense?period=${period}`)
-  );
+  if (!res.ok) {
+    const { mockForecast } = await import("./mockData");
+    return mockForecast;
+  }
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
+
+  return res.json();
 },
 
+<<<<<<< HEAD
 getSalesTrend: async (period: string) => {
   return safeFetchJson(
     appendUserEmail(`/api/dashboard/sales-trend?period=${period}`)
@@ -201,23 +274,50 @@ getSalesTrend: async (period: string) => {
     return res.json();
   },
 
+=======
+getRecentTransactions: async (params: {
+  search?: string;
+  category?: string;
+  limit?: number;
+  period?: string;
+}) => {
+  const query = new URLSearchParams();
 
-  return safeFetchJson(
-    appendUserEmail(
-      `/api/dashboard/recent-transactions?${query.toString()}`
-    )
+  if (params.search) query.set("search", params.search);
+  if (params.category) query.set("category", params.category);
+  if (params.limit) query.set("limit", params.limit.toString());
+  if (params.period) query.set("period", params.period);
+
+  const res = await fetch(
+  `/api/dashboard/recent-transactions?${query.toString()}`,
+  { headers: getHeaders() }
+);
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
+
+if (!res.ok) {
+  const text = await res.text();
+  throw new Error(
+    `Recent transactions API failed (${res.status}): ${text}`
   );
+}
+
+return res.json();
 },
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 getAlertsList: async (period?: string) => {
-  return safeFetchJson(
-    appendUserEmail(
-      `/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`
-    )
+  const res = await fetch(
+    `/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`,
+    { headers: getHeaders() }
   );
+
+  return res.json();
 },
 
+<<<<<<< HEAD
 getBusinessInfo: async (): Promise<BusinessInfo> => {
   return safeFetchJson<BusinessInfo>(
     appendUserEmail(`/api/dashboard/business-info`)
@@ -225,38 +325,36 @@ getBusinessInfo: async (): Promise<BusinessInfo> => {
 },
 
  
+=======
+getBusinessInfo: async (): Promise<BusinessInfo> =>
+  safeFetchJson<BusinessInfo>( `/api/dashboard/business-info`, { headers: getHeaders() }),
 
-getCategories: async () =>
-  safeFetchJson(
-    appendUserEmail(`/api/dashboard/categories`)
+// Other endpoints
+getCategories: async (): Promise<any> =>
+  safeFetchJson<any>(
+    `/api/dashboard/categories`
+  ),
+getAlertsBySeverity: async (
+  period?: string
+): Promise<AlertsBySeverity> =>
+  safeFetchJson<AlertsBySeverity>( `/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`),
+>>>>>>> ab2ee6c (fix: improve dashboard API error handling)
+
+getHealthScores: async (
+  period?: string
+): Promise<HealthScores> =>
+  safeFetchJson<HealthScores>( `/api/dashboard/health-scores${period ? `?period=${period}` : ""}`),
+
+getTopProducts: async (period?: string): Promise<TopProducts> =>
+  safeFetchJson<TopProducts>(
+    `/api/dashboard/top-products${period ? `?period=${period}` : ""}`
   ),
 
-getAlertsBySeverity: async (period?: string) =>
-  safeFetchJson(
-    appendUserEmail(
-      `/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`
-    )
-  ),
-
-getHealthScores: async (period?: string) =>
-  safeFetchJson(
-    appendUserEmail(
-      `/api/dashboard/health-scores${period ? `?period=${period}` : ""}`
-    )
-  ),
-
-getTopProducts: async (period?: string) =>
-  safeFetchJson(
-    appendUserEmail(
-      `/api/dashboard/top-products${period ? `?period=${period}` : ""}`
-    )
-  ),
-
-getEmployeeStats: async (period?: string) =>
-  safeFetchJson(
-    appendUserEmail(
-      `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`
-    )
+getEmployeeStats: async (
+  period?: string
+): Promise<EmployeeStats> =>
+  safeFetchJson<EmployeeStats>(
+    `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`
   ),
 =======
 
