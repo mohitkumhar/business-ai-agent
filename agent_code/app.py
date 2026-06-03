@@ -106,7 +106,15 @@ def auth_signup():
             user (dict): Basic user info with 'name' and 'email' keys.
         HTTP 201 on successful registration.
         HTTP 400 if any of email, password, name, or business_name are missing.
-        HTTP
+        HTTP 409 if the email address is already registered.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Inserts a new record into the PostgreSQL businesses table.
+        Inserts a new record into the PostgreSQL users table with a bcrypt-hashed password.
+        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
+    """
+    data = request.json
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -150,6 +158,27 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
+    """
+    Authenticate an existing user and return a JWT access token.
+
+    Expects a JSON request body with:
+        email (str): The user's registered email address.
+        password (str): The user's plain-text password (verified against bcrypt hash).
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): UUID of the user's associated business.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 200 on successful authentication.
+        HTTP 400 if email or password are missing.
+        HTTP 401 if the email is not found or the password does not match.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Reads from the PostgreSQL users table.
+        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
+    """
     data = request.json
     email = data.get("email", "").lower().strip()
     password = data.get("password")
