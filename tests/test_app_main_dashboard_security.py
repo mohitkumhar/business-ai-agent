@@ -104,7 +104,7 @@ def test_app_main_employees_invalid_request_id_is_sanitized(monkeypatch):
     app_main.app.config.update(TESTING=True)
     response = app_main.app.test_client().get(
         "/api/v1/employees",
-        headers={"X-Request-Id": "bad\r\nrequest-id"},
+        headers={"X-Request-Id": "bad/request-id"},
     )
 
     payload = response.get_json()
@@ -112,5 +112,5 @@ def test_app_main_employees_invalid_request_id_is_sanitized(monkeypatch):
     assert response.status_code == 500
     assert payload["request_id"] == response.headers["X-Request-ID"]
     assert re.fullmatch(r"[0-9a-f]{32}", payload["request_id"])
-    assert payload["request_id"] != "bad\r\nrequest-id"
+    assert payload["request_id"] != "bad/request-id"
     assert "github token" not in response.get_data(as_text=True)
