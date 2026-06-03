@@ -11,6 +11,8 @@ export const onboardingUrl = `/get-started`;
 export const agentApiBaseUrl =
   typeof import.meta !== "undefined" && import.meta.env?.VITE_AGENT_API_URL
     ? String(import.meta.env.VITE_AGENT_API_URL).replace(/\/$/, "")
+    : typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+    ? String(import.meta.env.VITE_API_URL).replace(/\/$/, "")
     : "http://localhost:5000";
 
 /** Dashboard Next app URL; query ?user_email= is appended after onboarding. */
