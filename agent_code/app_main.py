@@ -628,10 +628,6 @@ def increment_assigned_count(username: str):
         json.dump(counts, f)
 
 
-def _request_id() -> str:
-    return request.headers.get("X-Request-Id") or uuid4().hex
-
-
 @app.route("/api/v1/employees", methods=["GET"])
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
