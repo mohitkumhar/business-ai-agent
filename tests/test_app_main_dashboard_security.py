@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -83,4 +84,33 @@ def test_app_main_employees_runtime_error_response_is_client_safe(monkeypatch):
         "code": "employees_unavailable",
         "request_id": "req-employees-test",
     }
+    assert "github token" not in response.get_data(as_text=True)
+
+
+def test_app_main_employees_invalid_request_id_is_sanitized(monkeypatch):
+    os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret")
+
+    try:
+        app_main = importlib.import_module("agent_code.app_main")
+    except Exception as exc:
+        pytest.skip(f"backend app dependencies unavailable: {exc}")
+
+    def fail_github_request(*args, **kwargs):
+        raise RuntimeError("github token leaked in raw exception")
+
+    monkeypatch.setattr(app_main.requests, "get", fail_github_request)
+    monkeypatch.setattr(app_main, "get_assigned_counts", lambda: {})
+
+    app_main.app.config.update(TESTING=True)
+    response = app_main.app.test_client().get(
+        "/api/v1/employees",
+        headers={"X-Request-Id": "bad\r\nrequest-id"},
+    )
+
+    payload = response.get_json()
+
+    assert response.status_code == 500
+    assert payload["request_id"] == response.headers["X-Request-ID"]
+    assert re.fullmatch(r"[0-9a-f]{32}", payload["request_id"])
+    assert payload["request_id"] != "bad\r\nrequest-id"
     assert "github token" not in response.get_data(as_text=True)

@@ -7,7 +7,6 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any
-from uuid import uuid4
 
 import requests
 from dotenv import load_dotenv
@@ -21,6 +20,7 @@ from db_config import execute_read_query_params, get_db_connection
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
 from logger.logger import logger
+from request_ids import get_request_id
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
 
@@ -76,18 +76,10 @@ def get_current_business_id():
     return getattr(g, "business_id", None)
 
 
-def _request_id() -> str:
-    request_id = (getattr(g, "request_id", None) or "").strip()
-    if not request_id:
-        request_id = uuid4().hex
-        g.request_id = request_id
-    return request_id
-
-
 @app.before_request
 def _start_timer():
     g.start_time = time.time()
-    g.request_id = (request.headers.get("X-Request-ID") or "").strip() or uuid4().hex
+    g.request_id = get_request_id(request.headers.get("X-Request-ID"), getattr(g, "request_id", None))
 
 
 @app.after_request
@@ -98,7 +90,7 @@ def _record_metrics(response):
     endpoint = request.endpoint or "unknown"
     AGENT_REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     AGENT_REQUEST_LATENCY.labels(request.method, endpoint).observe(latency)
-    response.headers["X-Request-ID"] = _request_id()
+    response.headers["X-Request-ID"] = get_request_id(getattr(g, "request_id", None))
     return response
 
 
@@ -657,7 +649,7 @@ def get_employees():
             }
         )
     except Exception as exc:
-        request_id = _request_id()
+        request_id = get_request_id(getattr(g, "request_id", None))
         logger.error(
             "Employees API failed request_id=%s repo=%s: %s",
             request_id,
