@@ -486,12 +486,28 @@ def _list_serialized_conversations(db: sqlite3.Connection, *, business_id: str, 
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
-    if not WHATSAPP_ACCESS_TOKEN: raise ValueError("WhatsApp token missing")
-    meta = requests.get(f"https://graph.facebook.com/v21.0/{media_id}", headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"}).json()
-    url = meta.get("url")
-    if not url: raise ValueError("Media URL missing")
-    blob = requests.get(url, headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"})
-    return blob.content, meta.get("mime_type", "image/jpeg")
+    if not WHATSAPP_ACCESS_TOKEN:
+        raise ValueError("WhatsApp token missing")
+    try:
+        meta = requests.get(
+            f"https://graph.facebook.com/v21.0/{media_id}",
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            timeout=(5, 30),
+        ).json()
+        url = meta.get("url")
+        if not url:
+            raise ValueError("Media URL missing")
+        blob = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            timeout=(5, 60),
+        )
+        blob.raise_for_status()
+        return blob.content, meta.get("mime_type", "image/jpeg")
+    except requests.exceptions.Timeout:
+        raise ValueError("WhatsApp media download timed out.")
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"WhatsApp media download failed: {e}")
 
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     extension_by_mime = {
@@ -556,7 +572,8 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
 
     response = "".join(chunks).strip()
     if response:
-        return response
+       return response
+
     if fallback_error:
         logger.error("Agent execution failed: %s", fallback_error)
         return "Sorry, something went wrong while generating the response."

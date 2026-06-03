@@ -92,5 +92,5 @@ def test_execute_read_query_params_wraps_database_errors(monkeypatch):
 
     monkeypatch.setattr(db_config, "get_db_connection", lambda: FakeConnection())
 
-    with pytest.raises(RuntimeError, match="SQL execution error: db down"):
+    with pytest.raises(RuntimeError, match="SQL execution failed"):
         db_config.execute_read_query_params("SELECT * FROM businesses")

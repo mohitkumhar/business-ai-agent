@@ -4,6 +4,8 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
+from logger.logger import logger
+
 load_dotenv()
 
 DATABASE_URL = os.getenv(
@@ -47,8 +49,9 @@ def get_db_schema() -> str:
             schema_lines.append(f"  {column_name} ({data_type}, {nullable})")
 
         return "\n".join(schema_lines)
-    except Exception as e:
-        return f"Error reading schema: {str(e)}"
+    except Exception:
+        logger.error("Error reading schema", exc_info=True)
+        return "Error reading schema"
 
 
 _FORBIDDEN = [
@@ -108,8 +111,9 @@ def execute_read_query(sql: str) -> list[dict]:
         results = cur.fetchall()
         cur.close()
         return [dict(row) for row in results]
-    except Exception as e:
-        raise RuntimeError(f"SQL execution error: {str(e)}")
+    except Exception:
+        logger.error("SQL execution error", exc_info=True)
+        raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
 
@@ -129,7 +133,8 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
         finally:
             cur.close()
         return [dict(row) for row in results]
-    except Exception as e:
-        raise RuntimeError(f"SQL execution error: {str(e)}")
+    except Exception:
+        logger.error("SQL execution error", exc_info=True)
+        raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
