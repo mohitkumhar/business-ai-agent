@@ -41,12 +41,14 @@ function LoginPage() {
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
         const user = await res.json();
+        
         // Extract basic data
         if (user.email) {
           const registry: string[] = JSON.parse(localStorage.getItem("profit_pilot_registry") || "[]");
           const emailNorm = normalizeEmail(user.email);
           const userExists = registry.some((e) => normalizeEmail(e) === emailNorm);
           const onboarded = isUserOnboarded(user.email);
+          
           localStorage.setItem(
             "profit_pilot_user",
             JSON.stringify({
@@ -55,10 +57,12 @@ function LoginPage() {
               phone: "",
             }),
           );
+          
           if (onboarded) {
             window.location.href = `${dashboardUrl}?user_email=${encodeURIComponent(user.email)}`;
             return;
           }
+          
           if (!userExists) {
             const updatedRegistry = [...new Set([...registry, emailNorm])];
             localStorage.setItem("profit_pilot_registry", JSON.stringify(updatedRegistry));
@@ -87,6 +91,7 @@ function LoginPage() {
         mode === "login"
           ? { email, password }
           : { email, password, name: fullName, business_name: businessName, phone };
+      
       const res = await fetch(`${agentApiBaseUrl}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
