@@ -195,20 +195,12 @@ def fetch_metrics(state: MetricsRequestGraphState):
     }
 
 
-# NODE 3 – analyze_metrics
+# NODE 3 – analyze_metrics (helpers)
 # =================================
 
-def analyze_metrics(state: MetricsRequestGraphState):
-    """Use the LLM to analyse the raw Prometheus query results."""
-
-    raw_metrics = state.get("raw_metrics", "[]")
-    has_results = state.get("has_results", False)
-    fetch_error = state.get("fetch_error", "")
-    user_query = state["user_query"]
-    time_range_description = state.get("time_range_description", "")
-
-    if fetch_error and not has_results:
-        logger.warning(f"[metrics] Skipping analysis – fetch error: {fetch_error}")
+def _build_no_data_response(fetch_error: str = "", no_match: bool = False) -> dict:
+    """Return a structured error/empty response when metrics are unavailable."""
+    if fetch_error:
         return {
             "metrics_analysis": json.dumps({
                 "summary": f"Could not fetch metrics: {fetch_error}",
@@ -222,30 +214,31 @@ def analyze_metrics(state: MetricsRequestGraphState):
                 ],
             }),
         }
+    return {
+        "metrics_analysis": json.dumps({
+            "summary": "No metric data was found for the given queries and time range.",
+            "current_values": {},
+            "trends": [],
+            "anomalies": [],
+            "health_assessment": "unknown",
+            "recommended_actions": [
+                "Try broadening the time range.",
+                "Ensure the application is being scraped by Prometheus.",
+            ],
+        }),
+    }
 
-    if not has_results:
-        logger.info("[metrics] No metric data matched the queries.")
-        return {
-            "metrics_analysis": json.dumps({
-                "summary": "No metric data was found for the given queries and time range.",
-                "current_values": {},
-                "trends": [],
-                "anomalies": [],
-                "health_assessment": "unknown",
-                "recommended_actions": [
-                    "Try broadening the time range.",
-                    "Ensure the application is being scraped by Prometheus.",
-                ],
-            }),
-        }
 
-    # Truncate to avoid exceeding context window
-    max_chars = 12000
-    truncated = raw_metrics[:max_chars]
+def _truncate_metrics(raw_metrics: str, max_chars: int = 12000) -> str:
+    """Truncate raw metrics string to avoid exceeding the LLM context window."""
     if len(raw_metrics) > max_chars:
-        truncated += "\n... (truncated)"
+        return raw_metrics[:max_chars] + "\n... (truncated)"
+    return raw_metrics
 
-    prompt = f"""You are a DevOps metrics-analysis assistant.
+
+def _build_analysis_prompt(user_query: str, time_range_description: str, truncated: str) -> str:
+    """Build the LLM prompt for metrics analysis."""
+    return f"""You are a DevOps metrics-analysis assistant.
 
 The user asked: "{user_query}"
 Time range analysed: {time_range_description}
@@ -262,6 +255,51 @@ Analyse it and produce:
 Raw metrics data:
 {truncated}"""
 
+
+def _fallback_analysis(raw_metrics: str) -> dict:
+    """Return a fallback analysis response when the LLM call fails."""
+    try:
+        data = json.loads(raw_metrics)
+        query_count = len(data)
+        total_series = sum(len(r.get("result", [])) for r in data if "error" not in r)
+    except Exception:
+        query_count = 0
+        total_series = 0
+    return {
+        "metrics_analysis": json.dumps({
+            "summary": (
+                f"Executed {query_count} queries with {total_series} result series. "
+                "LLM analysis unavailable — showing raw counts."
+            ),
+            "current_values": {},
+            "trends": [],
+            "anomalies": [],
+            "health_assessment": "unknown",
+            "recommended_actions": [],
+        }),
+    }
+
+
+def analyze_metrics(state: MetricsRequestGraphState):
+    """Use the LLM to analyse the raw Prometheus query results."""
+
+    raw_metrics = state.get("raw_metrics", "[]")
+    has_results = state.get("has_results", False)
+    fetch_error = state.get("fetch_error", "")
+    user_query = state["user_query"]
+    time_range_description = state.get("time_range_description", "")
+
+    if fetch_error and not has_results:
+        logger.warning(f"[metrics] Skipping analysis – fetch error: {fetch_error}")
+        return _build_no_data_response(fetch_error=fetch_error)
+
+    if not has_results:
+        logger.info("[metrics] No metric data matched the queries.")
+        return _build_no_data_response(no_match=True)
+
+    truncated = _truncate_metrics(raw_metrics)
+    prompt = _build_analysis_prompt(user_query, time_range_description, truncated)
+
     try:
         logger.info("[metrics] Analysing metrics data with LLM...")
         result = metrics_analysis_llm.invoke(prompt)
@@ -269,29 +307,10 @@ Raw metrics data:
         return {"metrics_analysis": result.model_dump_json()}
     except Exception as exc:
         logger.error(f"[metrics] analyze_metrics failed: {exc}", exc_info=True)
-        # Fallback – just relay raw data summary
-        try:
-            data = json.loads(raw_metrics)
-            query_count = len(data)
-            total_series = sum(len(r.get("result", [])) for r in data if "error" not in r)
-        except Exception:
-            query_count = 0
-            total_series = 0
-        return {
-            "metrics_analysis": json.dumps({
-                "summary": (
-                    f"Executed {query_count} queries with {total_series} result series. "
-                    "LLM analysis unavailable — showing raw counts."
-                ),
-                "current_values": {},
-                "trends": [],
-                "anomalies": [],
-                "health_assessment": "unknown",
-                "recommended_actions": [],
-            }),
-        }
+        return _fallback_analysis(raw_metrics)
+    
 
-
+    
 # NODE 4 – format_metrics_response
 # =================================
 
