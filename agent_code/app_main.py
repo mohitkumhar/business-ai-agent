@@ -202,7 +202,7 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
     if text:
         return text
     if fallback_error:
-        logger.error("Agent execution failed: %s", fallback_error)
+        logger.error("Agent execution failed: %s", fallback_error, exc_info=True)
         return "Sorry, something went wrong while generating the response."
     return "I could not generate a response."
 
