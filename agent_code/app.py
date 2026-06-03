@@ -1364,6 +1364,7 @@ def api_employee_stats():
 def metrics():
     return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
+@limiter.exempt
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
