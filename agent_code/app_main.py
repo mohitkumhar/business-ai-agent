@@ -924,10 +924,17 @@ def api_top_products():
 
 
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
+@token_required
 def api_employee_stats():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    business_id = get_current_business_id()
+    if not business_id:
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         rows = execute_read_query_params(
-            "SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary FROM employees GROUP BY status"
+            "SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary FROM employees WHERE business_id = %s GROUP BY status",
+            (business_id,)
         )
         return jsonify(
             {
