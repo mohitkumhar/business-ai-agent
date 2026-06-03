@@ -59,12 +59,22 @@
     async function api(url, options = {}) {
         try {
             const resp = await fetch(url, options);
+            if (!resp.ok) {
+                let errorText;
+                try {
+                    errorText = await resp.text();
+                } catch (_) {
+                    errorText = "Unable to read error response";
+                }
+                throw { status: resp.status, message: errorText };
+            }
             return await resp.json();
         } catch (err) {
             console.error("API error:", err);
             return null;
-        }
+         }
     }
+         
 
     // ── Conversation List ──────────────────────────────────────────
     async function loadConversations() {

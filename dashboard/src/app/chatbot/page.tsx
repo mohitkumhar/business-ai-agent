@@ -54,6 +54,7 @@ export default function ChatbotPage() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ kind: "loading", label: "Loading history…" });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [completedNodes, setCompletedNodes] = useState<CompletedNode[]>([]);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
   const [employees, setEmployees] = useState<{login: string, avatar_url?: string, assigned_issues: number}[]>([]);
   const [escalatingMsgId, setEscalatingMsgId] = useState<number | null>(null);
@@ -190,8 +191,17 @@ export default function ChatbotPage() {
 
   /* Persist whenever conversations change */
   useEffect(() => {
-    if (conversations.length > 0) saveConversations(conversations);
-  }, [conversations]);
+    if (conversations.length > 0) {
+      const result = saveConversations(conversations);
+      if (!result.success) {
+        setStorageWarning("Local storage limit reached. Chat history could not be saved.");
+      } else if (result.prunedCount > 0) {
+        setStorageWarning(`Local storage limit reached. Oldest ${result.prunedCount} chat(s) were pruned to save space.`);
+        const prunedList = conversations.slice(0, conversations.length - result.prunedCount);
+        applyConversationState(prunedList);
+      }
+    }
+  }, [conversations, applyConversationState]);
 
   const activeConv = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? null,
@@ -618,6 +628,35 @@ export default function ChatbotPage() {
       <div className="main-area">
         <Topbar onSearch={() => { }} />
         <div className="content-wrapper" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 69px)", padding: 0 }}>
+          {storageWarning && (
+            <div style={{
+              background: "#fee2e2",
+              borderBottom: "1px solid #fca5a5",
+              color: "#991b1b",
+              padding: "10px 16px",
+              fontSize: "13px",
+              fontWeight: 500,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <span>⚠️ {storageWarning}</span>
+              <button
+                onClick={() => setStorageWarning(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#991b1b",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  padding: "2px 6px"
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* ── Chat Header ── */}
           <div className="chat-header">
