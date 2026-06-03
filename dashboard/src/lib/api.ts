@@ -92,10 +92,6 @@ function getHeaders() {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   } as HeadersInit;
 }
-<<<<<<< HEAD
-
-=======
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 async function safeFetchJson<T>(
   url: string,
   options?: RequestInit
@@ -121,22 +117,6 @@ async function safeFetchJson<T>(
   }
 
   return res.json();
-<<<<<<< HEAD
-
-function getHeaders() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-  } as HeadersInit;
-
-}
-
-function getAuthHeaders() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
-  return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
-=======
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 }
 
 function getAuthHeaders() {
@@ -169,25 +149,11 @@ function chatApiPath(path: string): string {
 }
 
 export const api = {
-<<<<<<< HEAD
-  getSummary: async (period: string): Promise<DashboardSummary> => {
-    const res = await fetch(`/api/dashboard/summary-sql?period=${period}`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Summary API failed");
-    return res.json();
-  },
-
-  getFinancialOverview: async (period?: string): Promise<FinancialOverview> => {
-  return safeFetchJson<FinancialOverview>(
-    appendUserEmail(
-      `/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`
-    ),
-=======
   getSummary: async (
   period: string
 ): Promise<DashboardSummary> => {
   const res = await fetch(
     `/api/dashboard/summary-sql?period=${period}`,
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
     { headers: getHeaders() }
   );
 
@@ -235,46 +201,15 @@ getForecast: async (period: string): Promise<Forecast> => {
     `/api/dashboard/forecast?period=${period}`,
     { headers: getHeaders() }
   );
-<<<<<<< HEAD
-},
-    const res = await fetch(`/api/dashboard/financial-overview${period ? `?period=${period}` : ""}`, { headers: getHeaders() });
-    return res.json();
-  },
-
-  getSalesTarget: async (period: string): Promise<SalesTarget> => {
-    const res = await fetch(`/api/dashboard/sales-target?period=${period}`, { headers: getHeaders() });
-    return res.json();
-  },
-
-=======
 
   if (!res.ok) {
     const { mockForecast } = await import("./mockData");
     return mockForecast;
   }
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 
   return res.json();
 },
 
-<<<<<<< HEAD
-getSalesTrend: async (period: string) => {
-  return safeFetchJson(
-    appendUserEmail(`/api/dashboard/sales-trend?period=${period}`)
-  );
-},
-
- getForecast: async (period: string): Promise<Forecast> => {
-    const res = await fetch(appendUserEmail(`/api/dashboard/forecast?period=${period}`), { headers: getHeaders() });
-
-    if (!res.ok) {
-      const { mockForecast } = await import("./mockData");
-      return mockForecast;
-    }
-    return res.json();
-  },
-
-=======
 getRecentTransactions: async (params: {
   search?: string;
   category?: string;
@@ -292,7 +227,6 @@ getRecentTransactions: async (params: {
   `/api/dashboard/recent-transactions?${query.toString()}`,
   { headers: getHeaders() }
 );
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 
 if (!res.ok) {
   const text = await res.text();
@@ -304,10 +238,6 @@ if (!res.ok) {
 return res.json();
 },
 
-<<<<<<< HEAD
-
-=======
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
 getAlertsList: async (period?: string) => {
   const res = await fetch(
     `/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`,
@@ -317,17 +247,11 @@ getAlertsList: async (period?: string) => {
   return res.json();
 },
 
-<<<<<<< HEAD
 getBusinessInfo: async (): Promise<BusinessInfo> => {
   return safeFetchJson<BusinessInfo>(
-    appendUserEmail(`/api/dashboard/business-info`)
+    `/api/dashboard/business-info`
   );
 },
-
- 
-=======
-getBusinessInfo: async (): Promise<BusinessInfo> =>
-  safeFetchJson<BusinessInfo>( `/api/dashboard/business-info`, { headers: getHeaders() }),
 
 // Other endpoints
 getCategories: async (): Promise<any> =>
@@ -338,7 +262,7 @@ getAlertsBySeverity: async (
   period?: string
 ): Promise<AlertsBySeverity> =>
   safeFetchJson<AlertsBySeverity>( `/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`),
->>>>>>> ab2ee6c (fix: improve dashboard API error handling)
+
 
 getHealthScores: async (
   period?: string
@@ -356,7 +280,7 @@ getEmployeeStats: async (
   safeFetchJson<EmployeeStats>(
     `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`
   ),
-=======
+
 
 
 
