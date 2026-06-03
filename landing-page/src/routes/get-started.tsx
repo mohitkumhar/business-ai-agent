@@ -106,6 +106,8 @@ function GetStartedPage() {
 
     try {
       const response = await fetch(`${agentApiBaseUrl}/api/v1/onboarding`, {
+      const apiBase = agentApiBaseUrl;
+      const response = await fetch(`${apiBase}/api/v1/onboarding`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
