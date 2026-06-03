@@ -1318,22 +1318,28 @@ def api_health_scores():
     try:
         rows = execute_read_query_params("""
             SELECT bhs.overall_score, bhs.cash_score, bhs.profitability_score, bhs.growth_score,
-                   bhs.cost_control_score, bhs.risk_score, b.business_name
+                   bhs.cost_control_score, bhs.risk_score, bhs.calculated_at, b.business_name
             FROM business_health_scores bhs
             JOIN businesses b ON b.business_id = bhs.business_id
             WHERE b.business_id = %s
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
         """, (bid,))
-        
+
         if not rows:
             return jsonify({"businesses": [], "scores": []})
-            
+
         return jsonify({
-            "businesses": [r["business_name"] for r in rows],
+            "businesses": [
+                r["calculated_at"].strftime("%Y-%m-%d") if r["calculated_at"] else "N/A"
+                for r in rows
+            ],
             "scores": [
                 {
-                    "name": r["business_name"],
+                    "name": (
+                        r["calculated_at"].strftime("%Y-%m-%d")
+                        if r["calculated_at"] else "N/A"
+                    ),
                     "overall": float(r["overall_score"] or 0),
                     "cash": float(r["cash_score"] or 0),
                     "profitability": float(r["profitability_score"] or 0),
