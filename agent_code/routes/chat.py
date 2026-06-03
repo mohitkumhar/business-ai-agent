@@ -1,3 +1,4 @@
+from __future__ import annotations
 from flask import Blueprint, jsonify, request, Response, stream_with_context, g
 from core_logic import *
 
@@ -11,8 +12,3 @@ def api_chat_send():
     # Wrap iter_query_sse in SSE Response
     return Response(stream_with_context(iter_query_sse(msg, conv_id)), mimetype="text/event-stream")
 
-# Start Server
-_init_chat_db()
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
-    

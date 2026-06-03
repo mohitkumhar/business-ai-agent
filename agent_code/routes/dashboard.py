@@ -1,3 +1,4 @@
+from __future__ import annotations
 from flask import Blueprint, jsonify, request, Response, stream_with_context, g
 from core_logic import *
 
