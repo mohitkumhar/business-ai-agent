@@ -138,8 +138,35 @@ export function loadConversations(): ChatConversation[] {
     .sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
-export function saveConversations(conversations: ChatConversation[]) {
-  writeJson(STORAGE_KEY, conversations);
+export function saveConversations(conversations: ChatConversation[]): { success: boolean; prunedCount: number } {
+  if (typeof window === "undefined") return { success: true, prunedCount: 0 };
+  
+  const currentList = [...conversations];
+  let prunedCount = 0;
+  
+  while (currentList.length > 0) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentList));
+      return { success: true, prunedCount };
+    } catch (err) {
+      if (
+        err instanceof DOMException &&
+        (err.name === "QuotaExceededError" ||
+          err.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+          err.code === 22 ||
+          err.code === 1014)
+      ) {
+        if (currentList.length > 1) {
+          currentList.pop(); // Remove the oldest conversation
+          prunedCount++;
+          continue;
+        }
+      }
+      console.error("Failed to save conversations to localStorage:", err);
+      break;
+    }
+  }
+  return { success: false, prunedCount };
 }
 
 export function loadPendingDeletes(): string[] {
