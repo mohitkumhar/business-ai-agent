@@ -175,9 +175,20 @@ TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 # --- Metrics ---
-AGENT_REQUEST_COUNT = Counter("agent_requests_total", "Total requests", ["method", "endpoint", "status"])
-AGENT_REQUEST_LATENCY = Histogram("agent_request_duration_seconds", "Request latency", ["method", "endpoint"])
-AGENT_INTENT_COUNT = Counter("agent_intent_detections_total", "Intent detections", ["intent"])
+if "agent_requests_total" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
+else:
+    AGENT_REQUEST_COUNT = Counter("agent_requests_total", "Total requests", ["method", "endpoint", "status"])
+
+if "agent_request_duration_seconds" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_LATENCY = REGISTRY._names_to_collectors["agent_request_duration_seconds"]
+else:
+    AGENT_REQUEST_LATENCY = Histogram("agent_request_duration_seconds", "Request latency", ["method", "endpoint"])
+
+if "agent_intent_detections_total" in REGISTRY._names_to_collectors:
+    AGENT_INTENT_COUNT = REGISTRY._names_to_collectors["agent_intent_detections_total"]
+else:
+    AGENT_INTENT_COUNT = Counter("agent_intent_detections_total", "Intent detections", ["intent"])
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -736,7 +747,6 @@ def whatsapp_events():
     # Full logic from app_main.py simplified for merge
     return jsonify({"ok": True})
 
-@app.route("/api/v1/telegram/webhook", methods=["POST"])
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
     data = request.get_json(silent=True)
