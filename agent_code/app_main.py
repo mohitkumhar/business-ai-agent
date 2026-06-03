@@ -527,48 +527,57 @@ def whatsapp_events():
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
         payload = data
-        entries = payload.get("entry") or []
-        for entry in entries:
-            for change in entry.get("changes") or []:
-                value = change.get("value") or {}
-                for msg in value.get("messages") or []:
-                    from_phone = str(msg.get("from") or "").strip()
-                    business_id = _resolve_business_id(from_phone)
-                    msg_type = msg.get("type")
-                    if msg_type == "image":
-                        media_id = (msg.get("image") or {}).get("id")
-                        if not media_id:
-                            continue
-                        image_bytes, mime_type = _download_whatsapp_media(media_id)
-                        extracted = _extract_bill_data_from_image(image_bytes, mime_type)
-                        normalized = _normalize_bill_fields(extracted)
-                        tx_id = _insert_bill_transaction(
-                            business_id,
-                            from_phone,
-                            media_id,
-                            normalized,
-                            extracted,
-                        )
-                        analysis = _analyze_transaction(tx_id, business_id)
-                        reply = (
-                            f"Bill recorded successfully.\n"
-                            f"Transaction ID: {tx_id}\n"
-                            f"Amount: {normalized['amount']}\n"
-                            f"Type: {normalized['type']}\n"
-                            f"Category: {normalized['category']}\n\n"
-                            f"Analysis:\n{analysis}"
-                        )
-                        _send_whatsapp_text(from_phone, reply)
-                    elif msg_type == "text":
-                        body = ((msg.get("text") or {}).get("body") or "").strip()
-                        if not body:
-                            continue
-                        if body.lower().startswith("analyze all"):
-                            answer = _analyze_business_data(business_id, body)
-                        else:
-                            thread_id = f"wa-{from_phone}"
-                            answer = _run_agent_to_text(body, thread_id, business_id)
-                        _send_whatsapp_text(from_phone, answer)
+        def process_whatsapp_payload(payload):
+            import threading
+            try:
+                entries = payload.get("entry") or []
+                for entry in entries:
+                    for change in entry.get("changes") or []:
+                        value = change.get("value") or {}
+                        for msg in value.get("messages") or []:
+                            from_phone = str(msg.get("from") or "").strip()
+                            business_id = _resolve_business_id(from_phone)
+                            msg_type = msg.get("type")
+                            if msg_type == "image":
+                                media_id = (msg.get("image") or {}).get("id")
+                                if not media_id:
+                                    continue
+                                image_bytes, mime_type = _download_whatsapp_media(media_id)
+                                extracted = _extract_bill_data_from_image(image_bytes, mime_type)
+                                normalized = _normalize_bill_fields(extracted)
+                                tx_id = _insert_bill_transaction(
+                                    business_id,
+                                    from_phone,
+                                    media_id,
+                                    normalized,
+                                    extracted,
+                                )
+                                analysis = _analyze_transaction(tx_id, business_id)
+                                reply = (
+                                    f"Bill recorded successfully.\n"
+                                    f"Transaction ID: {tx_id}\n"
+                                    f"Amount: {normalized['amount']}\n"
+                                    f"Type: {normalized['type']}\n"
+                                    f"Category: {normalized['category']}\n\n"
+                                    f"Analysis:\n{analysis}"
+                                )
+                                _send_whatsapp_text(from_phone, reply)
+                            elif msg_type == "text":
+                                body = ((msg.get("text") or {}).get("body") or "").strip()
+                                if not body:
+                                    continue
+                                if body.lower().startswith("analyze all"):
+                                    answer = _analyze_business_data(business_id, body)
+                                else:
+                                    thread_id = f"wa-{from_phone}"
+                                    answer = _run_agent_to_text(body, thread_id, business_id)
+                                _send_whatsapp_text(from_phone, answer)
+            except Exception as exc:
+                logger.error("Background WhatsApp processing failed: %s", exc, exc_info=True)
+
+        import threading
+        threading.Thread(target=process_whatsapp_payload, args=(payload,)).start()
+        
         return jsonify({"ok": True}), 200
     except Exception as exc:
         logger.error("WhatsApp webhook failed: %s", exc, exc_info=True)
@@ -582,55 +591,63 @@ def telegram_webhook():
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
         update = data
-        msg = update.get("message") or update.get("edited_message") or {}
-        if not msg:
-            return jsonify({"ok": True})
+        def process_telegram_update(update):
+            try:
+                msg = update.get("message") or update.get("edited_message") or {}
+                if not msg:
+                    return jsonify({"ok": True})
+        
+                chat = msg.get("chat") or {}
+                chat_id = chat.get("id")
+                if chat_id is None:
+                    return jsonify({"ok": True})
+        
+                business_id = _resolve_business_id(None)
+        
+                photos = msg.get("photo") or []
+                caption = (msg.get("caption") or "").strip()
+                text = (msg.get("text") or "").strip()
+        
+                if photos:
+                    largest = max(photos, key=lambda p: p.get("file_size", 0))
+                    file_id = largest.get("file_id")
+                    if file_id:
+                        image_bytes, mime_type = _download_telegram_file(file_id)
+                        extracted = _extract_bill_data_from_image(image_bytes, mime_type)
+                        normalized = _normalize_bill_fields(extracted)
+                        tx_id = _insert_bill_transaction(
+                            business_id,
+                            None,
+                            file_id,
+                            normalized,
+                            extracted,
+                        )
+                        analysis = _analyze_transaction(tx_id, business_id)
+                        reply = (
+                            f"Bill recorded successfully.\n"
+                            f"Transaction ID: {tx_id}\n"
+                            f"Amount: {normalized['amount']}\n"
+                            f"Type: {normalized['type']}\n"
+                            f"Category: {normalized['category']}\n\n"
+                            f"Analysis:\n{analysis}"
+                        )
+                        _send_telegram_text(chat_id, reply)
+                        return jsonify({"ok": True})
+        
+                content = text or caption
+                if content:
+                    if content.lower().startswith("analyze all"):
+                        answer = _analyze_business_data(business_id, content)
+                    else:
+                        thread_id = f"tg-{chat_id}"
+                        answer = _run_agent_to_text(content, thread_id, business_id)
+                    _send_telegram_text(chat_id, answer)
+        
+            except Exception as exc:
+                logger.error("Background Telegram processing failed: %s", exc, exc_info=True)
 
-        chat = msg.get("chat") or {}
-        chat_id = chat.get("id")
-        if chat_id is None:
-            return jsonify({"ok": True})
-
-        business_id = _resolve_business_id(None)
-
-        photos = msg.get("photo") or []
-        caption = (msg.get("caption") or "").strip()
-        text = (msg.get("text") or "").strip()
-
-        if photos:
-            largest = max(photos, key=lambda p: p.get("file_size", 0))
-            file_id = largest.get("file_id")
-            if file_id:
-                image_bytes, mime_type = _download_telegram_file(file_id)
-                extracted = _extract_bill_data_from_image(image_bytes, mime_type)
-                normalized = _normalize_bill_fields(extracted)
-                tx_id = _insert_bill_transaction(
-                    business_id,
-                    None,
-                    file_id,
-                    normalized,
-                    extracted,
-                )
-                analysis = _analyze_transaction(tx_id, business_id)
-                reply = (
-                    f"Bill recorded successfully.\n"
-                    f"Transaction ID: {tx_id}\n"
-                    f"Amount: {normalized['amount']}\n"
-                    f"Type: {normalized['type']}\n"
-                    f"Category: {normalized['category']}\n\n"
-                    f"Analysis:\n{analysis}"
-                )
-                _send_telegram_text(chat_id, reply)
-                return jsonify({"ok": True})
-
-        content = text or caption
-        if content:
-            if content.lower().startswith("analyze all"):
-                answer = _analyze_business_data(business_id, content)
-            else:
-                thread_id = f"tg-{chat_id}"
-                answer = _run_agent_to_text(content, thread_id, business_id)
-            _send_telegram_text(chat_id, answer)
+        import threading
+        threading.Thread(target=process_telegram_update, args=(update,)).start()
 
         return jsonify({"ok": True})
     except Exception as exc:
@@ -743,7 +760,15 @@ def escalate_to_slack():
         ]
         if assignee_id:
             increment_assigned_count(str(assignee_id))
-        delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
+        def process_slack_escalation(ch, blocks):
+            try:
+                delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
+            except Exception as exc:
+                logger.error("Background Slack escalation failed: %s", exc, exc_info=True)
+
+        import threading
+        threading.Thread(target=process_slack_escalation, args=(ch, blocks)).start()
+        
         return jsonify({"status": "ok"}), 200
     except Exception as exc:
         return internal_error_response(exc)
