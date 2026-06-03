@@ -57,6 +57,8 @@ DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
         try:
             identity = decode_jwt_identity(
                 request.headers.get("Authorization"),
@@ -926,8 +928,6 @@ def api_top_products():
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
 @token_required
 def api_employee_stats():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
     business_id = get_current_business_id()
     if not business_id:
         return jsonify({"error": "Unauthorized"}), 401
