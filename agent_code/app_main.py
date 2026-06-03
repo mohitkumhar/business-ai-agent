@@ -1318,5 +1318,7 @@ def api_chat_send():
 # Start Server
 _init_chat_db()
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
-    
+    import os
+    from logger.logger import logger
+    logger.info("Starting Flask development server.")
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
