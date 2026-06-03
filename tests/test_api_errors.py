@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import sys
 import types
 from pathlib import Path
@@ -33,6 +34,17 @@ def test_internal_error_response_supports_message_field_for_auth_routes():
     assert response.headers["X-Request-ID"] == "req-123"
 
 
+def test_internal_error_response_rejects_invalid_request_ids():
+    api_errors = _load_api_errors_with_fake_flask(request_id="bad\r\nrequest-id")
+
+    response, status = api_errors.internal_error_response(RuntimeError("duplicate key"))
+
+    assert status == 500
+    assert response.get_json() == {"error": api_errors.SAFE_INTERNAL_ERROR_MESSAGE}
+    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-ID"])
+    assert response.headers["X-Request-ID"] != "bad\r\nrequest-id"
+
+
 def test_api_routes_do_not_return_raw_exception_strings_for_500s():
     root = Path(__file__).resolve().parents[1]
     for relative_path in ("agent_code/app.py", "agent_code/app_main.py"):
@@ -41,7 +53,7 @@ def test_api_routes_do_not_return_raw_exception_strings_for_500s():
         assert 'jsonify({"message": str(' not in source
 
 
-def _load_api_errors_with_fake_flask():
+def _load_api_errors_with_fake_flask(request_id="req-123"):
     class FakeResponse:
         def __init__(self, payload):
             self._payload = payload
@@ -56,7 +68,7 @@ def _load_api_errors_with_fake_flask():
 
     previous_flask = sys.modules.get("flask")
     fake_flask = types.ModuleType("flask")
-    fake_flask.g = types.SimpleNamespace(request_id="req-123")
+    fake_flask.g = types.SimpleNamespace(request_id=request_id)
     fake_flask.jsonify = lambda payload: FakeResponse(payload)
     sys.modules["flask"] = fake_flask
     sys.modules.pop("agent_code.api_errors", None)
