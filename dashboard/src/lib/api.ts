@@ -177,7 +177,8 @@ export const api = {
   period: string
 ): Promise<RevenueVsExpense> =>
   safeFetchJson<RevenueVsExpense>(
-    `/api/dashboard/revenue-vs-expense?period=${period}`
+    `/api/dashboard/revenue-vs-expense?period=${period}`,
+    { headers: getHeaders() }   
   ),
 
   getSalesTarget: async (
@@ -192,7 +193,8 @@ export const api = {
   period: string
 ): Promise<SalesTrend> => {
   return safeFetchJson<SalesTrend>(
-    `/api/dashboard/sales-trend?period=${period}`
+    `/api/dashboard/sales-trend?period=${period}`,
+    { headers: getHeaders() }
   );
 },
 
@@ -249,36 +251,44 @@ getAlertsList: async (period?: string) => {
 
 getBusinessInfo: async (): Promise<BusinessInfo> => {
   return safeFetchJson<BusinessInfo>(
-    `/api/dashboard/business-info`
+    `/api/dashboard/business-info`,
+    { headers: getHeaders() }
   );
 },
 
 // Other endpoints
 getCategories: async (): Promise<any> =>
   safeFetchJson<any>(
-    `/api/dashboard/categories`
+    `/api/dashboard/categories`,
+    { headers: getHeaders() }
   ),
 getAlertsBySeverity: async (
   period?: string
 ): Promise<AlertsBySeverity> =>
-  safeFetchJson<AlertsBySeverity>( `/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`),
+  safeFetchJson<AlertsBySeverity>( `/api/dashboard/alerts-by-severity${period ? `?period=${period}` : ""}`,
+    { headers: getHeaders() }
+  ),
 
 
 getHealthScores: async (
   period?: string
 ): Promise<HealthScores> =>
-  safeFetchJson<HealthScores>( `/api/dashboard/health-scores${period ? `?period=${period}` : ""}`),
+  safeFetchJson<HealthScores>( `/api/dashboard/health-scores${period ? `?period=${period}` : ""}`,
+    { headers: getHeaders() }
+  ),
 
 getTopProducts: async (period?: string): Promise<TopProducts> =>
   safeFetchJson<TopProducts>(
-    `/api/dashboard/top-products${period ? `?period=${period}` : ""}`
+    `/api/dashboard/top-products${period ? `?period=${period}` : ""}`,
+    { headers: getHeaders() }
   ),
 
 getEmployeeStats: async (
   period?: string
 ): Promise<EmployeeStats> =>
   safeFetchJson<EmployeeStats>(
-    `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`
+    `/api/dashboard/employee-stats${period ? `?period=${period}` : ""}`,
+    { headers: getHeaders() }
   ),
 
 
