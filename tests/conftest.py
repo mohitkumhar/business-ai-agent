@@ -137,6 +137,8 @@ if "llm.base_llm" not in sys.modules and importlib.util.find_spec("langchain_ope
 if importlib.util.find_spec("numpy") is None:
     class DummyNumpy(types.ModuleType):
         def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
             class DummyAttr:
                 def __init__(self, *args, **kwargs):
                     pass
