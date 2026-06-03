@@ -1060,7 +1060,7 @@ def get_business_info():
 if __name__ == "__main__":
     _initialize_whatsapp_tables_safe()
     logger.info("Starting Flask development server.")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 import os
@@ -1285,5 +1285,5 @@ def api_chat_send():
 # Start Server
 _init_chat_db()
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
-    
+    logger.info("Starting Flask development server.")
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
