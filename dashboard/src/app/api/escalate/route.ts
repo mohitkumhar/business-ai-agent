@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
     
     return NextResponse.json({ status: "ok" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[escalate proxy] err:", err);
     return NextResponse.json({ error: "Failed to reach backend agent" }, { status: 502 });
   }
