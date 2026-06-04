@@ -68,7 +68,7 @@
     "dotenv-cli": "^8.0.0",
     "mdx-local-link-checker": "^2.1.1",
     "rehype-autolink-headings": "^7.1.0",
-    "rehype-pretty-code": "^0.14.0",
+    "rehype-pretty-code": "^0.14.3",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.1.16",
