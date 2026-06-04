@@ -498,6 +498,44 @@ def query_agent():
 
 @app.route("/api/v1/billing/analyze-all", methods=["POST"])
 def billing_analyze_all():
+    """
+    Analyze all billing data for the business and return an AI-generated summary.
+
+    This endpoint triggers a comprehensive analysis of the business's financial
+    transactions, including revenue, expenses, and recent activity. It uses the
+    LLM to answer a user-provided question or a default analysis prompt.
+
+    Args:
+        The request body should be a JSON object with the following optional fields:
+        - question (str): The specific question or instruction for the analysis.
+          Defaults to "Analyze all business billing data".
+        - business_id (str): The business identifier. If not provided, the function
+          resolves the default business ID from the environment or the first business
+          in the database.
+
+    Returns:
+        JSON response with the following structure:
+        - business_id (str): The business ID used for the analysis.
+        - analysis (str): The LLM-generated analysis text.
+
+    Raises:
+        400: If the request body is invalid or missing JSON.
+        500: If an internal error occurs during database queries or LLM invocation.
+
+    Example:
+        Request:
+        POST /api/v1/billing/analyze-all
+        {
+            "question": "What are the top expense categories this month?",
+            "business_id": "123e4567-e89b-12d3-a456-426614174000"
+        }
+
+        Response:
+        {
+            "business_id": "123e4567-e89b-12d3-a456-426614174000",
+            "analysis": "The top expense category is 'Office Supplies' with $4,500..."
+        }
+    """
     data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -509,7 +547,6 @@ def billing_analyze_all():
     except Exception as exc:
         logger.error("Analyze all failed: %s", exc, exc_info=True)
         return internal_error_response(exc)
-
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
