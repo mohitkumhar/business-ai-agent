@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ContentPageWrapper } from "@/components/ContentPageWrapper";
 import { createMetaTags } from "@/lib/createMetaTags";
 import { useState } from "react";
-import { onboardingUrl, dashboardUrl } from "@/constants";
+import { onboardingUrl, dashboardUrl, agentApiBaseUrl } from "@/constants";
 import { isUserOnboarded, normalizeEmail } from "@/lib/onboardingState";
 import { useGoogleLogin } from "@react-oauth/google";
 
@@ -17,8 +17,6 @@ export const Route = createFileRoute("/login")({
   }),
   component: LoginPage,
 });
-
-const agentApiBaseUrl = "http://localhost:5000";
 
 function LoginPage() {
   const navigate = useNavigate();

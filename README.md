@@ -384,6 +384,40 @@ cp .env.example .env
 
 ---
 
+## 🌐 Deployment & API Configuration
+
+This project uses a dual-frontend architecture. Proper configuration of API URLs is critical for connectivity between the Landing Page, Dashboard, and Flask Agent.
+
+### 🔌 API Communication Map
+- **Landing Page (Vite)**: Makes **browser-side** calls directly to the Flask Agent for onboarding.
+- **Dashboard (Next.js)**: Uses **server-side rewrites** (proxies) to communicate with the Flask Agent.
+
+### 🔑 Key Environment Variables
+
+| Variable | Service | Purpose | Recommended (Local) | Recommended (Docker) |
+|----------|---------|---------|---------------------|----------------------|
+| `VITE_API_URL` | Landing Page | Public URL of the Flask Agent API. Used by the browser. | `http://localhost:5000` | `http://localhost:5000` |
+| `AGENT_API_URL` | Dashboard | URL of the Flask Agent. Used by Next.js server for proxying. | `http://localhost:5000` | `http://backend:5000` |
+
+### 🚀 Configuration Examples
+
+#### 1. Local Development (Manual)
+When running services manually on your host machine:
+- **Landing:** Set `VITE_API_URL=http://localhost:5000` in `landing-page/.env`.
+- **Dashboard:** Set `AGENT_API_URL=http://localhost:5000` in `dashboard/.env`.
+
+#### 2. Docker Deployment (Docker Compose)
+Inside the Docker network, the Dashboard server must use the service name:
+- **Landing:** Set `VITE_API_URL=http://localhost:5000` (Browser still needs to reach the host).
+- **Dashboard:** Set `AGENT_API_URL=http://backend:5000` (The `dashboard` container talks to the `backend` container).
+
+#### 3. Production Deployment
+- **Landing:** Set `VITE_API_URL` to your public API domain (e.g., `https://api.yourdomain.com`).
+- **Dashboard:** Set `AGENT_API_URL` to your public API domain or internal load balancer IP.
+
+### 🛠️ Troubleshooting
+- **CORS Errors**: If the browser blocks requests, ensure the Flask Agent's CORS configuration includes your frontend domain.
+- **Next.js 502/504**: If the Dashboard shows gateway errors, verify that `AGENT_API_URL` is correctly pointing to a reachable backend instance.
 ### Dashboard authentication flow
 
 All `/api/dashboard/*` endpoints are protected and identify the caller **only** from a JWT — never from a client-supplied `email` query parameter:
