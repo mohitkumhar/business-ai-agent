@@ -90,11 +90,23 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
             try:
                 # Remove markdown code fences if LLM accidentally included them
                 if "```" in text_result:
-                    cleaned = text_result.split("```")[1]
-                    if cleaned.startswith("json"): cleaned = cleaned[4:]
-                    text_result = cleaned.strip()
+                    parts = text_result.split("```")
+                    if len(parts) >= 2:
+                        cleaned = parts[1]
+                        if cleaned.startswith("json"): 
+                            cleaned = cleaned[4:]
+                        text_result = cleaned.strip()
                 
-                data = json.loads(text_result)
+                # Attempt to parse JSON; if it fails, try to extract the array portion
+                try:
+                    data = json.loads(text_result)
+                except json.JSONDecodeError:
+                    start_idx = text_result.find("[")
+                    end_idx = text_result.rfind("]")
+                    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                        data = json.loads(text_result[start_idx : end_idx + 1])
+                    else:
+                        raise
                 if not isinstance(data, list):
                     if isinstance(data, dict) and "transactions" in data:
                         data = data["transactions"]
