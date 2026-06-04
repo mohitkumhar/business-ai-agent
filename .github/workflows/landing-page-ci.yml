@@ -49,7 +49,7 @@ jobs:
           bun-version: latest
 
       - name: Run tests
-        run: bun test
+        run: npm test
 
       - name: Build landing page
         run: npm run build
