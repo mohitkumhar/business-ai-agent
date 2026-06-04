@@ -15,12 +15,18 @@ Welcome! We're thrilled you want to contribute to ProfitPilot. This guide will h
 - **Node.js 18+** (for frontend development)
 - **PostgreSQL** (included in Docker Compose)
 
-### Clone & Install
+### Fork, Clone & Install
+
+1. **Fork** the repository on GitHub.
+2. **Clone** your fork locally and add the upstream remote:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/business-ai-agent.git
+git clone https://github.com/<your-username>/business-ai-agent.git
 cd business-ai-agent
+
+# Add the original repository as an upstream remote
+git remote add upstream https://github.com/mohitkumhar/business-ai-agent.git
 
 # Copy environment template (create .env if needed)
 cp .env.example .env  # or create from environment variables section

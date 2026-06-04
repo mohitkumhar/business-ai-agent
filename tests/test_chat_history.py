@@ -22,12 +22,12 @@ class _NoopWorkflow:
 
 
 def _install_chat_history_import_stubs() -> None:
-    if importlib.util.find_spec("numpy") is None:
+    if "numpy" not in sys.modules and importlib.util.find_spec("numpy") is None:
         numpy = types.ModuleType("numpy")
         numpy.__chat_history_stub__ = True
         sys.modules["numpy"] = numpy
 
-    if importlib.util.find_spec("langchain_openai") is None:
+    if "langchain_openai" not in sys.modules and importlib.util.find_spec("langchain_openai") is None:
         langchain_openai = types.ModuleType("langchain_openai")
 
         class ChatOpenAI:
@@ -37,7 +37,7 @@ def _install_chat_history_import_stubs() -> None:
         langchain_openai.ChatOpenAI = ChatOpenAI
         sys.modules["langchain_openai"] = langchain_openai
 
-    if importlib.util.find_spec("langgraph") is None:
+    if "langgraph" not in sys.modules and importlib.util.find_spec("langgraph") is None:
         langgraph = types.ModuleType("langgraph")
         langgraph_types = types.ModuleType("langgraph.types")
 
@@ -55,9 +55,10 @@ def _install_chat_history_import_stubs() -> None:
         "intents.metrics_request_graph.subgraph": "metrics_request_graph_workflow",
     }
     for module_name, workflow_name in workflow_modules.items():
-        module = types.ModuleType(module_name)
-        setattr(module, workflow_name, _NoopWorkflow())
-        sys.modules[module_name] = module
+        if module_name not in sys.modules:
+            module = types.ModuleType(module_name)
+            setattr(module, workflow_name, _NoopWorkflow())
+            sys.modules[module_name] = module
 
 
 def _remove_import_stub(module_name: str) -> None:

@@ -26,6 +26,9 @@ RUN apt-get update && apt-get install -y \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
+# Create a non-root user for running Chromium safely
+RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -33,7 +36,13 @@ RUN npm ci --omit=dev
 
 COPY . .
 
+# Give ownership to non-root user
+RUN chown -R pptruser:pptruser /app
+
 # Auth data persisted in a named volume
 VOLUME ["/app/.wwebjs_auth"]
+
+# Switch to non-root user
+USER pptruser
 
 CMD ["node", "index.js"]
