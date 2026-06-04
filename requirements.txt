@@ -76,7 +76,7 @@ platformdirs==4.9.2
 primp==1.1.1
 prometheus_client==0.24.1
 prompt_toolkit==3.0.52
-propcache==0.4.1
+propcache==0.5.2
 psutil==7.2.2
 psycopg==3.3.3
 psycopg-binary==3.3.3
