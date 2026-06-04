@@ -80,6 +80,7 @@ def wrap_node(fn: Callable) -> Callable:
             if config is None and args:
                 config = args[0]
             if config is None:
+                config = {"run_name": node_name}
                 config = {"configurable": {}}
             out = fn(merged, config)
         else:

@@ -5,15 +5,13 @@ import requests
 from datetime import datetime
 from logger.logger import logger
 
-# Try to get API KEY from environment
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[tuple]:
     """
     Use Gemini Vision API to extract handwritten ledger entries and format them as transactions.
     Returns: list of (transaction_date, type, category, amount, description)
     """
-    if not GEMINI_API_KEY:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
         logger.error("GEMINI_API_KEY not found in environment. OCR extraction failed.")
         raise ValueError("Missing GEMINI_API_KEY for handwriting extraction.")
 
@@ -29,7 +27,7 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
         mime_type = "image/webp"
 
     # Gemini Vision API Endpoint (Generative Language API)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
 
     prompt = """
     Extract all transaction data from this handwritten ledger or receipt image. 
@@ -80,21 +78,38 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
         # Parse text from Gemini response
         if "candidates" in resp_json and len(resp_json["candidates"]) > 0:
             candidate = resp_json["candidates"][0]
-            if "content" not in candidate or "parts" not in candidate["content"]:
+            if "content" not in candidate or "parts" not in candidate["content"] or not candidate["content"]["parts"]:
                 raise ValueError("Incomplete response from Gemini API.")
                 
-            text_result = candidate["content"]["parts"][0]["text"]
+            text_result = candidate["content"]["parts"][0].get("text", "")
+            if not text_result:
+                raise ValueError("Empty response text from Gemini API.")
+
             logger.info("Successfully received OCR response from Gemini.")
             
-            # Requirement #3: Safe JSON parsing with specific error types
+            # Robust JSON extraction
             try:
-                # Remove markdown code fences if LLM accidentally included them
+                # 1. Try to find content between triple backticks
                 if "```" in text_result:
-                    cleaned = text_result.split("```")[1]
-                    if cleaned.startswith("json"): cleaned = cleaned[4:]
-                    text_result = cleaned.strip()
+                    parts = text_result.split("```")
+                    for part in parts:
+                        candidate_text = part.strip()
+                        if candidate_text.startswith("json"):
+                            candidate_text = candidate_text[4:].strip()
+                        if candidate_text.startswith("[") and "]" in candidate_text:
+                            text_result = candidate_text
+                            break
                 
-                data = json.loads(text_result)
+                # 2. Attempt parsing. If it fails, try to find brackets directly.
+                try:
+                    data = json.loads(text_result)
+                except json.JSONDecodeError:
+                    start_idx = text_result.find("[")
+                    end_idx = text_result.rfind("]")
+                    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                        data = json.loads(text_result[start_idx : end_idx + 1])
+                    else:
+                        raise
                 if not isinstance(data, list):
                     if isinstance(data, dict) and "transactions" in data:
                         data = data["transactions"]
@@ -126,11 +141,12 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
                     
                 return transactions
             except json.JSONDecodeError as e:
-                logger.error(f"JSON Decode Error: {text_result}")
-                raise ValueError(f"AI returned unreadable data: {str(e)[:100]}")
+                logger.error("JSON Decode Error: %s", text_result)
+                logger.error("JSON parsing failed: %s", e, exc_info=True)
+                raise ValueError("AI returned unreadable data.")
         else:
             raise ValueError("The AI service could not read this notebook page.")
 
     except Exception as e:
-        logger.error(f"Error during Gemini OCR processing: {str(e)}", exc_info=True)
-        raise e
+        logger.error("Error during Gemini OCR processing: %s", e, exc_info=True)
+        raise
