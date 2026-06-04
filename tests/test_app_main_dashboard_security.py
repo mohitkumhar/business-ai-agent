@@ -115,6 +115,75 @@ def test_app_main_employees_invalid_request_id_is_sanitized(monkeypatch):
     assert payload["request_id"] != "bad/request-id"
     assert "github token" not in response.get_data(as_text=True)
 
+def test_app_main_health_scores_error_response_is_client_safe():
+    source = APP_MAIN.read_text()
+
+    assert '"code": "health_scores_unavailable"' in source
+    assert '"request_id": request_id' in source
+    assert "SAFE_INTERNAL_ERROR_MESSAGE" in source
+    assert "return internal_error_response(exc)" not in source[
+        source.index("def api_health_scores") : source.index("def api_top_products")
+    ]
+
+
+def test_app_main_health_scores_runtime_error_response_is_client_safe(monkeypatch):
+    os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret")
+
+    try:
+        app_main = importlib.import_module("agent_code.app_main")
+    except Exception as exc:
+        pytest.skip(f"backend app dependencies unavailable: {exc}")
+
+    def fail_db_query(*args, **kwargs):
+        raise RuntimeError("database credentials leaked in raw exception")
+
+    monkeypatch.setattr(app_main, "execute_read_query_params", fail_db_query)
+
+    app_main.app.config.update(TESTING=True)
+    response = app_main.app.test_client().get(
+        "/api/dashboard/health-scores",
+        headers={"X-Request-Id": "req-health-scores-test"},
+    )
+
+    assert response.status_code == 500
+    assert response.get_json() == {
+        "error": app_main.SAFE_INTERNAL_ERROR_MESSAGE,
+        "code": "health_scores_unavailable",
+        "request_id": "req-health-scores-test",
+    }
+    assert response.headers["X-Request-ID"] == "req-health-scores-test"
+    assert "database credentials" not in response.get_data(as_text=True)
+
+
+def test_app_main_health_scores_invalid_request_id_is_sanitized(monkeypatch):
+    """An invalid X-Request-Id must be replaced with a generated UUID,
+    and the JSON body request_id must match the X-Request-ID response header."""
+    os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret")
+
+    try:
+        app_main = importlib.import_module("agent_code.app_main")
+    except Exception as exc:
+        pytest.skip(f"backend app dependencies unavailable: {exc}")
+
+    def fail_db_query(*args, **kwargs):
+        raise RuntimeError("db error")
+
+    monkeypatch.setattr(app_main, "execute_read_query_params", fail_db_query)
+
+    app_main.app.config.update(TESTING=True)
+    response = app_main.app.test_client().get(
+        "/api/dashboard/health-scores",
+        headers={"X-Request-Id": "bad/request-id"},
+    )
+
+    payload = response.get_json()
+
+    assert response.status_code == 500
+    assert payload["request_id"] == response.headers["X-Request-ID"]
+    assert re.fullmatch(r"[0-9a-f]{32}", payload["request_id"])
+    assert payload["request_id"] != "bad/request-id"
+
+
 def test_app_main_employees_invalid_json_returns_safe_error(monkeypatch):
     os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret")
 

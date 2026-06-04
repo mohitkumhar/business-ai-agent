@@ -1047,6 +1047,10 @@ def api_alerts_by_severity():
         return internal_error_response(exc)
 
 
+def _request_id() -> str:
+    return get_request_id(request.headers.get("X-Request-Id"))
+
+
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
 def api_health_scores():
     try:
@@ -1078,7 +1082,23 @@ def api_health_scores():
             }
         )
     except Exception as exc:
-        return internal_error_response(exc)
+        request_id = _request_id()
+        logger.error(
+            "Health scores API failed request_id=%s: %s",
+            request_id,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "health_scores_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
