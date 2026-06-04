@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 import csv
 import io
+import math
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -567,6 +568,51 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     except requests.exceptions.RequestException as e:
         raise ValueError(f"WhatsApp media download failed: {e}")
 
+def _normalize_extracted_bill_transaction(transaction: tuple[Any, ...]) -> dict[str, Any]:
+    if not isinstance(transaction, tuple) or len(transaction) < 5:
+        raise ValueError("Bill extraction returned an invalid transaction shape.")
+
+    transaction_date, tx_type, category, amount, description = transaction[:5]
+    if not transaction_date:
+        raise ValueError("Bill extraction must include a transaction date.")
+
+    if isinstance(transaction_date, datetime):
+        normalized_date = transaction_date.date()
+    elif isinstance(transaction_date, date):
+        normalized_date = transaction_date
+    elif isinstance(transaction_date, str):
+        try:
+            normalized_date = datetime.strptime(transaction_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("Bill extraction returned an invalid transaction date.") from exc
+    else:
+        raise ValueError("Bill extraction returned an invalid transaction date.")
+
+    normalized_type = str(tx_type or "").strip().capitalize()
+    if normalized_type not in {"Revenue", "Expense"}:
+        raise ValueError("Bill extraction returned an invalid transaction type.")
+
+    try:
+        normalized_amount = float(amount)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Bill extraction returned a non-numeric amount.") from exc
+
+    if not math.isfinite(normalized_amount) or normalized_amount <= 0:
+        raise ValueError("Bill extraction amount must be greater than zero.")
+
+    normalized_category = str(category or "").strip()
+    if not normalized_category:
+        raise ValueError("Bill extraction must include a category.")
+
+    vendor = str(description or "").strip() or "Unknown"
+    return {
+        "date": normalized_date,
+        "amount": normalized_amount,
+        "category": normalized_category[:100],
+        "type": normalized_type,
+        "vendor": vendor[:500],
+    }
+
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     extension_by_mime = {
         "image/jpeg": ".jpg",
@@ -579,14 +625,7 @@ def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[st
     if not transactions:
         raise ValueError("No bill transaction could be extracted from the image.")
 
-    transaction_date, tx_type, category, amount, description = transactions[0]
-    return {
-        "date": transaction_date,
-        "amount": amount,
-        "category": category,
-        "type": tx_type,
-        "vendor": description or "Unknown",
-    }
+    return _normalize_extracted_bill_transaction(transactions[0])
 
 def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> int:
     conn = get_db_connection()

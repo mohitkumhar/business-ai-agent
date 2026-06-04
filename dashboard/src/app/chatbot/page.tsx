@@ -58,6 +58,13 @@ export default function ChatbotPage() {
 
   const [employees, setEmployees] = useState<{login: string, avatar_url?: string, assigned_issues: number}[]>([]);
   const [escalatingMsgId, setEscalatingMsgId] = useState<number | null>(null);
+  
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = useCallback((message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+}, []);
 
   useEffect(() => {
     fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
@@ -271,9 +278,9 @@ export default function ChatbotPage() {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(`Escalation failed: ${err.error || "Unknown error"}`);
+    showToast(`Escalation failed: ${err.error || "Unknown error"}`, "error");
       } else {
-        alert("Conversation escalated to Slack successfully!");
+      showToast("Conversation escalated to Slack successfully!", "success");
         // Refresh employees to bump issue counts
         fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
           .then(r => r.json())
@@ -281,7 +288,7 @@ export default function ChatbotPage() {
           .catch(console.error);
       }
     } catch {
-      alert("Error escalating conversation.");
+      showToast("Error escalating conversation.", "error");
     }
   }, [messages]);
 
@@ -910,6 +917,54 @@ export default function ChatbotPage() {
               <button id="chat-send-btn" onClick={sendMessage} disabled={!input.trim()} className="chat-btn send-btn">Send</button>
             )}
           </div>
+          {/* ── Escalation Toast ── */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          tabIndex={-1}
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "10px",
+            maxWidth: "360px",
+            padding: "14px 16px",
+            borderRadius: "10px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            background: toast.type === "success" ? "#f0fdf4" : "#fef2f2",
+            border: `1px solid ${toast.type === "success" ? "#86efac" : "#fca5a5"}`,
+            color: toast.type === "success" ? "#166534" : "#991b1b",
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: "18px" }}>
+            {toast.type === "success" ? "✅" : "❌"}
+          </span>
+          <p style={{ flex: 1, margin: 0, fontSize: "13px", fontWeight: 500 }}>
+            {toast.message}
+          </p>
+          <button
+            onClick={() => setToast(null)}
+            aria-label="Dismiss notification"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "18px",
+              lineHeight: 1,
+              color: "inherit",
+              opacity: 0.6,
+              padding: "0 2px",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
         </div>
       </div>
     </div>
