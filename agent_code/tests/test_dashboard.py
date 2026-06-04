@@ -90,9 +90,22 @@ def test_dashboard_export_csv_downloads_filtered_transactions(client, app_module
     assert captured["params"][0] == "business-1"
 
 
-def test_dashboard_export_csv_requires_authentication(client):
-    response = client.get("/api/dashboard/export-csv?period=this_month")
-    
-    assert response.status_code == 401
-    assert "message" in response.get_json()
+def test_dashboard_export_csv_resolves_business_from_email(client, app_module, monkeypatch):
+    calls = []
 
+    def fake_read_query(sql, params):
+        calls.append((sql, params))
+        if "FROM users" in sql:
+            return [{"business_id": "business-email"}]
+        return []
+
+    monkeypatch.setattr(app_module, "execute_read_query_params", fake_read_query)
+
+    response = client.get("/api/dashboard/export-csv?period=this_month&email=owner@example.com")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True).splitlines() == [
+        "transaction_id,transaction_date,type,category,amount,description",
+    ]
+    assert calls[0][1] == ("owner@example.com",)
+    assert calls[1][1][0] == "business-email"

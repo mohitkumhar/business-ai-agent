@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from flask import jsonify
-from flask import g
+from flask import jsonify, g, request, has_request_context
 
 from logger.logger import logger
 from request_ids import get_request_id
@@ -12,7 +11,8 @@ SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try aga
 
 def internal_error_response(exc: BaseException | None = None, *, field: str = "error"):
     try:
-        request_id = get_request_id(getattr(g, "request_id", None))
+        header_candidate = request.headers.get("X-Request-Id") if has_request_context() else None
+        request_id = get_request_id(getattr(g, "request_id", None), header_candidate)
     except RuntimeError:
         request_id = get_request_id()
     try:
