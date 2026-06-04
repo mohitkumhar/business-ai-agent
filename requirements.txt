@@ -86,7 +86,7 @@ pure_eval==0.2.3
 pydantic==2.12.5
 pydantic-settings==2.13.1
 pydantic_core==2.41.5
-Pygments==2.19.2
+Pygments==2.20.0
 pypdf==6.7.4
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
