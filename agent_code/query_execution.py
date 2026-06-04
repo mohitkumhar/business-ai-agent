@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 
 from langgraph.types import Command
 
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from nodes import intent_detection
 from nodes.intent_detection import map_app_intent_to_high_level, order_intents_for_execution
 from intents.general_information_graph.subgraph import general_information_graph_workflow
@@ -15,6 +16,7 @@ from intents.database_request_graph.subgraph import database_request_graph_workf
 from intents.logs_request_graph.subgraph import logs_request_graph_workflow
 from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
 
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from logger.logger import logger
 from logger.agent_debug import utc_iso
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
@@ -201,6 +203,8 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
         request_id = get_request_id(None)
         logger.error("Error during stream [request_id=%s]: %s", request_id, exc, exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': SAFE_INTERNAL_ERROR_MESSAGE, 'request_id': request_id, 'intent_str': intent_str})}\n\n"
+        logger.error(f"Error during stream: {exc}", exc_info=True)
+        yield f"data: {json.dumps({'type': 'error', 'error': SAFE_INTERNAL_ERROR_MESSAGE, 'intent_str': intent_str})}\n\n"
 
 
 def _chain_thread_config(base_thread_id: str, step_index: int) -> dict:
@@ -463,6 +467,7 @@ def stream_agent_sse_lines(
                     )
                     yield f"data: {json.dumps({'type': 'error', 'error': SAFE_INTERNAL_ERROR_MESSAGE, 'request_id': request_id, 'intent_str': intent_name})}\n\n"
                     return
+
                 except Exception as exc:
                     request_id = get_request_id(None)
                     logger.error("Chained invoke failed at %s [request_id=%s]: %s", intent_name, request_id, exc, exc_info=True)

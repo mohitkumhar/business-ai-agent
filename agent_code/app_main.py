@@ -234,7 +234,8 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
     if text:
         return text
     if fallback_error:
-        return f"Sorry, I hit an error: {fallback_error}"
+        logger.error("Agent execution failed: %s", fallback_error, exc_info=True)
+        return "Sorry, something went wrong while generating the response."
     return "I could not generate a response."
 
 
@@ -969,6 +970,8 @@ def api_top_products():
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
 @token_required
 def api_employee_stats():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
     business_id = get_current_business_id()
     if not business_id:
         return jsonify({"error": "Unauthorized"}), 401

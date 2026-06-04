@@ -50,6 +50,7 @@ export const Header = ({ isOpened = false, onOpen, onClose }: HeaderProps) => {
   const [appearance, setAppearance] = useState<"light" | "dark">("dark");
   const { width: windowWidth, height: windowHeight } = useWindowSize();
   const router = useRouter();
+  const isAuthenticated = useIsAuthenticated();
 
   useEffect(() => {
     if (!windowWidth || !windowHeight) return;
@@ -108,12 +109,14 @@ export const Header = ({ isOpened = false, onOpen, onClose }: HeaderProps) => {
         toggleHeaderExpansion={toggleHeaderExpansion}
         className="md:hidden"
         aria-label="Mobile header navigation"
+        isAuthenticated={isAuthenticated}
       />
       <Desktop
         ref={headerRef}
         appearance={appearance}
         className="hidden md:flex"
         aria-label="Mobile header navigation"
+        isAuthenticated={isAuthenticated}
       />
     </header>
   );
@@ -124,17 +127,18 @@ type Props = {
   isOpened: boolean;
   toggleHeaderExpansion: () => void;
   className: string;
+  isAuthenticated: boolean;
 };
 
 const Mobile = React.forwardRef<HTMLElement, Props>(function Mobile(
-  { appearance, isOpened, toggleHeaderExpansion, className },
+  { appearance, isOpened, toggleHeaderExpansion, className, isAuthenticated },
   ref,
 ) {
   return (
     <motion.nav
       ref={ref}
       className={cn(
-        "flex flex-col gap-8 justify-start backdrop-blur-md rounded-lg border-2 w-[calc(100%-2rem)] will-change-transform duration-300 transition-colors",
+        "flex flex-col gap-8 justify-start backdrop-blur-md rounded-lg border-2 w-[calc(100%-2rem)] will-change-transform duration-300 transition-colors overflow-hidden",
         appearance === "light"
           ? "bg-white/50"
           : isOpened
@@ -145,7 +149,7 @@ const Mobile = React.forwardRef<HTMLElement, Props>(function Mobile(
       transition={{ duration: 0.4, type: "spring", bounce: 0.15 }}
       animate={{ height: isOpened ? "calc(100dvh - 2rem)" : "auto" }}
     >
-      <div className="flex items-center justify-between px-4 py-2">
+      <div className="flex items-center justify-between px-4 py-2 shrink-0">
         <Link to="/">
           <TypebotLogoFull />
         </Link>
@@ -160,7 +164,7 @@ const Mobile = React.forwardRef<HTMLElement, Props>(function Mobile(
       <AnimatePresence mode="popLayout">
         {isOpened && (
           <motion.nav
-            className="flex flex-col justify-between h-full gap-8 px-4 pb-2"
+            className="flex flex-col justify-between flex-1 min-h-0 gap-6 px-4 pb-4 overflow-y-auto"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -178,8 +182,8 @@ const Mobile = React.forwardRef<HTMLElement, Props>(function Mobile(
                 </TextLink>
               ))}
             </div>
-            <div className="flex flex-col gap-3">
-              {localStorage.getItem('profit_pilot_user') ? (
+            <div className="flex flex-col gap-3 pb-2">
+              {isAuthenticated ? (
                 <>
                   <CtaButtonLink
                     href={dashboardUrl}
@@ -230,13 +234,12 @@ const desktopLinks = [
 
 const Desktop = React.forwardRef<
   HTMLElement,
-  Pick<Props, "appearance" | "className">
->(function Desktop({ appearance, className }, ref) {
+  Pick<Props, "appearance" | "className" | "isAuthenticated">
+>(function Desktop({ appearance, className, isAuthenticated }, ref) {
   const { pathname } = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
 
   const [isIntersecting, setIsIntersecting] = useState(false);
-  const isAuthenticated = useIsAuthenticated();
 
   useEffect(() => {
     const handleScroll = () => {
