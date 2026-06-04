@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import os
 import sys
 from datetime import datetime, timedelta
@@ -23,7 +23,11 @@ def app_module(tmp_path_factory):
     os.environ["USE_IN_MEMORY_CHECKPOINTER"] = "true"
     os.environ["CHAT_DB_PATH"] = str(tmp_path_factory.mktemp("chat") / "chat_history.sqlite")
     (AGENT_CODE_DIR / "logs").mkdir(exist_ok=True)
-    module = importlib.import_module("app")
+    module_path = AGENT_CODE_DIR / "app.py"
+    spec = importlib.util.spec_from_file_location("profitpilot_agent_app", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     module.app.config.update(TESTING=True, RATELIMIT_ENABLED=False, SECRET_KEY="test-secret")
     return module
 
