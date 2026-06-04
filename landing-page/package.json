@@ -58,7 +58,7 @@
     "@content-collections/integrations": "0.2.1",
     "@content-collections/mdx": "0.2.2",
     "@shikijs/transformers": "2.4.2",
-    "@tailwindcss/typography": "0.5.16",
+    "@tailwindcss/typography": "0.5.19",
     "@tailwindcss/vite": "^4.1.16",
     "@tanstack/react-router-devtools": "1.123.2",
     "@types/node": "^22.19.0",
