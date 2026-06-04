@@ -75,7 +75,7 @@ export interface EmployeeStats { labels: string[]; counts: number[]; avg_salary:
 export interface SalesTarget { business_name: string; current_revenue: number; target_revenue: number; percentage: number; }
 export interface HealthScore { name: string; overall: number; cash: number; profitability: number; growth: number; cost_control: number; risk: number; }
 export interface HealthScores { businesses: string[]; scores: HealthScore[]; }
-
+export interface Categories {categories: string[];}
 
 
 
@@ -257,11 +257,12 @@ getBusinessInfo: async (): Promise<BusinessInfo> => {
 },
 
 // Other endpoints
-getCategories: async (): Promise<any> =>
-  safeFetchJson<any>(
+getCategories: async (): Promise<Categories> =>
+  safeFetchJson<Categories>(
     `/api/dashboard/categories`,
     { headers: getHeaders() }
   ),
+
 getAlertsBySeverity: async (
   period?: string
 ): Promise<AlertsBySeverity> =>
