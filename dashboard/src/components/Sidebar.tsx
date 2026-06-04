@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LANDING_PAGE_URL } from "@/lib/publicUrls";
@@ -29,17 +29,16 @@ function clearProfitPilotSession() {
   }
 }
 
+function readShowChatbotFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem("profitpilot_show_chatbot") === "true";
+}
+
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
 
   // Management section (Testsparkhack se Import Data add kiya)
-  const [showChatbot, setShowChatbot] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setShowChatbot(localStorage.getItem("profitpilot_show_chatbot") === "true");
-    }
-  }, []);
+  const [showChatbot] = useState(readShowChatbotFlag);
 
   const dashboardMenu = [
     { label: "Overview", href: "/", icon: <DashboardIcon size={18} /> },

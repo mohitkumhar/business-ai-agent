@@ -22,7 +22,7 @@ export default function SettingsPage() {
               <SettingsIcon size={32} color="var(--text-muted)" />
             </div>
             <h3 className="text-xl font-bold mb-2">Settings under construction</h3>
-            <p className="text-slate-500">We're working on making this page available soon!</p>
+            <p className="text-slate-500">We&apos;re working on making this page available soon!</p>
           </div>
         </div>
       </div>

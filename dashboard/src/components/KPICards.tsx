@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { DashboardSummary, Alert } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 import {
   DollarIcon,
   ReceiptIcon,
@@ -53,30 +54,42 @@ function severityBadgeLabel(sev: string | null | undefined): string {
 
 export default function KPICards() {
   const { period, dataVersion } = useDashboardPeriod();
-  const [data, setData] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const loadSummary = useCallback(() => api.getSummary(period), [period]);
+  const { data, loading } = useAsyncData<DashboardSummary>(
+    `dashboard-summary:${period}:${dataVersion}`,
+    loadSummary,
+  );
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertRows, setAlertRows] = useState<Alert[]>([]);
-  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsStatus, setAlertsStatus] = useState<"idle" | "loading" | "loaded">("idle");
+  const alertsLoading = alertsStatus === "loading";
+
+  const openAlerts = () => {
+    setAlertsStatus("loading");
+    setAlertsOpen(true);
+  };
 
   useEffect(() => {
-    setLoading(true);
-    api
-      .getSummary(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
-
-  useEffect(() => {
-    if (!alertsOpen) return;
-    setAlertsLoading(true);
+    if (alertsStatus !== "loading") return;
+    let cancelled = false;
     api
       .getAlertsList()
-      .then((r) => setAlertRows(r.alerts || []))
+      .then((r) => {
+        if (!cancelled) {
+          setAlertRows(r.alerts || []);
+        }
+      })
       .catch(console.error)
-      .finally(() => setAlertsLoading(false));
-  }, [alertsOpen]);
+      .finally(() => {
+        if (!cancelled) {
+          setAlertsStatus("loaded");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alertsStatus]);
 
 
   useEffect(() => {
@@ -182,12 +195,12 @@ export default function KPICards() {
               role={card.label === "Active Alerts" ? "button" : undefined}
               tabIndex={card.label === "Active Alerts" ? 0 : undefined}
               onClick={() => {
-                if (card.label === "Active Alerts") setAlertsOpen(true);
+                if (card.label === "Active Alerts") openAlerts();
               }}
               onKeyDown={(e) => {
                 if (card.label === "Active Alerts" && (e.key === "Enter" || e.key === " ")) {
                   e.preventDefault();
-                  setAlertsOpen(true);
+                  openAlerts();
                 }
               }}
               style={{

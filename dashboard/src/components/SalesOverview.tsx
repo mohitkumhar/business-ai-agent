@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { api, SalesTarget } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 
 function SemiCircleGauge({ percentage, isDark }: { percentage: number; isDark: boolean }) {
   const size = 200;
@@ -88,16 +89,14 @@ export default function SalesOverview() {
 
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const [data, setData] = useState<SalesTarget | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.getSalesTrend(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
+  const loadSalesTrend = useCallback(
+    () => api.getSalesTrend(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<SalesTarget>(
+    `sales-overview:${period}:${dataVersion}`,
+    loadSalesTrend,
+  );
 
   const sales = data?.current_revenue ?? 0;
   const target = data?.target_revenue ?? 0;
