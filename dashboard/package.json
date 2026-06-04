@@ -17,7 +17,7 @@
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
-    "react-markdown": "^9.0.1",
+    "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
