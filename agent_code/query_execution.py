@@ -201,10 +201,13 @@ def _stream_graph(workflow, initial_state, config, intent_dict, final_node_names
 
     except Exception as exc:
         request_id = get_request_id(None)
-        logger.error("Error during stream [request_id=%s]: %s", request_id, exc, exc_info=True)
+        logger.error(
+            "Error during stream [request_id=%s]: %s",
+            request_id,
+            exc,
+            exc_info=True,
+        )
         yield f"data: {json.dumps({'type': 'error', 'error': SAFE_INTERNAL_ERROR_MESSAGE, 'request_id': request_id, 'intent_str': intent_str})}\n\n"
-        logger.error(f"Error during stream: {exc}", exc_info=True)
-        yield f"data: {json.dumps({'type': 'error', 'error': SAFE_INTERNAL_ERROR_MESSAGE, 'intent_str': intent_str})}\n\n"
 
 
 def _chain_thread_config(base_thread_id: str, step_index: int) -> dict:
