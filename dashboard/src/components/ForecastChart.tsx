@@ -17,9 +17,6 @@ import { TrendingUpIcon, TrendingDownIcon, MinusIcon } from "./Icons";
 const formatCurrency = (value: unknown) =>
   `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
-const normalizeTrend = (trend: Forecast["trend_direction"]) =>
-  trend === "flat" ? "stable" : trend;
-
 export default function ForecastChart() {
   const { period } = useDashboardPeriod();
   const [data, setData] = useState<Forecast | null>(null);
@@ -87,7 +84,7 @@ export default function ForecastChart() {
     );
   }
 
-  const trend = normalizeTrend(data.trend_direction);
+  const trend = data.trend_direction;
   const hasForecastData = data.historical.length > 0 || data.forecast.length > 0;
 
   if (!hasForecastData) {
@@ -132,6 +129,7 @@ export default function ForecastChart() {
     switch (trend) {
       case "up": return <TrendingUpIcon size={16} color="#10B981" />;
       case "down": return <TrendingDownIcon size={16} color="#EF4444" />;
+      case "flat": return <MinusIcon size={16} color="#6B7280" />;
       default: return <MinusIcon size={16} color="#6B7280" />;
     }
   };

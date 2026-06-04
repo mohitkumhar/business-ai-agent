@@ -38,7 +38,7 @@ export interface Alert {
   status: string;
 }
 
-export type ForecastTrend = "up" | "down" | "stable" | "flat";
+export type ForecastTrend = "up" | "down" | "flat";
 
 export interface Forecast {
   historical: { date: string; actual: number }[];
@@ -119,15 +119,9 @@ async function safeFetchJson<T>(
   return res.json();
 }
 
-function getAuthHeaders() {
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("profit_pilot_token")
-      : null;
-
-  return token
-    ? ({ Authorization: `Bearer ${token}` } as HeadersInit)
-    : ({} as HeadersInit);
+export function getAuthHeaders() {
+  const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
+  return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
 }
 
 async function readJsonOrThrow<T>(
@@ -312,44 +306,6 @@ getEmployeeStats: async (
   },
 };
 
-
-/**
- * Chat Streaming Logic (Testsparkhack)
- */
-export async function* streamChatSend(
-  conversationId: string,
-  message: string,
-  options?: { signal?: AbortSignal }
-) {
-  const params = new URLSearchParams({
-    "input-query": message,
-    "thread-id": conversationId,
-  });
-  const res = await fetch(chatApiPath(`/api/chat?${params.toString()}`), {
-    method: "POST",
-    signal: options?.signal,
-    headers: {
-      Accept: "text/event-stream",
-      ...getAuthHeaders(),
-    },
-  });
-  if (!res.ok) throw new Error("Chat sequence failed");
-  const reader = res.body?.getReader();
-  if (!reader) return;
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (value) buffer += decoder.decode(value, { stream: true });
-    while (buffer.includes("\n\n")) {
-      const i = buffer.indexOf("\n\n");
-      const raw = buffer.slice(0, i).trim();
-      buffer = buffer.slice(i + 2);
-      if (raw.startsWith("data: ")) yield JSON.parse(raw.slice(6));
-    }
-    if (done) break;
-  }
-}
 
 export async function listChatConversations(): Promise<ChatConversation[]> {
   const payload = await readJsonOrThrow<{ conversations: ChatConversation[] }>(
