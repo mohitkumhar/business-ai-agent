@@ -38,7 +38,7 @@ export interface Alert {
   status: string;
 }
 
-export type ForecastTrend = "up" | "down" | "stable" | "flat";
+export type ForecastTrend = "up" | "down" | "flat";
 
 export interface Forecast {
   historical: { date: string; actual: number }[];

@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 
 from llm.base_llm import base_llm
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from logger.logger import logger
 from intents.metrics_request_graph.graph_state import MetricsRequestGraphState
 from intents.metrics_request_graph.structures import (
@@ -175,7 +176,7 @@ def fetch_metrics(state: MetricsRequestGraphState):
             logger.error(f"[metrics] PromQL '{promql}' failed: {exc}", exc_info=True)
             all_results.append({
                 "query": promql,
-                "error": str(exc),
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
             })
 
     has_any = any(r.get("result") for r in all_results if "error" not in r)

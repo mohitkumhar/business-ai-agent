@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 import csv
 import io
+import math
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -86,6 +87,31 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
+    """
+    Register a new user and create an associated business account.
+
+    Expects a JSON request body with:
+        email (str): The new user's email address (stored lowercase).
+        password (str): The user's plain-text password (bcrypt-hashed before storage).
+        name (str): The user's full name.
+        business_name (str): The name of the user's business.
+        industry (str, optional): Industry type for the business (default: "Other").
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): UUID of the newly created business.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 201 on successful registration.
+        HTTP 400 if any required fields are missing.
+        HTTP 409 if the email address is already registered.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Inserts a new record into the PostgreSQL businesses table.
+        Inserts a new record into the PostgreSQL users table with a bcrypt-hashed password.
+        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
+    """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"message": "Invalid or missing JSON payload"}), 400
@@ -132,6 +158,27 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
+    """
+    Authenticate an existing user and return a JWT access token.
+
+    Expects a JSON request body with:
+        email (str): The user's registered email address (case-insensitive).
+        password (str): The user's plain-text password.
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): The authenticated user's business UUID.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 200 on success.
+        HTTP 400 if email or password fields are missing.
+        HTTP 401 if credentials are invalid or user does not exist.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Queries the PostgreSQL users table to validate credentials.
+        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
+    """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"message": "Invalid or missing JSON payload"}), 400
@@ -521,6 +568,51 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     except requests.exceptions.RequestException as e:
         raise ValueError(f"WhatsApp media download failed: {e}")
 
+def _normalize_extracted_bill_transaction(transaction: tuple[Any, ...]) -> dict[str, Any]:
+    if not isinstance(transaction, tuple) or len(transaction) < 5:
+        raise ValueError("Bill extraction returned an invalid transaction shape.")
+
+    transaction_date, tx_type, category, amount, description = transaction[:5]
+    if not transaction_date:
+        raise ValueError("Bill extraction must include a transaction date.")
+
+    if isinstance(transaction_date, datetime):
+        normalized_date = transaction_date.date()
+    elif isinstance(transaction_date, date):
+        normalized_date = transaction_date
+    elif isinstance(transaction_date, str):
+        try:
+            normalized_date = datetime.strptime(transaction_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("Bill extraction returned an invalid transaction date.") from exc
+    else:
+        raise ValueError("Bill extraction returned an invalid transaction date.")
+
+    normalized_type = str(tx_type or "").strip().capitalize()
+    if normalized_type not in {"Revenue", "Expense"}:
+        raise ValueError("Bill extraction returned an invalid transaction type.")
+
+    try:
+        normalized_amount = float(amount)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Bill extraction returned a non-numeric amount.") from exc
+
+    if not math.isfinite(normalized_amount) or normalized_amount <= 0:
+        raise ValueError("Bill extraction amount must be greater than zero.")
+
+    normalized_category = str(category or "").strip()
+    if not normalized_category:
+        raise ValueError("Bill extraction must include a category.")
+
+    vendor = str(description or "").strip() or "Unknown"
+    return {
+        "date": normalized_date,
+        "amount": normalized_amount,
+        "category": normalized_category[:100],
+        "type": normalized_type,
+        "vendor": vendor[:500],
+    }
+
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     extension_by_mime = {
         "image/jpeg": ".jpg",
@@ -533,14 +625,7 @@ def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[st
     if not transactions:
         raise ValueError("No bill transaction could be extracted from the image.")
 
-    transaction_date, tx_type, category, amount, description = transactions[0]
-    return {
-        "date": transaction_date,
-        "amount": amount,
-        "category": category,
-        "type": tx_type,
-        "vendor": description or "Unknown",
-    }
+    return _normalize_extracted_bill_transaction(transactions[0])
 
 def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> int:
     conn = get_db_connection()
@@ -707,6 +792,20 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
+    """
+    Creates a new business and associated user account during onboarding.
+
+    Expects a JSON request containing business and user information.
+    Validates required fields, generates a unique business identifier,
+    and stores the business and user records in the database.
+
+    Returns:
+        Response: JSON response indicating success or failure.
+
+    Raises:
+        Exception: Any unexpected database or application error is
+        handled and returned as an internal error response.
+    """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -814,12 +913,30 @@ def import_transactions():
     except Exception as e:
         logger.error(f"Import failed: {str(e)}", exc_info=True)
         return internal_error_response(e)
-
 @app.route("/api/v1/import/notebook", methods=["POST"])
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def import_notebook():
-    if "file" not in request.files: return jsonify({"error": "No file part"}), 400
+    """
+    Import a notebook image and extract transaction data for preview.
+
+    The endpoint accepts an uploaded file through the ``file`` request
+    field, generates a hash to detect duplicate imports, processes the
+    image using OCR, and returns the extracted transactions without
+    permanently storing them.
+
+    Returns:
+        Response: A JSON response containing the extracted transaction
+        preview data or an error message if the import fails.
+
+    Raises:
+        Exception: Any unexpected processing error is logged and
+        returned as an internal error response.
+    """
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
     file = request.files["file"]
     bid = get_current_business_id()
     try:
@@ -865,6 +982,20 @@ def import_notebook():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def confirm_notebook():
+    """Confirms and commits imported notebook transactions.
+
+    This function processes request payloads to confirm staging notebook
+    transactions. It extracts and validates transaction metadata before
+    persisting records to the database.
+
+    Returns:
+        tuple: A Flask response tuple containing:
+            - Success JSON payload with a 200 status code upon execution.
+            - Error JSON with a 400 status if no transactions are found to confirm.
+            - Error JSON with a 400 status if the request contains invalid JSON.
+            - Error JSON with a 500 status if an internal server error occurs.
+    """
+
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
