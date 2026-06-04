@@ -84,6 +84,22 @@ def token_required(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+    """
+    Wrapper function that handles JWT authentication and error handling.
+
+    This decorator wraps routes that require authentication. It decodes the JWT
+    token from the request cookies and attaches the user identity to the request context.
+
+    Args:
+        *args: Variable positional arguments passed to the wrapped function.
+        **kwargs: Variable keyword arguments passed to the wrapped function.
+
+    Returns:
+        Response: The wrapped function's return value, or error response if authentication fails.
+
+    Raises:
+        Exception: JWT decode errors are caught and returned as 401 Unauthorized.
+    """
         try:
             identity = decode_jwt_identity(
                 request.headers.get("Authorization"),
@@ -705,6 +721,25 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
 
 # --- Helper Functions (From Kushal-Dev) ---
 def get_period_dates(period):
+    """
+    Calculate start and end dates for a given period string.
+
+    Args:
+        period (str): Period identifier. Supported values:
+            - "this_month": Current month to date
+            - "last_month": Previous full month
+            - "last_7_days": Past 7 days including today
+            - "last_30_days": Past 30 days including today
+            - "all_time": Returns (None, None) for unbounded query
+
+    Returns:
+        tuple: (start_date: date, end_date: date) for the requested period.
+               For "all_time", returns (None, None).
+
+    Examples:
+        >>> get_period_dates("this_month")
+        (date(2026, 6, 1), date(2026, 6, 4))
+    """
     end_date = date.today()
     if period == "this_month":
         start_date = end_date.replace(day=1)
@@ -1562,11 +1597,36 @@ def api_employee_stats():
 
 @app.route("/metrics")
 def metrics():
+def metrics():
+    """
+    Expose Prometheus metrics endpoint for monitoring.
+
+    This function generates the latest Prometheus metrics including custom REGISTRY
+    metrics. It's typically exposed at the /metrics endpoint for Prometheus scraping.
+
+    Returns:
+        Response: HTTP response with Prometheus-formatted metrics and CONTENT_TYPE_LATEST mimetype.
+
+    Raises:
+        Exception: Any errors in metric generation are propagated (typically 500 Internal Server Error).
+    """
     return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
 @limiter.exempt
 @app.route("/health")
 def health():
+def health():
+    """
+    Health check endpoint for load balancers and monitoring systems.
+
+    Returns:
+        Response: JSON response with {"status": "ok"} and HTTP 200 status code.
+
+    Used by:
+        - Kubernetes liveness/readiness probes
+        - Load balancer health checks
+        - Monitoring systems
+    """
     return jsonify({"status": "ok"})
 
 # Start Server
