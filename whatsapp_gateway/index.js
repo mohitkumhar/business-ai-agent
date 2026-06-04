@@ -57,13 +57,24 @@ client.on('message', async (msg) => {
     if (msg.hasMedia) {
       // ── Image / document bill ──────────────────────────────────────────
       const media = await msg.downloadMedia();
+      if (!media?.data || !media?.mimetype) {
+        console.error('[gateway] Media download failed or returned null');
+
+        await msg.reply(
+          '⚠️ Unable to process the media. Please resend the file and try again.'
+        );
+
+        return;
+      }
+
       payload = {
         from_number : fromNumber,
         type        : 'image',
-        media_base64: media.data,        // already base64
+        media_base64: media.data,
         mime_type   : media.mimetype,
         body        : msg.body || '',
       };
+      
     } else {
       // ── Plain text ─────────────────────────────────────────────────────
       payload = {
