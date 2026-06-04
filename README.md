@@ -506,7 +506,9 @@ These are confirmed bugs. Each is a great contribution opportunity!
 | 8 | `about.tsx` still shows Typebot branding | 🟢 Low | `landing-page/src/routes/_layout/about.tsx` |
 | 9 | Add an `.env.example` file for local setup | 🟢 Low | Root directory |
 | 10 | No `.env.example` file in repo | 🟡 Medium | Root directory |
-
+### Browser says "blocked by CORS policy"
+Make sure `ALLOWED_ORIGINS` in your `.env` includes your frontend origin.
+Restart Flask after any `.env` change.
 ---
 
 ## 🗣️ Getting Help
