@@ -2,6 +2,7 @@ import os
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
+from logger.logger import logger
 
 load_dotenv()
 
@@ -13,7 +14,50 @@ DATABASE_URL = os.getenv(
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
-_FORBIDDEN = ["insert ", "update ", "delete ", "drop ", "alter ", "truncate ", "create "]
+def get_db_schema() -> str:
+    """
+    Reads all user tables and their columns from the database.
+    Returns a formatted string the LLM can use to understand the schema.
+    """
+    query = """
+        SELECT table_name, column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        ORDER BY table_name, ordinal_position;
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        schema_lines = []
+        current_table = None
+        for table_name, column_name, data_type, is_nullable in rows:
+            if table_name != current_table:
+                current_table = table_name
+                schema_lines.append(f"\nTable: {table_name}")
+                schema_lines.append("-" * 40)
+            nullable = "NULL" if is_nullable == "YES" else "NOT NULL"
+            schema_lines.append(f"  {column_name} ({data_type}, {nullable})")
+
+        return "\n".join(schema_lines)
+    except Exception:
+        logger.error("Error reading schema", exc_info=True)
+        return "Error reading schema"
+
+_FORBIDDEN = [
+    "insert ",
+    "update ",
+    "delete ",
+    "drop ",
+    "alter ",
+    "truncate ",
+    "create ",
+]
+
 # Tables that MUST be scoped by business_id to prevent data leakage
 TENANT_TABLES = ["daily_transactions", "alerts", "products", "financial_records"]
 
@@ -48,15 +92,14 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(s, params or ())
-        results = cur.fetchall()
-        cur.close()
+        try:
+            cur.execute(s, params or ())
+            results = cur.fetchall()
+        finally:
+            cur.close()
         return [dict(row) for row in results]
-    except Exception as e:
-        raise RuntimeError(f"SQL execution error: {str(e)}")
+    except Exception:
+        logger.error("SQL execution error", exc_info=True)
+        raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
-
-# Note: get_db_schema() is omitted from this minimal fix to reduce PR bloat.
-# If you need it, ensure it is protected by @token_required in app.py.
-

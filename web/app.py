@@ -7,6 +7,7 @@ import os
 import uuid
 import time
 import sqlite3
+import json
 import requests
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -26,6 +27,7 @@ from flask import (
     url_for,
     g,
     Response,
+    stream_with_context,
 )
 from dotenv import load_dotenv
 from prometheus_client import (
@@ -50,6 +52,9 @@ CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key-change-me")
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
+
+# Allowed origins for CORS
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:5173").split(",")
 
 
 @dataclass(frozen=True)
@@ -108,6 +113,7 @@ def token_required(route_handler):
 def get_current_business_id():
     return getattr(g, "business_id", None)
 
+
 # ═══════════════════════════════════════════════════════════════════
 # Prometheus metrics
 # ═══════════════════════════════════════════════════════════════════
@@ -142,6 +148,14 @@ DASHBOARD_API_ERRORS = Counter(
     ["endpoint"],
 )
 
+SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try again later."
+
+
+def _internal_error_response(exc: Exception | None = None, *, field: str = "error"):
+    if exc is not None:
+        app.logger.error("Unhandled API exception: %s", exc, exc_info=True)
+    return jsonify({field: SAFE_INTERNAL_ERROR_MESSAGE}), 500
+
 
 @app.before_request
 def _start_timer():
@@ -150,15 +164,18 @@ def _start_timer():
 
 @app.after_request
 def _record_metrics(response):
+    # CORS headers
     origin = request.headers.get("Origin", "")
-    if origin in ("http://localhost:3000", "http://localhost:3001", "http://localhost:5173"):
+    if origin in ALLOWED_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
         response.headers["Access-Control-Allow-Credentials"] = "true"
 
+    # Metrics
     if request.path == "/metrics":
         return response
+    
     latency = time.time() - getattr(g, "start_time", time.time())
     endpoint = request.endpoint or "unknown"
     REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
@@ -189,6 +206,7 @@ def _close_chat_db(exc):
 
 
 def _init_chat_db():
+    """Initialize chat database with tables if they don't exist."""
     db = sqlite3.connect(CHAT_DB_PATH)
     db.executescript(
         """
@@ -209,11 +227,14 @@ def _init_chat_db():
         );
         """
     )
+    
+    # Check if intent column exists (for backward compatibility)
     try:
         db.execute("SELECT intent FROM messages LIMIT 1")
     except sqlite3.OperationalError:
         db.execute("ALTER TABLE messages ADD COLUMN intent TEXT DEFAULT NULL")
         db.commit()
+    
     db.close()
 
 
@@ -256,9 +277,8 @@ def chatbot(conv_id=None):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Dashboard API endpoints  (last 24 h data)
+# Dashboard API endpoints (last 24 h data)
 # ═══════════════════════════════════════════════════════════════════
-
 
 @app.route("/api/dashboard/summary")
 @token_required
@@ -301,7 +321,7 @@ def api_dashboard_summary():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/revenue-vs-expense")
@@ -340,7 +360,7 @@ def api_revenue_vs_expense():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/transactions-by-category")
@@ -366,7 +386,7 @@ def api_transactions_by_category():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/sales-trend")
@@ -395,7 +415,7 @@ def api_sales_trend():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/alerts-by-severity")
@@ -419,7 +439,7 @@ def api_alerts_by_severity():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/health-scores")
@@ -459,7 +479,7 @@ def api_health_scores():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/top-products")
@@ -488,7 +508,7 @@ def api_top_products():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/financial-overview")
@@ -523,7 +543,7 @@ def api_financial_overview():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/employee-stats")
@@ -548,7 +568,7 @@ def api_employee_stats():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/recent-transactions")
@@ -581,7 +601,7 @@ def api_recent_transactions():
                 r["transaction_date"] = r["transaction_date"].isoformat()
         return jsonify({"transactions": rows})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/sales-target")
@@ -617,7 +637,7 @@ def api_sales_target():
             })
         return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/categories")
@@ -631,7 +651,7 @@ def api_categories():
         )
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -651,14 +671,24 @@ def api_list_conversations():
 @app.route("/api/chat/conversations", methods=["POST"])
 @token_required
 def api_create_conversation():
+    """Create a new conversation."""
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    else:
+        data = {}
+    
     conv_id = str(uuid.uuid4())
-    title = request.json.get("title", "New Chat") if request.is_json else "New Chat"
+    title = data.get("title", "New Chat") if data else "New Chat"
     db = _get_chat_db()
     db.execute(
         "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
         (conv_id, title),
     )
     db.commit()
+    
+    ACTIVE_CONVERSATIONS.inc()
     return jsonify({"conversation_id": conv_id, "title": title}), 201
 
 
@@ -669,6 +699,8 @@ def api_delete_conversation(conv_id):
     db.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
     db.execute("DELETE FROM conversations WHERE conversation_id = ?", (conv_id,))
     db.commit()
+    
+    ACTIVE_CONVERSATIONS.dec()
     return jsonify({"status": "deleted"}), 200
 
 
@@ -686,7 +718,14 @@ def api_get_messages(conv_id):
 @app.route("/api/chat/send", methods=["POST"])
 @token_required
 def api_chat_send():
-    data = request.get_json(force=True)
+    """
+    Send a message to the agent and store the exchange.
+    Expects JSON: { conversation_id, message }
+    """
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    
     conv_id = data.get("conversation_id")
     user_msg = data.get("message", "").strip()
 
@@ -695,6 +734,7 @@ def api_chat_send():
 
     db = _get_chat_db()
 
+    # Check if conversation exists, if not create it
     exists = db.execute(
         "SELECT 1 FROM conversations WHERE conversation_id = ?", (conv_id,)
     ).fetchone()
@@ -703,13 +743,16 @@ def api_chat_send():
             "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
             (conv_id, user_msg[:50]),
         )
+        ACTIVE_CONVERSATIONS.inc()
 
+    # Store user message
     db.execute(
         "INSERT INTO messages (conversation_id, role, content) VALUES (?, 'user', ?)",
         (conv_id, user_msg),
     )
     db.commit()
 
+    # Update conversation title if it's still "New Chat"
     conv_row = db.execute(
         "SELECT title FROM conversations WHERE conversation_id = ?", (conv_id,)
     ).fetchone()
@@ -722,17 +765,14 @@ def api_chat_send():
 
     CHAT_MESSAGES_TOTAL.labels("user").inc()
 
-    from flask import stream_with_context
-    import json
-
     def generate_stream():
         agent_start = time.time()
         full_assistant_msg = ""
         intent_value = None
         clarification_data = None
-        is_error = False
 
         try:
+            # Call the agent API with streaming
             resp = requests.get(
                 f"{AGENT_API_URL}/api/v1/query",
                 params={"input-query": user_msg, "thread-id": conv_id},
@@ -759,19 +799,23 @@ def api_chat_send():
                             elif t == "error":
                                 full_assistant_msg = "⚠️ Error: " + chunk_data.get("error", "Unknown")
                                 intent_value = chunk_data.get("intent_str")
-                                is_error = True
-                        except Exception:
+                        except json.JSONDecodeError:
                             pass
 
             CHAT_AGENT_LATENCY.observe(time.time() - agent_start)
-        except Exception as exc:
+            
+        except requests.exceptions.RequestException as exc:
             err_msg = f"Could not reach agent: {exc}"
             yield f"data: {json.dumps({'type': 'error', 'error': err_msg})}\n\n"
             full_assistant_msg = f"⚠️ Error: {err_msg}"
-            is_error = True
+        except Exception as exc:
+            err_msg = f"Unexpected error: {exc}"
+            yield f"data: {json.dumps({'type': 'error', 'error': err_msg})}\n\n"
+            full_assistant_msg = f"⚠️ Error: {err_msg}"
 
         CHAT_MESSAGES_TOTAL.labels("assistant").inc()
 
+        # Determine final response text
         if clarification_data:
             if isinstance(clarification_data, str):
                 final_text = clarification_data
@@ -780,6 +824,7 @@ def api_chat_send():
         else:
             final_text = full_assistant_msg
 
+        # Store assistant response in database
         db2 = sqlite3.connect(CHAT_DB_PATH)
         db2.execute(
             "INSERT INTO messages (conversation_id, role, content, intent) VALUES (?, 'assistant', ?, ?)",
@@ -806,5 +851,3 @@ _init_chat_db()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)
-    
-    
