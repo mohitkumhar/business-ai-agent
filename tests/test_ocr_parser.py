@@ -5,7 +5,7 @@ from agent_code.ocr_processor import extract_transactions_from_image
 
 def test_extract_transactions_from_image_fenced_json(monkeypatch):
     """Test that fenced JSON is correctly parsed."""
-    monkeypatch.setattr(agent_code.ocr_processor, "GEMINI_API_KEY", "dummy_key")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy_key")
     
     mock_response_text = '```json\n[{"date": "2026-03-01", "type": "Revenue", "category": "Sales", "amount": 100, "description": "Test"}]\n```'
     
@@ -30,7 +30,7 @@ def test_extract_transactions_from_image_fenced_json(monkeypatch):
 
 def test_extract_transactions_from_image_unfenced_json(monkeypatch):
     """Test that raw unfenced JSON is correctly parsed."""
-    monkeypatch.setattr(agent_code.ocr_processor, "GEMINI_API_KEY", "dummy_key")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy_key")
     
     mock_response_text = '[{"date": "2026-03-02", "type": "Expense", "category": "Rent", "amount": 500, "description": "Shop rent"}]'
     
@@ -55,7 +55,7 @@ def test_extract_transactions_from_image_unfenced_json(monkeypatch):
 
 def test_extract_transactions_from_image_embedded_json(monkeypatch):
     """Test that JSON embedded in text is correctly parsed."""
-    monkeypatch.setattr(agent_code.ocr_processor, "GEMINI_API_KEY", "dummy_key")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy_key")
     
     mock_response_text = 'Here is the data: [{"date": "2026-03-03", "type": "Revenue", "category": "Sales", "amount": 200, "description": "Embedded"}] hope this helps!'
     
