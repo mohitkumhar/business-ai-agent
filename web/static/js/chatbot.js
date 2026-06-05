@@ -508,13 +508,20 @@
             : new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
         bubble.innerHTML = `
-            <div class="message-avatar">${avatar}</div>
-            <div class="message-body">
-                <div class="dynamic-intents"></div>
-                <div class="agent-status" style="font-size:0.8em;color:#888;font-style:italic;margin-bottom:5px;"></div>
-                <div class="message-content"></div>
-                <div class="message-time">${timeStr}</div>
-            </div>
+    <div class="message-avatar">${avatar}</div>
+    <div class="message-body">
+        <div class="dynamic-intents"></div>
+        <div class="agent-status" style="font-size:0.8em;color:#888;font-style:italic;margin-bottom:5px;"></div>
+
+        <div class="message-content"></div>
+
+        <button class="copy-btn" onclick="copyMessage(this)">
+            Copy
+        </button>
+
+        <div class="message-time">${timeStr}</div>
+    </div>
+`;
         `;
         chatMessages.appendChild(bubble);
         scrollToBottom();
@@ -673,3 +680,20 @@
         }
     })();
 })();
+async function copyMessage(button) {
+    const text =
+        button.parentElement.querySelector(".message-content").innerText;
+
+    try {
+        await navigator.clipboard.writeText(text);
+
+        button.innerText = "Copied!";
+
+        setTimeout(() => {
+            button.innerText = "Copy";
+        }, 1500);
+
+    } catch (err) {
+        console.error("Copy failed:", err);
+    }
+}
