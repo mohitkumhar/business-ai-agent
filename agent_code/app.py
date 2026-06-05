@@ -22,6 +22,9 @@ import numpy as np
 from datetime import datetime, timedelta, date, timezone
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 
 # Database & AI Imports
 from db_config import get_db_connection, execute_read_query_params
@@ -45,9 +48,21 @@ from swagger_docs import register_swagger_docs
 load_dotenv()
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
 
 DEFAULT_RATE_LIMITS = [
     limit.strip()
@@ -1089,6 +1104,8 @@ def confirm_notebook():
 def query_agent():
     try:
         input_query = request.args.get("input-query", "")
+        if input_query:
+            input_query = sanitize_input(input_query)
         thread_id = request.args.get("thread-id", "")
         business_id = request.args.get("business-id", "")
 
@@ -1587,7 +1604,13 @@ def api_health_scores():
 def api_top_products():
     bid = get_current_business_id()
     try:
-        rows = execute_read_query_params("SELECT product_name, stock_quantity, selling_price, cost_price FROM products WHERE business_id = %s ORDER BY stock_quantity DESC LIMIT 10", (bid,))
+        rows = execute_read_query_params(
+            "SELECT product_name, stock_quantity, selling_price, cost_price, "
+            "(COALESCE(selling_price, 0) - COALESCE(cost_price, 0)) * COALESCE(stock_quantity, 0) AS business_value "
+            "FROM products WHERE business_id = %s "
+            "ORDER BY business_value DESC LIMIT 10",
+            (bid,)
+        )
         margin_amount = [float((r["selling_price"] or 0) - (r["cost_price"] or 0)) for r in rows]
         margin_pct = [
             round(((r["selling_price"] or 0) - (r["cost_price"] or 0)) / (r["selling_price"] or 1) * 100, 1)
@@ -1600,7 +1623,8 @@ def api_top_products():
             "stock": [int(r["stock_quantity"] or 0) for r in rows],
             "margin": margin_pct,
             "margin_amount": margin_amount,
-            "margin_pct": margin_pct
+            "margin_pct": margin_pct,
+            "business_value": [round(float(r["business_value"] or 0), 2) for r in rows]
         })
     except Exception as exc:
         return internal_error_response(exc)

@@ -131,24 +131,18 @@ cd business-ai-agent
 
 ### Step 2 — Create the environment file
 
-Create a `.env` file in the **root** directory:
+Simply copy the `.env.example` template to create your `.env` file in the project's **root** directory:
 
 ```bash
-# .env (root)
-DATABASE_URL=postgresql://admin:root@db:5432/test_db
+cp .env.example .env
 ```
 
-Create a `.env` file inside `agent_code/`:
+Open the newly created `.env` file in the root directory and ensure the database credentials and required LLM keys (such as `GROQ_API_KEY`) are set.
 
-```bash
-# agent_code/.env
-DATABASE_URL=postgresql://admin:root@postgres_db:5432/test_db
-LLM_BASE_URL=http://host.docker.internal:11434/
-PROMETHEUS_URL=http://prometheus:9090
-LOKI_URL=http://loki:3100
-```
-
-> **Note:** Ollama must be running on your **host machine** (not inside Docker). Download it from [ollama.com](https://ollama.com) and run:
+> [!NOTE]
+> For **Docker Compose**, the containerized backend automatically loads variables from this root `.env` file. You do **not** need to create separate `.env` files in service subdirectories.
+>
+> Ollama must be running on your **host machine** (not inside Docker). Download it from [ollama.com](https://ollama.com) and run:
 > ```bash
 > ollama pull llama3.2:3b
 > ollama serve
@@ -299,7 +293,7 @@ python app.py
 ### pgAdmin Access
 
 - URL: http://localhost:5050
-- Email: `mohitmolela@gmail.com`
+- Email: `admin@admin.com`
 - Password: `root`
 
 ### Apply Schema & Seed Data
@@ -343,44 +337,123 @@ Seed data remains in `inserts.sql`; migrations should only track schema changes 
 
 ## 🔐 Environment Variables
 
-| Variable | Service | Description | Default |
-|----------|---------|-------------|---------|
-| `DATABASE_URL` | Agent, Web | PostgreSQL connection string | `postgresql://admin:root@localhost:5432/test_db` |
-| `GROQ_API_KEY` | Agent | Groq API key for `ChatOpenAI` calls that use the Groq OpenAI-compatible endpoint | — |
-| `GEMINI_API_KEY` | Agent | Gemini Vision API key for OCR-based image transaction extraction | — |
-| `OPENROUTER_API_KEY` | Agent | OpenRouter API key for LangGraph subgraph LLM calls | — |
-| `OPENROUTER_MODEL` | Agent | OpenRouter model used by the base LLM client | `openai/gpt-4o-mini` |
-| `PROMETHEUS_URL` | Agent | Prometheus API URL | `http://prometheus:9090` |
-| `LOKI_URL` | Agent | Loki API URL | `http://loki:3100` |
-| `AGENT_API_URL` | Dashboard, Web | Flask agent base URL | `http://localhost:5000` |
-| `NEXT_PUBLIC_AGENT_API_URL` | Dashboard | Browser-visible Flask agent URL for direct client requests | `http://localhost:5000` |
-| `NEXT_PUBLIC_LANDING_URL` | Dashboard | Public landing page URL used by dashboard links | `http://localhost:5173` |
-| `NEXT_PUBLIC_SLACK_APP_URL` | Dashboard | Optional Slack app install or launch URL | — |
-| `RATE_LIMIT_DEFAULT` | Agent | Default Flask-Limiter quota for API clients | `200 per day;50 per hour` |
-| `RATE_LIMIT_AUTH` | Agent | Signup/login quota per client IP | `5 per minute` |
-| `RATE_LIMIT_CHAT` | Agent | Chat generation quota per client IP | `10 per minute` |
-| `RATE_LIMIT_IMPORT` | Agent | Transaction import quota per client IP | `20 per hour` |
-| `TELEGRAM_BOT_TOKEN` | Agent | Telegram BotFather token used by `/api/v1/telegram/webhook` to send AI replies | - |
-| `VITE_API_URL` | Landing Page | Flask agent URL used by onboarding requests | `http://localhost:5000` |
-| `VITE_GOOGLE_CLIENT_ID` | Landing Page | Google OAuth Client ID | — |
-| `NEXTAUTH_URL` | Landing Page | Local auth callback base URL | `http://localhost:5173` |
-| `NEXT_PUBLIC_VIEWER_URL` | Landing Page | Public viewer URL for the landing app | `http://localhost:5173` |
-| `ENCRYPTION_SECRET` | Landing Page | Local encryption secret for app integrations | — |
-| `MY_WHATSAPP_NUMBER` | WhatsApp Gateway | E.164 WhatsApp number without `+` | — |
-| `WHATSAPP_VERIFY_TOKEN` | Agent | Meta webhook verification token | — |
-| `WHATSAPP_ACCESS_TOKEN` | Agent | Meta WhatsApp API access token | — |
-| `WHATSAPP_PHONE_NUMBER_ID` | Agent | Meta WhatsApp phone number ID | — |
-| `JWT_SECRET` | Agent | High-entropy JWT signing secret for Flask auth tokens; required and must not use the sample value | — |
-| `CHAT_DB_PATH` | Agent | SQLite file path for chat history persistence | `chat_history.db` |
-| `DEFAULT_BUSINESS_ID` | Agent | Fallback business ID for integrations without a session | — |
-| `GITHUB_REPO` | Agent | Repository used by GitHub issue helper flows | `mohitkumhar/intelligent-business-agent` |
-| `API_KEY` | Agent auth | Simple API key | `secret-token` |
+Configuring environment variables correctly is vital for getting **ProfitPilot** up and running. The codebase is organized as a multi-service platform (Vite Landing Page, Next.js Dashboard, Flask Agent Backend), supporting both **Docker Compose** and **Local (manual)** execution.
 
-Copy `.env.example` to `.env`, fill private values locally, generate `JWT_SECRET` with a high-entropy value such as `openssl rand -hex 32`, and never commit real `.env` files:
-
+For security, the backend requires a custom `JWT_SECRET` and will reject the default sample value. Before starting the services, generate a secure key using:
 ```bash
+openssl rand -hex 32
+```
+Set this as your `JWT_SECRET` in your `.env` file. Never commit real `.env` files to version control.
+
+---
+
+### 📂 File Creation & Placement
+
+The repository includes a single, master `.env.example` in the root directory. Duplicate this template and place it in the correct location depending on your development workflow:
+
+#### Option A: Docker Compose Setup (Recommended)
+You only need a single `.env` file in the project's **root** directory:
+```bash
+# In the root directory:
 cp .env.example .env
 ```
+Docker Compose automatically reads this root `.env` file and passes the variables to all services (`backend`, `db`, `dashboard`, etc.).
+
+#### Option B: Local Setup (Manual Running)
+For manual local execution, services run in separate processes and load `.env` configurations from their respective folders. Duplicate the root template to:
+* **Backend (`agent_code/`)**: `cp .env.example agent_code/.env`
+* **Dashboard (`dashboard/`)**: `cp .env.example dashboard/.env`
+* **Landing Page (`landing-page/`)**: `cp .env.example landing-page/.env`
+
+---
+
+### 🔄 Docker vs. Local Configuration Differences
+
+Certain variables (such as connection URLs and endpoints) use different hostnames based on whether they run inside Docker containers or on your local machine:
+
+| Variable | Docker Compose Value | Local Setup Value | Purpose |
+| :--- | :--- | :--- | :--- |
+| `DATABASE_URL` | `postgresql://...@{**db**}:5432/...` | `postgresql://...@{**localhost**}:5432/...` | PostgreSQL connection host. Inside Docker, `db` refers to the container service name. |
+| `LLM_BASE_URL` | `http://host.docker.internal:11434/` | `http://127.0.0.1:11434/` | Local Ollama endpoint. `host.docker.internal` allows Docker containers to access your host machine. |
+| `AGENT_API_URL` | `http://backend:5000` | `http://localhost:5000` | Address used by server processes to communicate with the Flask agent. |
+| `PROMETHEUS_URL` | `http://prometheus:9090` | `http://localhost:9090` | Prometheus server scraping endpoint. |
+| `LOKI_URL` | `http://loki:3100` | `http://localhost:3100` | Loki log shipper endpoint. |
+
+---
+
+### 🏷️ Environment Variable Categories
+
+The tables below group all supported variables into specific functional domains.
+
+#### 1. Backend Core & Security (Flask Backend)
+Defines authentication keys, database settings, and rate-limiting options.
+
+| Variable | Status | Description | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `DATABASE_URL` | **Required** | PostgreSQL connection string. | `postgresql://admin:root@db:5432/test_db` |
+| `JWT_SECRET` | **Required** | High-entropy JWT signing secret for Flask auth tokens; must not use the sample value. | `replace-with-a-high-entropy-jwt-secret` |
+| `API_KEY` | **Required** | Simple static API key used for internal authentication checks. | `secret-token` |
+| `CHAT_DB_PATH` | Optional | Path to the SQLite database storing local user chat history. | `chat_history.db` |
+| `RATE_LIMIT_DEFAULT` | Optional | Default Flask-Limiter limit for general API clients. | `200 per day;50 per hour` |
+| `RATE_LIMIT_AUTH` | Optional | Max signup/login attempts per client IP. | `5 per minute` |
+| `RATE_LIMIT_CHAT` | Optional | Max chat requests per client IP. | `10 per minute` |
+| `RATE_LIMIT_IMPORT` | Optional | Max file import attempts per client IP. | `20 per hour` |
+
+#### 2. LLM & AI Providers
+Required to route queries, execute SQL database tools, and parse documents.
+
+| Variable | Status | Description | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `GROQ_API_KEY` | **Required** | API key used for LangGraph intent routing and SQL generation models via Groq. | `gsk_your_key_here` |
+| `GEMINI_API_KEY` | Optional | API key for Gemini Vision models, used for OCR transaction extraction. | `AIzaSy...` |
+| `LLM_BASE_URL` | Optional | Ollama model server URL if running local open-source models. | `http://host.docker.internal:11434/` |
+| `OPENROUTER_API_KEY`| Optional | API key for routing requests through OpenRouter endpoints. | `sk-or-v1-...` |
+| `OPENROUTER_MODEL`  | Optional | Default model selected when using the OpenRouter client. | `openai/gpt-4o-mini` |
+
+#### 3. Frontend Applications (Next.js Dashboard & Vite Landing Page)
+Variables prefixed with `NEXT_PUBLIC_` are exposed to client-side browser scripts in Next.js. `VITE_` variables are transpiled for the Vite Landing Page.
+
+| Variable | Status | Description | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `AGENT_API_URL` | **Required** | Server-side URL of the Flask agent backend. | `http://localhost:5000` |
+| `NEXT_PUBLIC_AGENT_API_URL` | Optional | Browser-accessible URL of the Flask agent (overrides Next.js proxying). | `http://localhost:5000` |
+| `NEXT_PUBLIC_LANDING_URL` | **Required** | Public web URL pointing to the Vite landing/onboarding page. | `http://localhost:5173` |
+| `NEXT_PUBLIC_VIEWER_URL`  | **Required** | Public web URL pointing to the viewer interface. | `http://localhost:5173` |
+| `VITE_API_URL` | **Required** | Onboarding API URL referenced by the Vite landing page. | `http://localhost:5000` |
+| `NEXTAUTH_URL` | Optional | Callback root address for OAuth and credential sessions. | `http://localhost:5173` |
+| `VITE_GOOGLE_CLIENT_ID` | Optional | Google OAuth client ID for user login/signup integrations. | `your-google-client-id` |
+| `ENCRYPTION_SECRET` | Optional | 32-character encryption key for frontend integration credentials. | `12345678901234567890123456789012` |
+
+#### 4. Observability & Monitoring
+Powers the developer performance graphs and container log shipping.
+
+| Variable | Status | Description | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `PROMETHEUS_URL` | Optional | API address where metric scrapes are sent. | `http://prometheus:9090` |
+| `LOKI_URL` | Optional | API address of the Loki collector shipping application logs. | `http://loki:3100` |
+| `AGENT_MAX_STEPS` | Optional | Safety cap on the maximum steps the AI agent can execute in a single graph run. | `22` |
+
+#### 5. Integrations & Third-Party Channels
+Optional configurations to connect your chatbot with external messengers.
+
+| Variable | Status | Description | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `TELEGRAM_BOT_TOKEN` | Optional | Token from @BotFather to enable messaging via Telegram. | `123456789:ABCdefGh...` |
+| `MY_WHATSAPP_NUMBER` | Optional | E.164 phone number without leading `+` to receive WhatsApp alerts. | `911234567890` |
+| `WHATSAPP_VERIFY_TOKEN` | Optional | Webhook verification string set in the Meta developer portal. | `your-verify-token` |
+| `WHATSAPP_ACCESS_TOKEN` | Optional | Access token for the WhatsApp cloud API. | `EAAG...` |
+| `WHATSAPP_PHONE_NUMBER_ID` | Optional | Phone number ID registered with WhatsApp Cloud API. | `123456789012345` |
+| `SLACK_BOT_TOKEN` | Optional | Bot token to trigger Slack workflows. | `xoxb-your-token-here` |
+| `SLACK_SIGNING_SECRET` | Optional | Signing secret to verify incoming webhook payloads from Slack. | `slack_signing_secret` |
+| `SLACK_DEMO_CHANNEL_ID` | Optional | Channel ID where Slack reports/alerts are pushed. | `C0123456789` |
+
+#### 6. Default Settings & Metadata
+Optional default values and metadata used for fallback behavior or logging.
+
+| Variable | Status | Description | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `DEFAULT_BUSINESS_ID` | Optional | Fallback business ID if not specified in session context. | `550e8400-e29b-41d4-a716-446655440000` |
+| `GITHUB_REPO` | Optional | Repository path used for reporting issues or logging features. | `mohitkumhar/intelligent-business-agent` |
 
 ---
 

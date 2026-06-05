@@ -23,12 +23,26 @@ from logger.logger import logger
 from request_ids import get_request_id
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
-
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
 
 if "agent_requests_total" in REGISTRY._names_to_collectors:
     AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
@@ -481,6 +495,8 @@ def metrics_endpoint():
 @app.route("/api/v1/query", methods=["POST", "GET"])
 def query_agent():
     input_query = request.args.get("input-query", "")
+    if input_query:
+        input_query = sanitize_input(input_query)    
     thread_id = request.args.get("thread-id", "")
     business_id = request.args.get("business-id", "") or ""
     if not input_query:
@@ -1154,7 +1170,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 load_dotenv()
 
 # Use the existing app object defined at the top of the file
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")

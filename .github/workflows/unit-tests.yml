@@ -70,7 +70,8 @@ jobs:
           python -m pip install \
             pytest PyJWT openpyxl Flask flask-cors Flask-Limiter requests \
             bcrypt python-dateutil prometheus-client flasgger \
-            alembic==1.13.1 SQLAlchemy==2.0.46 psycopg2-binary==2.9.10
+            alembic==1.13.1 SQLAlchemy==2.0.46 psycopg2-binary==2.9.10 \
+            Faker==40.11.1
 
       - name: Run unit tests
         env:
