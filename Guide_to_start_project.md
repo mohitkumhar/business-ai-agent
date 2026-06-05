@@ -13,10 +13,17 @@ docker compose version
 git clone <repo-url>
 cd intelligent-business-agent
 
-### 3️⃣ Start All Services
+### 3️⃣ Setup Environment Variables
+Copy the environment variables template to the project root directory:
+```bash
+cp .env.example .env
+```
+Open the newly created `.env` file and populate the required fields (e.g., database credentials and `GROQ_API_KEY`). For a detailed breakdown of all variables, refer to the [Environment Variables Guide in README.md](README.md#🔐-environment-variables).
+
+### 4️⃣ Start All Services
 docker compose up 
 
-### 4️⃣ Access Services
+### 5️⃣ Access Services
 Frontend:
 
 http://localhost:5173

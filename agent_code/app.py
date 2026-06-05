@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 import csv
 import io
+import math
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -21,6 +22,9 @@ import numpy as np
 from datetime import datetime, timedelta, date, timezone
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 
 # Database & AI Imports
 from db_config import get_db_connection, execute_read_query_params
@@ -29,12 +33,9 @@ from ocr_processor import extract_transactions_from_image
 from langchain_openai import ChatOpenAI
 
 # Chatbot/LangGraph Imports
-from nodes import intent_detection, format_response
 from intents.general_information_graph.subgraph import general_information_graph_workflow
 from intents.database_request_graph.subgraph import database_request_graph_workflow
-from intents.logs_request_graph.subgraph import logs_request_graph_workflow
-from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
-from langgraph.types import Command
+
 
 from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
@@ -47,9 +48,21 @@ from swagger_docs import register_swagger_docs
 load_dotenv()
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
 
 DEFAULT_RATE_LIMITS = [
     limit.strip()
@@ -68,6 +81,22 @@ IMPORT_RATE_LIMIT = os.getenv("RATE_LIMIT_IMPORT", "20 per hour")
 
 # --- Authentication Logic ---
 def token_required(f):
+    """
+    Decorator that validates a JWT token before allowing access to a protected route.
+
+    Token Validation Flow:
+        Reads the Authorization header and calls decode_jwt_identity to verify
+        the JWT. On success, stores user_id and business_id in Flask's request
+        context (g) for downstream use.
+
+    Wrapped Function Behavior:
+        If authentication succeeds, the decorated route function is called
+        normally with its original arguments.
+
+    Failure Responses:
+        Returns a JSON response with the AuthError message and corresponding
+        HTTP status code (e.g. 401) if the token is missing, invalid, or expired.
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
         try:
@@ -84,6 +113,18 @@ def token_required(f):
     return decorated
 
 def get_current_business_id():
+    """
+    Helper that retrieves the active business ID from Flask's request context.
+
+    Source:
+        The business_id is populated in Flask's g object by the token_required
+        decorator during authenticated request handling.
+
+    Returns:
+        str: The business_id string if an authenticated request context exists.
+        None: If no business context is available (e.g. outside a request or
+              unauthenticated call).
+    """
     return getattr(g, "business_id", None)
 
 @app.route("/api/auth/signup", methods=["POST"])
@@ -105,6 +146,7 @@ def auth_signup():
             business_id (str): UUID of the newly created business.
             user (dict): Basic user info with 'name' and 'email' keys.
         HTTP 201 on successful registration.
+
         HTTP 400 if any of email, password, name, or business_name are missing.
         HTTP 409 if the email address is already registered.
         HTTP 500 on unexpected server error.
@@ -114,7 +156,9 @@ def auth_signup():
         Inserts a new record into the PostgreSQL users table with a bcrypt-hashed password.
         Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
     """
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -162,7 +206,7 @@ def auth_login():
     Authenticate an existing user and return a JWT access token.
 
     Expects a JSON request body with:
-        email (str): The user's registered email address.
+        email (str): The user's registered email address (case-insensitive).
         password (str): The user's plain-text password (verified against bcrypt hash).
 
     Returns:
@@ -179,7 +223,11 @@ def auth_login():
         Reads from the PostgreSQL users table.
         Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
     """
-    data = request.json
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
+
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -217,9 +265,20 @@ TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 # --- Metrics ---
-AGENT_REQUEST_COUNT = Counter("agent_requests_total", "Total requests", ["method", "endpoint", "status"])
-AGENT_REQUEST_LATENCY = Histogram("agent_request_duration_seconds", "Request latency", ["method", "endpoint"])
-AGENT_INTENT_COUNT = Counter("agent_intent_detections_total", "Intent detections", ["intent"])
+if "agent_requests_total" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
+else:
+    AGENT_REQUEST_COUNT = Counter("agent_requests_total", "Total requests", ["method", "endpoint", "status"])
+
+if "agent_request_duration_seconds" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_LATENCY = REGISTRY._names_to_collectors["agent_request_duration_seconds"]
+else:
+    AGENT_REQUEST_LATENCY = Histogram("agent_request_duration_seconds", "Request latency", ["method", "endpoint"])
+
+if "agent_intent_detections_total" in REGISTRY._names_to_collectors:
+    AGENT_INTENT_COUNT = REGISTRY._names_to_collectors["agent_intent_detections_total"]
+else:
+    AGENT_INTENT_COUNT = Counter("agent_intent_detections_total", "Intent detections", ["intent"])
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -532,12 +591,73 @@ def _list_serialized_conversations(db: sqlite3.Connection, *, business_id: str, 
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
-    if not WHATSAPP_ACCESS_TOKEN: raise ValueError("WhatsApp token missing")
-    meta = requests.get(f"https://graph.facebook.com/v21.0/{media_id}", headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"}).json()
-    url = meta.get("url")
-    if not url: raise ValueError("Media URL missing")
-    blob = requests.get(url, headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"})
-    return blob.content, meta.get("mime_type", "image/jpeg")
+    if not WHATSAPP_ACCESS_TOKEN:
+        raise ValueError("WhatsApp token missing")
+    try:
+        meta = requests.get(
+            f"https://graph.facebook.com/v21.0/{media_id}",
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            timeout=(5, 30),
+        ).json()
+        url = meta.get("url")
+        if not url:
+            raise ValueError("Media URL missing")
+        blob = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            timeout=(5, 60),
+        )
+        blob.raise_for_status()
+        return blob.content, meta.get("mime_type", "image/jpeg")
+    except requests.exceptions.Timeout:
+        raise ValueError("WhatsApp media download timed out.")
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"WhatsApp media download failed: {e}")
+
+def _normalize_extracted_bill_transaction(transaction: tuple[Any, ...]) -> dict[str, Any]:
+    if not isinstance(transaction, tuple) or len(transaction) < 5:
+        raise ValueError("Bill extraction returned an invalid transaction shape.")
+
+    transaction_date, tx_type, category, amount, description = transaction[:5]
+    if not transaction_date:
+        raise ValueError("Bill extraction must include a transaction date.")
+
+    if isinstance(transaction_date, datetime):
+        normalized_date = transaction_date.date()
+    elif isinstance(transaction_date, date):
+        normalized_date = transaction_date
+    elif isinstance(transaction_date, str):
+        try:
+            normalized_date = datetime.strptime(transaction_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("Bill extraction returned an invalid transaction date.") from exc
+    else:
+        raise ValueError("Bill extraction returned an invalid transaction date.")
+
+    normalized_type = str(tx_type or "").strip().capitalize()
+    if normalized_type not in {"Revenue", "Expense"}:
+        raise ValueError("Bill extraction returned an invalid transaction type.")
+
+    try:
+        normalized_amount = float(amount)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Bill extraction returned a non-numeric amount.") from exc
+
+    if not math.isfinite(normalized_amount) or normalized_amount <= 0:
+        raise ValueError("Bill extraction amount must be greater than zero.")
+
+    normalized_category = str(category or "").strip()
+    if not normalized_category:
+        raise ValueError("Bill extraction must include a category.")
+
+    vendor = str(description or "").strip() or "Unknown"
+    return {
+        "date": normalized_date,
+        "amount": normalized_amount,
+        "category": normalized_category[:100],
+        "type": normalized_type,
+        "vendor": vendor[:500],
+    }
 
 def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     extension_by_mime = {
@@ -551,14 +671,7 @@ def _extract_bill_data_from_image(image_bytes: bytes, mime_type: str) -> dict[st
     if not transactions:
         raise ValueError("No bill transaction could be extracted from the image.")
 
-    transaction_date, tx_type, category, amount, description = transactions[0]
-    return {
-        "date": transaction_date,
-        "amount": amount,
-        "category": category,
-        "type": tx_type,
-        "vendor": description or "Unknown",
-    }
+    return _normalize_extracted_bill_transaction(transactions[0])
 
 def _insert_bill_transaction(business_id: str, normalized: dict[str, Any]) -> int:
     conn = get_db_connection()
@@ -602,7 +715,8 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
 
     response = "".join(chunks).strip()
     if response:
-        return response
+       return response
+
     if fallback_error:
         logger.error("Agent execution failed: %s", fallback_error)
         return "Sorry, something went wrong while generating the response."
@@ -621,6 +735,27 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
 
 # --- Helper Functions (From Kushal-Dev) ---
 def get_period_dates(period):
+    """
+    Returns a (start_date, end_date) tuple for the given named period.
+
+    Parameters:
+        period (str): Accepted values:
+            - "this_month"  : From the 1st of the current month to today.
+            - "last_month"  : Full calendar range of the previous month.
+            - "last_7_days" : From 7 days ago to today.
+            - "last_30_days": From 30 days ago to today.
+            - "ytd"         : From January 1st of the current year to today.
+
+    Returns:
+        tuple[date, date]: A (start_date, end_date) pair as datetime.date objects.
+
+    Default/Fallback:
+        Any unrecognized period value falls back to the last 30 days.
+
+    Exceptions:
+        Does not raise exceptions for unrecognized period values; falls
+        back silently to the last 30 days.
+    """
     end_date = date.today()
     if period == "this_month":
         start_date = end_date.replace(day=1)
@@ -724,7 +859,23 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    """
+    Creates a new business and associated user account during onboarding.
+
+    Expects a JSON request containing business and user information.
+    Validates required fields, generates a unique business identifier,
+    and stores the business and user records in the database.
+
+    Returns:
+        Response: JSON response indicating success or failure.
+
+    Raises:
+        Exception: Any unexpected database or application error is
+        handled and returned as an internal error response.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -744,7 +895,14 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
+    """Verify WhatsApp webhook requests using the configured verify token.
+
+    Returns the challenge string when the supplied verification token matches
+    the configured WhatsApp verify token. Returns a 403 response when the
+    token validation fails.
+    """
+    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
+        return request.args.get("hub.challenge"), 200
     return "failed", 403
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
@@ -754,8 +912,11 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        update = request.get_json(force=True) or {}
+        update = data
         message = update.get("message") or update.get("edited_message") or {}
         chat_id = (message.get("chat") or {}).get("id")
 
@@ -773,14 +934,20 @@ def telegram_webhook():
             _send_telegram_text(chat_id, reply)
             return jsonify({"ok": True})
 
-        business_id = DEFAULT_BUSINESS_ID or "550e8400-e29b-41d4-a716-446655440000"
+        # --- FIX: Remove static default business ID ---
+        if not DEFAULT_BUSINESS_ID:
+            logger.error("Telegram webhook: DEFAULT_BUSINESS_ID environment variable is not set.")
+            _send_telegram_text(chat_id, "Service temporarily unavailable. Please try again later.")
+            return jsonify({"ok": True})
+
+        business_id = DEFAULT_BUSINESS_ID
         answer = _run_agent_to_text(text, f"tg-{chat_id}", business_id)
         _send_telegram_text(chat_id, answer)
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("Telegram webhook failed: %s", e, exc_info=True)
         try:
-            update = request.get_json(silent=True) or {}
+            update = data
             message = update.get("message") or update.get("edited_message") or {}
             chat_id = (message.get("chat") or {}).get("id")
             if chat_id is not None:
@@ -819,12 +986,30 @@ def import_transactions():
     except Exception as e:
         logger.error(f"Import failed: {str(e)}", exc_info=True)
         return internal_error_response(e)
-
 @app.route("/api/v1/import/notebook", methods=["POST"])
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def import_notebook():
-    if "file" not in request.files: return jsonify({"error": "No file part"}), 400
+    """
+    Import a notebook image and extract transaction data for preview.
+
+    The endpoint accepts an uploaded file through the ``file`` request
+    field, generates a hash to detect duplicate imports, processes the
+    image using OCR, and returns the extracted transactions without
+    permanently storing them.
+
+    Returns:
+        Response: A JSON response containing the extracted transaction
+        preview data or an error message if the import fails.
+
+    Raises:
+        Exception: Any unexpected processing error is logged and
+        returned as an internal error response.
+    """
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
     file = request.files["file"]
     bid = get_current_business_id()
     try:
@@ -870,6 +1055,20 @@ def import_notebook():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def confirm_notebook():
+    """Confirms and commits imported notebook transactions.
+
+    This function processes request payloads to confirm staging notebook
+    transactions. It extracts and validates transaction metadata before
+    persisting records to the database.
+
+    Returns:
+        tuple: A Flask response tuple containing:
+            - Success JSON payload with a 200 status code upon execution.
+            - Error JSON with a 400 status if no transactions are found to confirm.
+            - Error JSON with a 400 status if the request contains invalid JSON.
+            - Error JSON with a 500 status if an internal server error occurs.
+    """
+
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
@@ -906,173 +1105,201 @@ def confirm_notebook():
 @app.route("/api/v1/query", methods=["POST", "GET"])
 @limiter.limit(CHAT_RATE_LIMIT)
 def query_agent():
-    input_query = request.args.get("input-query", "")
-    thread_id = request.args.get("thread-id", "")
-    business_id = request.args.get("business-id", "")
+    try:
+        input_query = request.args.get("input-query", "")
+        if input_query:
+            input_query = sanitize_input(input_query)
+        thread_id = request.args.get("thread-id", "")
+        business_id = request.args.get("business-id", "")
 
-    if not input_query:
-        return jsonify({"is_error": True, "error": "input query is required"}), 400
-    if not thread_id:
-        return jsonify({"is_error": True, "error": "thread-id is required"}), 400
+        if not input_query:
+            return jsonify({"is_error": True, "error": "input query is required"}), 400
+        if not thread_id:
+            return jsonify({"is_error": True, "error": "thread-id is required"}), 400
 
-    return _sse_stream_response(
-        stream_agent_sse_lines(
-            input_query,
-            thread_id,
-            business_id,
-            on_chain_intent=lambda name: AGENT_INTENT_COUNT.labels(name).inc(),
+        return _sse_stream_response(
+            stream_agent_sse_lines(
+                input_query,
+                thread_id,
+                business_id,
+                on_chain_intent=lambda name: AGENT_INTENT_COUNT.labels(name).inc(),
+            )
         )
-    )
+    except Exception as exc:
+        logger.error("query_agent failed: %s", exc, exc_info=True)
+        return internal_error_response(exc)
 
 
 @app.route("/api/chat/send", methods=["POST"])
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    data = request.json
-    msg = data.get("message")
-    conv_id = data.get("conversation_id") or str(uuid.uuid4())
-    bid = get_current_business_id()
-    return Response(stream_with_context(stream_agent_sse_lines(msg, conv_id, bid)), mimetype="text/event-stream")
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+        msg = data.get("message")
+        conv_id = data.get("conversation_id") or str(uuid.uuid4())
+        bid = get_current_business_id()
+        return Response(stream_with_context(stream_agent_sse_lines(msg, conv_id, bid)), mimetype="text/event-stream")
+    except Exception as exc:
+        logger.error("api_chat_send failed: %s", exc, exc_info=True)
+        return internal_error_response(exc)
 
 @app.route("/api/chat/conversations", methods=["GET"])
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_conversations():
-    business_id, user_id = _chat_owner_filter()
-    db = _get_chat_db()
-    conversations = _list_serialized_conversations(
-        db,
-        business_id=business_id,
-        user_id=user_id,
-    )
-    return jsonify({"conversations": conversations})
+    try:
+        business_id, user_id = _chat_owner_filter()
+        db = _get_chat_db()
+        conversations = _list_serialized_conversations(
+            db,
+            business_id=business_id,
+            user_id=user_id,
+        )
+        return jsonify({"conversations": conversations})
+    except Exception as exc:
+        logger.error("api_chat_conversations failed: %s", exc, exc_info=True)
+        return internal_error_response(exc)
 
 @app.route("/api/chat/conversations/<conversation_id>", methods=["GET", "PUT", "DELETE"])
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_conversation(conversation_id: str):
-    business_id, user_id = _chat_owner_filter()
-    db = _get_chat_db()
+    try:
+        business_id, user_id = _chat_owner_filter()
+        db = _get_chat_db()
 
-    if request.method == "GET":
-        row = _get_conversation_row(
-            db,
-            conversation_id,
-            business_id=business_id,
-            user_id=user_id,
-        )
-        if row is None:
-            return jsonify({"error": "Conversation not found"}), 404
-        return jsonify({"conversation": _serialize_conversation(db, row)})
+        if request.method == "GET":
+            row = _get_conversation_row(
+                db,
+                conversation_id,
+                business_id=business_id,
+                user_id=user_id,
+            )
+            if row is None:
+                return jsonify({"error": "Conversation not found"}), 404
+            return jsonify({"conversation": _serialize_conversation(db, row)})
 
-    if request.method == "DELETE":
-        row = _get_conversation_row(
-            db,
-            conversation_id,
-            business_id=business_id,
-            user_id=user_id,
-        )
-        if row is None:
-            return jsonify({"error": "Conversation not found"}), 404
-        db.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
-        db.execute(
-            "DELETE FROM conversations WHERE conversation_id = ? AND business_id = ? AND user_id = ?",
-            (conversation_id, business_id, user_id),
-        )
+        if request.method == "DELETE":
+            row = _get_conversation_row(
+                db,
+                conversation_id,
+                business_id=business_id,
+                user_id=user_id,
+            )
+            if row is None:
+                return jsonify({"error": "Conversation not found"}), 404
+            db.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+            db.execute(
+                "DELETE FROM conversations WHERE conversation_id = ? AND business_id = ? AND user_id = ?",
+                (conversation_id, business_id, user_id),
+            )
+            db.commit()
+            return ("", 204)
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+        raw_messages = data.get("messages") or []
+        if not isinstance(raw_messages, list):
+            return jsonify({"error": "messages must be an array"}), 400
+
+        try:
+            messages = [_normalize_chat_message(message) for message in raw_messages]
+            created_at = _normalize_client_timestamp(data.get("createdAt"))
+            updated_at = _normalize_client_timestamp(data.get("updatedAt"))
+        except ValueError as exc:
+            return _chat_payload_error(exc)
+
+        try:
+            row = _upsert_chat_conversation(
+                db,
+                conversation_id,
+                business_id=business_id,
+                user_id=user_id,
+                title=str(data.get("title") or "New Chat"),
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+        except PermissionError:
+            return jsonify({"error": "Conversation is not accessible"}), 403
+
+        for message in messages:
+            _save_chat_message(db, conversation_id, message)
         db.commit()
-        return ("", 204)
 
-    data = request.get_json(silent=True) or {}
-    raw_messages = data.get("messages") or []
-    if not isinstance(raw_messages, list):
-        return jsonify({"error": "messages must be an array"}), 400
-
-    try:
-        messages = [_normalize_chat_message(message) for message in raw_messages]
-        created_at = _normalize_client_timestamp(data.get("createdAt"))
-        updated_at = _normalize_client_timestamp(data.get("updatedAt"))
-    except ValueError as exc:
-        return _chat_payload_error(exc)
-
-    try:
-        row = _upsert_chat_conversation(
+        row = _get_conversation_row(
             db,
             conversation_id,
             business_id=business_id,
             user_id=user_id,
-            title=str(data.get("title") or "New Chat"),
-            created_at=created_at,
-            updated_at=updated_at,
         )
-    except PermissionError:
-        return jsonify({"error": "Conversation is not accessible"}), 403
-
-    for message in messages:
-        _save_chat_message(db, conversation_id, message)
-    db.commit()
-
-    row = _get_conversation_row(
-        db,
-        conversation_id,
-        business_id=business_id,
-        user_id=user_id,
-    )
-    return jsonify({"conversation": _serialize_conversation(db, row)})
+        return jsonify({"conversation": _serialize_conversation(db, row)})
+    except Exception as exc:
+        logger.error("api_chat_conversation failed: %s", exc, exc_info=True)
+        return internal_error_response(exc)
 
 @app.route("/api/chat/conversations/<conversation_id>/messages", methods=["POST"])
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_conversation_messages(conversation_id: str):
-    business_id, user_id = _chat_owner_filter()
-    data = request.get_json(silent=True) or {}
-    db = _get_chat_db()
-
     try:
-        message = _normalize_chat_message(data.get("message"))
-        created_at = _normalize_client_timestamp(data.get("createdAt")) or message["timestamp"]
-        updated_at = _normalize_client_timestamp(data.get("updatedAt")) or message["timestamp"]
-    except ValueError as exc:
-        return _chat_payload_error(exc)
+        business_id, user_id = _chat_owner_filter()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+        db = _get_chat_db()
 
-    try:
-        _upsert_chat_conversation(
+        try:
+            message = _normalize_chat_message(data.get("message"))
+            created_at = _normalize_client_timestamp(data.get("createdAt")) or message["timestamp"]
+            updated_at = _normalize_client_timestamp(data.get("updatedAt")) or message["timestamp"]
+        except ValueError as exc:
+            return _chat_payload_error(exc)
+
+        try:
+            _upsert_chat_conversation(
+                db,
+                conversation_id,
+                business_id=business_id,
+                user_id=user_id,
+                title=str(data.get("title") or "New Chat"),
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+        except PermissionError:
+            return jsonify({"error": "Conversation is not accessible"}), 403
+
+        _save_chat_message(db, conversation_id, message)
+        db.execute(
+            """
+            UPDATE conversations
+            SET client_updated_at = ?, updated_at = ?, title = ?
+            WHERE conversation_id = ? AND business_id = ? AND user_id = ?
+            """,
+            (
+                updated_at or message["timestamp"] or int(time.time() * 1000),
+                _to_sqlite_timestamp(updated_at or message["timestamp"]),
+                str(data.get("title") or "New Chat").strip() or "New Chat",
+                conversation_id,
+                business_id,
+                user_id,
+            ),
+        )
+        db.commit()
+
+        row = _get_conversation_row(
             db,
             conversation_id,
             business_id=business_id,
             user_id=user_id,
-            title=str(data.get("title") or "New Chat"),
-            created_at=created_at,
-            updated_at=updated_at,
         )
-    except PermissionError:
-        return jsonify({"error": "Conversation is not accessible"}), 403
-
-    _save_chat_message(db, conversation_id, message)
-    db.execute(
-        """
-        UPDATE conversations
-        SET client_updated_at = ?, updated_at = ?, title = ?
-        WHERE conversation_id = ? AND business_id = ? AND user_id = ?
-        """,
-        (
-            updated_at or message["timestamp"] or int(time.time() * 1000),
-            _to_sqlite_timestamp(updated_at or message["timestamp"]),
-            str(data.get("title") or "New Chat").strip() or "New Chat",
-            conversation_id,
-            business_id,
-            user_id,
-        ),
-    )
-    db.commit()
-
-    row = _get_conversation_row(
-        db,
-        conversation_id,
-        business_id=business_id,
-        user_id=user_id,
-    )
-    return jsonify({"conversation": _serialize_conversation(db, row)}), 201
+        return jsonify({"conversation": _serialize_conversation(db, row)}), 201
+    except Exception as exc:
+        logger.error("api_chat_conversation_messages failed: %s", exc, exc_info=True)
+        return internal_error_response(exc)
 
 @app.route("/api/dashboard/financial-overview", methods=["GET", "OPTIONS"])
 @token_required
@@ -1340,22 +1567,28 @@ def api_health_scores():
     try:
         rows = execute_read_query_params("""
             SELECT bhs.overall_score, bhs.cash_score, bhs.profitability_score, bhs.growth_score,
-                   bhs.cost_control_score, bhs.risk_score, b.business_name
+                   bhs.cost_control_score, bhs.risk_score, bhs.calculated_at, b.business_name
             FROM business_health_scores bhs
             JOIN businesses b ON b.business_id = bhs.business_id
             WHERE b.business_id = %s
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
         """, (bid,))
-        
+
         if not rows:
             return jsonify({"businesses": [], "scores": []})
-            
+
         return jsonify({
-            "businesses": [r["business_name"] for r in rows],
+            "businesses": [
+                r["calculated_at"].strftime("%Y-%m-%d") if r["calculated_at"] else "N/A"
+                for r in rows
+            ],
             "scores": [
                 {
-                    "name": r["business_name"],
+                    "name": (
+                        r["calculated_at"].strftime("%Y-%m-%d")
+                        if r["calculated_at"] else "N/A"
+                    ),
                     "overall": float(r["overall_score"] or 0),
                     "cash": float(r["cash_score"] or 0),
                     "profitability": float(r["profitability_score"] or 0),
@@ -1374,7 +1607,13 @@ def api_health_scores():
 def api_top_products():
     bid = get_current_business_id()
     try:
-        rows = execute_read_query_params("SELECT product_name, stock_quantity, selling_price, cost_price FROM products WHERE business_id = %s ORDER BY stock_quantity DESC LIMIT 10", (bid,))
+        rows = execute_read_query_params(
+            "SELECT product_name, stock_quantity, selling_price, cost_price, "
+            "(COALESCE(selling_price, 0) - COALESCE(cost_price, 0)) * COALESCE(stock_quantity, 0) AS business_value "
+            "FROM products WHERE business_id = %s "
+            "ORDER BY business_value DESC LIMIT 10",
+            (bid,)
+        )
         margin_amount = [float((r["selling_price"] or 0) - (r["cost_price"] or 0)) for r in rows]
         margin_pct = [
             round(((r["selling_price"] or 0) - (r["cost_price"] or 0)) / (r["selling_price"] or 1) * 100, 1)
@@ -1387,7 +1626,8 @@ def api_top_products():
             "stock": [int(r["stock_quantity"] or 0) for r in rows],
             "margin": margin_pct,
             "margin_amount": margin_amount,
-            "margin_pct": margin_pct
+            "margin_pct": margin_pct,
+            "business_value": [round(float(r["business_value"] or 0), 2) for r in rows]
         })
     except Exception as exc:
         return internal_error_response(exc)
@@ -1410,6 +1650,7 @@ def api_employee_stats():
 def metrics():
     return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
+@limiter.exempt
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -1418,4 +1659,6 @@ def health():
 register_swagger_docs(app)
 _init_chat_db()
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
+
