@@ -1517,6 +1517,24 @@ def api_alerts_list():
 @app.route("/api/dashboard/business-info", methods=["GET", "OPTIONS"])
 @token_required
 def get_business_info():
+    """
+    Retrieve information for the current business.
+
+    Returns:
+        flask.Response:
+            A JSON response containing the business record associated with
+            the current authenticated business ID, or an empty object when no
+            matching business record is found.
+
+    Raises:
+        Exception:
+            Propagates unexpected errors encountered while retrieving business
+            information to the shared internal error response handler.
+
+    Notes:
+        This endpoint looks up the business ID from the current request context
+        and queries the businesses table for the associated metadata.
+    """
     bid = get_current_business_id()
     if not bid: return jsonify({"error": "No business found"}), 404
     try:
