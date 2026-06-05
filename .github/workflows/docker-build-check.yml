@@ -23,11 +23,12 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.image.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         image:
           - name: agent-api
             context: ./agent_code
