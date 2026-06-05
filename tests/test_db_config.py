@@ -62,13 +62,13 @@ def test_execute_read_query_params_uses_sanitized_sql_and_params(monkeypatch):
     monkeypatch.setattr(db_config, "get_db_connection", lambda: conn)
 
     rows = db_config.execute_read_query_params(
-        "SELECT * FROM businesses WHERE business_id = %s;",
+        "SELECT business_id FROM businesses WHERE business_id = %s;",
         ["b-1"],
     )
 
     assert rows == [{"business_id": "b-1"}]
     assert conn.cursor_obj.executed == (
-        "SELECT * FROM businesses WHERE business_id = %s",
+        "SELECT business_id FROM businesses WHERE business_id = %s",
         ["b-1"],
     )
     assert conn.cursor_obj.closed is True
@@ -93,4 +93,4 @@ def test_execute_read_query_params_wraps_database_errors(monkeypatch):
     monkeypatch.setattr(db_config, "get_db_connection", lambda: FakeConnection())
 
     with pytest.raises(RuntimeError, match="SQL execution failed"):
-        db_config.execute_read_query_params("SELECT * FROM businesses")
+        db_config.execute_read_query_params("SELECT business_id FROM businesses")

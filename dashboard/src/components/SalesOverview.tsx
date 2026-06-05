@@ -89,15 +89,15 @@ export default function SalesOverview() {
 
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const loadSalesTrend = useCallback(
-    () => api.getSalesTrend(period),
-    [period],
-  );
-  const { data, loading } = useAsyncData<SalesTarget>(
-    `sales-overview:${period}:${dataVersion}`,
-    loadSalesTrend,
-  );
+  const loadSalesTarget = useCallback(
+  () => api.getSalesTarget(period),
+  [period],
+);
 
+const { data, loading } = useAsyncData<SalesTarget>(
+  `sales-overview:${period}:${dataVersion}`,
+  loadSalesTarget,
+);
   const sales = data?.current_revenue ?? 0;
   const target = data?.target_revenue ?? 0;
   const percentage = data?.percentage ?? 0;

@@ -9,11 +9,13 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from dotenv import load_dotenv
 
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from logger.logger import logger
 from llm.base_llm import base_llm
 from db_config import execute_read_query
 from intents.database_request_graph.graph_state import DatabaseRequestGraphState
 from intents.database_request_graph.step_utils import step_guard
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 
 load_dotenv()
 
@@ -51,15 +53,15 @@ def _resolve_business_id(state: DatabaseRequestGraphState) -> str:
         ):
             try:
                 rows = execute_read_query(sql)
+                rows = execute_read_query("SELECT business_id FROM businesses LIMIT 1")
                 if rows and len(rows) > 0:
                     return str(rows[0].get("business_id", ""))
-            except Exception as exc:
+        except Exception as exc:
                 _log_query_failure(
                     operation="resolve_business_id_lookup",
-                    table_name=table_name,
+                    table_name="businesses",
                     exc=exc,
                 )
-                continue
         return ""
     except Exception as e:
         logger.warning(
@@ -140,6 +142,12 @@ LIMIT 1
                 exc=exc,
             )
             continue
+    except Exception as exc:
+        _log_query_failure(
+            operation="fetch_financial_context_profile_lookup",
+            table_name="businesses",
+            exc=exc,
+        )
 
     sql = f"""
 SELECT
@@ -168,15 +176,7 @@ LIMIT 24
                 table_name="financial_records + businesses",
                 exc=exc,
             )
-            try:
-                rows = execute_read_query(sql_fallback)
-            except Exception as fallback_exc:
-                _log_query_failure(
-                    operation="fetch_financial_context_fallback_query",
-                    table_name="financial_records + business",
-                    exc=fallback_exc,
-                )
-                raise
+            raise
         payload = {
             "business_id": bid,
             "business_profile": business_profile,
@@ -195,7 +195,7 @@ LIMIT 24
         return {
             "financial_context": json.dumps(
                 {
-                    "error": str(exc),
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
                     "business_id": bid,
                     "business_profile": business_profile,
                     "rows": [],

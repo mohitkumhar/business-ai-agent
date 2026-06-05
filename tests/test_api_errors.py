@@ -53,6 +53,22 @@ def test_api_routes_do_not_return_raw_exception_strings_for_500s():
         assert 'jsonify({"message": str(' not in source
 
 
+def test_streaming_and_graph_nodes_do_not_leak_raw_exceptions():
+    root = Path(__file__).resolve().parents[1]
+    paths_to_check = [
+        "agent_code/query_execution.py",
+        "agent_code/intents/database_request_graph/advisory_nodes.py",
+        "agent_code/intents/logs_request_graph/utils.py",
+        "agent_code/intents/metrics_request_graph/utils.py"
+    ]
+    for relative_path in paths_to_check:
+        source = (root / relative_path).read_text(encoding="utf-8")
+        # Normalise quotes to check for standard dictionary representations of the error payload
+        normalized = source.replace("'", '"')
+        assert '"error": str(exc)' not in normalized
+        assert '"fetch_error": str(exc)' not in normalized
+
+
 def _load_api_errors_with_fake_flask(request_id="req-123"):
     class FakeResponse:
         def __init__(self, payload):
