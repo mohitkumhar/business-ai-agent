@@ -81,8 +81,11 @@ Promise.all([
           });
 
         if (failed.length > 0) {
-          console.warn("Failed to load charts:", failed);
-        }
+    console.warn("Failed to load charts:", failed);
+
+    document.getElementById("emptyState").style.display = "block";
+    document.getElementById("kpiRow").style.display = "none";
+}
       } catch (err) {
         console.error("Dashboard initialization error:", err);
       }
