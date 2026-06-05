@@ -4,7 +4,7 @@ import csv
 import hmac
 import io
 import math
-from flask import Flask, request, jsonify, Response, stream_with_context, g
+from flask import Flask, request, jsonify, Response, stream_with_context, g, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -1801,7 +1801,8 @@ def api_alerts_by_severity():
         return internal_error_response(exc)
 
 def _request_id() -> str:
-    return get_request_id(request.headers.get("X-Request-Id"))
+    header_candidate = request.headers.get("X-Request-Id") if has_request_context() else None
+    return get_request_id(getattr(g, "request_id", None), header_candidate)
 
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
 @token_required
@@ -1850,16 +1851,15 @@ def api_health_scores():
             exc,
             exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "health_scores_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
+        resp = jsonify(
+            {
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                "code": "health_scores_unavailable",
+                "request_id": request_id,
+            }
         )
+        resp.headers["X-Request-ID"] = request_id
+        return resp, 500
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
 @token_required

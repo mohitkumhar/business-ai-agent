@@ -802,18 +802,18 @@ def get_employees():
             repo,
             exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "employees_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
+        resp = jsonify(
+            {
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                "code": "employees_unavailable",
+                "request_id": request_id,
+            }
         )
+        resp.headers["X-Request-ID"] = request_id
+        return resp, 500
     except requests.RequestException as exc:
         request_id = get_request_id(getattr(g, "request_id", None))
+
         logger.error(
             "Employees API failed request_id=%s repo=%s: %s",
             request_id,
@@ -821,16 +821,15 @@ def get_employees():
             exc,
             exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "employees_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
+        resp = jsonify(
+            {
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                "code": "employees_unavailable",
+                "request_id": request_id,
+            }
         )
+        resp.headers["X-Request-ID"] = request_id
+        return resp, 500
 
     except Exception as exc:
         request_id = get_request_id(getattr(g, "request_id", None))
@@ -841,16 +840,16 @@ def get_employees():
             exc,
             exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "employees_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
+        resp = jsonify(
+            {
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                "code": "employees_unavailable",
+                "request_id": request_id,
+            }
         )
+        resp.headers["X-Request-ID"] = request_id
+        return resp, 500
+
 
 @app.route("/api/v1/escalate", methods=["POST"])
 @token_required
@@ -1048,7 +1047,7 @@ def api_alerts_by_severity():
 
 
 def _request_id() -> str:
-    return get_request_id(request.headers.get("X-Request-Id"))
+    return get_request_id(getattr(g, "request_id", None), request.headers.get("X-Request-Id"))
 
 
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
@@ -1089,16 +1088,15 @@ def api_health_scores():
             exc,
             exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "health_scores_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
+        resp = jsonify(
+            {
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                "code": "health_scores_unavailable",
+                "request_id": request_id,
+            }
         )
+        resp.headers["X-Request-ID"] = request_id
+        return resp, 500
 
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])

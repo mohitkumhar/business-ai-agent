@@ -84,6 +84,7 @@ def test_app_main_employees_runtime_error_response_is_client_safe(monkeypatch):
         "code": "employees_unavailable",
         "request_id": "req-employees-test",
     }
+    assert response.headers["X-Request-ID"] == "req-employees-test"
     assert "github token" not in response.get_data(as_text=True)
 
 
@@ -182,6 +183,7 @@ def test_app_main_health_scores_invalid_request_id_is_sanitized(monkeypatch):
     assert payload["request_id"] == response.headers["X-Request-ID"]
     assert re.fullmatch(r"[0-9a-f]{32}", payload["request_id"])
     assert payload["request_id"] != "bad/request-id"
+
 
 
 def test_app_main_employees_invalid_json_returns_safe_error(monkeypatch):
