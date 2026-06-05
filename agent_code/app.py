@@ -688,7 +688,8 @@ def onboarding():
     data = request.json
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
-    if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
+    if not business_name or not email:
+        return jsonify({"error": "Missing fields"}), 400
     
     conn = get_db_connection()
     try:
@@ -700,8 +701,17 @@ def onboarding():
                    (bid, data.get("full_name"), email, SOCIAL_LOGIN_PASSWORD_HASH))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
+    except Exception as e:          # ← ADDED
+        conn.rollback()             # ← ADDED — undoes partial DB writes
+        return internal_error_response(e, field="error")  # ← ADDED
     finally:
         conn.close()
+
+@app.route("/api/v1/whatsapp/webhook", methods=["GET"])
+def whatsapp_verify():
+    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
+    return "failed", 403
+
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
@@ -712,43 +722,6 @@ def whatsapp_verify():
 def whatsapp_events():
     # Full logic from app_main.py simplified for merge
     return jsonify({"ok": True})
-
-@app.route("/api/v1/telegram/webhook", methods=["POST"])
-def telegram_webhook():
-    try:
-        update = request.get_json(force=True) or {}
-        message = update.get("message") or update.get("edited_message") or {}
-        chat_id = (message.get("chat") or {}).get("id")
-
-        if chat_id is None:
-            return jsonify({"ok": True})
-
-        text = (message.get("text") or message.get("caption") or "").strip()
-        has_attachment = bool(message.get("photo") or message.get("document") or message.get("voice"))
-
-        if not text:
-            reply = (
-                "I received your attachment, but this Telegram webhook currently supports text prompts "
-                "and captions. Please send a question or add a caption so I can help."
-            ) if has_attachment else "Please send a text question so I can help."
-            _send_telegram_text(chat_id, reply)
-            return jsonify({"ok": True})
-
-        business_id = DEFAULT_BUSINESS_ID or "550e8400-e29b-41d4-a716-446655440000"
-        answer = _run_agent_to_text(text, f"tg-{chat_id}", business_id)
-        _send_telegram_text(chat_id, answer)
-        return jsonify({"ok": True})
-    except Exception as e:
-        logger.error("Telegram webhook failed: %s", e, exc_info=True)
-        try:
-            update = request.get_json(silent=True) or {}
-            message = update.get("message") or update.get("edited_message") or {}
-            chat_id = (message.get("chat") or {}).get("id")
-            if chat_id is not None:
-                _send_telegram_text(chat_id, "Sorry, I could not process that Telegram update.")
-        except Exception:
-            pass
-        return internal_error_response(e)
 
 # --- Transaction Import Endpoints ---
 
