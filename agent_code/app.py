@@ -212,6 +212,7 @@ def auth_login():
         return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
+    remember_me = data.get("remember_me", False)
 
     if not all([email, password]):
         return jsonify({"message": "Email and password required"}), 400
@@ -225,13 +226,113 @@ def auth_login():
         if not user or not verify_password(password, user.get("password_hash")):
             return jsonify({"message": "Invalid email or password"}), 401
 
+        # Adjust access token expiry based on remember_me
+        access_token_expiry = timedelta(days=30) if remember_me else timedelta(hours=24)
+        
         token = jwt.encode({
             "user_id": user["user_id"],
             "business_id": user["business_id"],
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.utcnow() + access_token_expiry
         }, app.config["SECRET_KEY"], algorithm="HS256")
 
-        return jsonify({"token": token, "business_id": user["business_id"], "user": {"name": user["name"], "email": email}}), 200
+        response_data = {
+            "token": token,
+            "business_id": user["business_id"],
+            "user": {"name": user["name"], "email": email}
+        }
+        res = jsonify(response_data)
+
+        if remember_me:
+            # Issue a 30-day refresh token
+            refresh_token = str(uuid.uuid4())
+            refresh_token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+            expires_at = datetime.utcnow() + timedelta(days=30)
+
+            cur.execute(
+                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+                (user["user_id"], refresh_token_hash, expires_at)
+            )
+            conn.commit()
+
+            res.set_cookie(
+                "refresh_token",
+                refresh_token,
+                httponly=True,
+                secure=True,  # Set to False if not using HTTPS in dev
+                samesite="Strict",
+                expires=expires_at
+            )
+
+        return res, 200
+    except Exception as e:
+        return internal_error_response(e, field="message")
+    finally:
+        conn.close()
+
+@app.route("/api/auth/refresh", methods=["POST"])
+@limiter.limit(AUTH_RATE_LIMIT)
+def auth_refresh():
+    """
+    Issue a new access token using a valid refresh token from an HTTP-only cookie.
+    Implements token rotation by revoking the old refresh token and issuing a new one.
+    """
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        return jsonify({"message": "Refresh token required"}), 401
+
+    refresh_token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+    
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Validate refresh token and get user details
+        cur.execute("""
+            SELECT rt.id, rt.user_id, u.business_id, u.name, u.email 
+            FROM refresh_tokens rt
+            JOIN users u ON rt.user_id = u.user_id
+            WHERE rt.token_hash = %s AND rt.revoked = FALSE AND rt.expires_at > NOW()
+        """, (refresh_token_hash,))
+        record = cur.fetchone()
+
+        if not record:
+            return jsonify({"message": "Invalid or expired refresh token"}), 401
+
+        # Token Rotation: Revoke old token
+        cur.execute("UPDATE refresh_tokens SET revoked = TRUE WHERE id = %s", (record["id"],))
+        
+        # Issue new refresh token
+        new_refresh_token = str(uuid.uuid4())
+        new_refresh_token_hash = hashlib.sha256(new_refresh_token.encode()).hexdigest()
+        new_expires_at = datetime.utcnow() + timedelta(days=30)
+        
+        cur.execute(
+            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+            (record["user_id"], new_refresh_token_hash, new_expires_at)
+        )
+        conn.commit()
+
+        # Issue new access token (30 days since we are in a persisted session)
+        new_access_token = jwt.encode({
+            "user_id": record["user_id"],
+            "business_id": record["business_id"],
+            "exp": datetime.utcnow() + timedelta(days=30)
+        }, app.config["SECRET_KEY"], algorithm="HS256")
+
+        res = jsonify({
+            "token": new_access_token,
+            "business_id": record["business_id"],
+            "user": {"name": record["name"], "email": record["email"]}
+        })
+        
+        res.set_cookie(
+            "refresh_token",
+            new_refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            expires=new_expires_at
+        )
+        return res, 200
     except Exception as e:
         return internal_error_response(e, field="message")
     finally:
