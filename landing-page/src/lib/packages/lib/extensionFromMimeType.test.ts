@@ -93,16 +93,13 @@ describe("parseAllowedFileTypesMetadata", () => {
     expect(result).toEqual([]);
   });
 
-  it("should match substring extensions correctly (json matches both json and js)", () => {
+  it("should use exact extension matching (json should not match js)", () => {
     const result = parseAllowedFileTypesMetadata(["json"]);
 
-    expect(result).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ mimeType: "application/json", extension: "json" }),
-        expect.objectContaining({ mimeType: "application/javascript", extension: "js" }),
-      ]),
-    );
-    expect(result.length).toBeGreaterThanOrEqual(2);
+    expect(result).toEqual([
+      expect.objectContaining({ mimeType: "application/json", extension: "json" }),
+    ]);
+    expect(result).toHaveLength(1);
   });
 
   it("should handle multiple wildcards from different base types", () => {
