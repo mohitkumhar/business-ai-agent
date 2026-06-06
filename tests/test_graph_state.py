@@ -1,20 +1,21 @@
-
 import sys
 import types
 import pytest
-
+from unittest.mock import patch
 
 _langgraph = types.ModuleType("langgraph")
 _langgraph_graph = types.ModuleType("langgraph.graph")
 _langgraph_graph_message = types.ModuleType("langgraph.graph.message")
-
 _langgraph_graph_message.add_messages = lambda x, y: x + y
 
-sys.modules["langgraph"] = _langgraph
-sys.modules["langgraph.graph"] = _langgraph_graph
-sys.modules["langgraph.graph.message"] = _langgraph_graph_message
+_fake_modules = {
+    "langgraph": _langgraph,
+    "langgraph.graph": _langgraph_graph,
+    "langgraph.graph.message": _langgraph_graph_message,
+}
 
-from agent_code.intents.metrics_request_graph.graph_state import MetricsRequestGraphState
+with patch.dict(sys.modules, _fake_modules):
+    from agent_code.intents.metrics_request_graph.graph_state import MetricsRequestGraphState
 
 
 class TestMetricsRequestGraphState:
