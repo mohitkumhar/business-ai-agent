@@ -16,6 +16,7 @@ from db_config import execute_read_query
 from intents.database_request_graph.graph_state import DatabaseRequestGraphState
 from intents.database_request_graph.step_utils import step_guard
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
+from schemas.responses import FinancialAnalysisSchema, AgentResponseSchema
 
 load_dotenv()
 
@@ -204,8 +205,7 @@ def advisory_node(state: DatabaseRequestGraphState, config: RunnableConfig):
     risk_line = ""
     if mode == "hybrid":
         risk_line = (
-            "You must also give a qualitative risk_level: low, medium, or high, "
-            "and 1–2 sentences on runway / affordability based only on the numbers provided."
+            "Analyze business risk based on the data and provide a qualitative risk_level."
         )
 
     prior = (state.get("chain_prior_summaries") or "").strip()
@@ -223,43 +223,31 @@ Owner question: "{user_query}"
 Latest financial context from their system (JSON). Use only these figures plus prudent assumptions — do not invent specific amounts not shown:
 {json.dumps(ctx, indent=2, default=str)}
 
-Context fields:
-- business_profile: registered business row (e.g. monthly_target_revenue, risk_appetite, industry_type). Use these for concrete budget guidance when financial rows are thin.
-- rows: recent monthly financial_records (total_revenue, total_expenses, net_profit, cash_balance, loans_due, month, year). Quote these numbers when present.
-- row_count: number of monthly rows; 0 means no history yet, but business_profile may still have targets.
-
-Respond as JSON with keys (these fields are turned into markdown for the user — keep them concrete and tied to their question):
-  "query_understood": short plain-English restatement of what they asked,
-  "summary": 1–3 sentences directly answering them (this becomes the main "Answer" section),
-  "recommendations": array of 2–5 actionable strings,
-  "risk_level": one of "low"|"medium"|"high"|null,
-  "follow_up_questions": array of 1–3 helpful follow-ups.
-
 {risk_line}
-Rules: prefer ₹ for currency if amounts are INR-style; be concise.
-- If business_profile and/or rows contain numbers, you MUST base your answer on them (e.g. marketing budget as % of latest total_revenue or of monthly_target_revenue). Do not claim you have "no financial data" when row_count > 0 or business_profile is non-null.
-- If row_count is 0 but business_profile exists, use monthly_target_revenue and risk_appetite for grounded guidance.
-- Only ask for more data if both business_profile is missing and row_count is 0.
-Do not wrap the JSON in markdown code fences."""
+Rules:
+- Be concise and professional.
+- If data is missing, suggest what the owner should look for.
+- Prefer ₹ for currency if amounts are INR-style.
+"""
 
     parsed: dict = {}
     try:
-        response = base_llm.invoke(prompt, config=config)
-        content = (response.content or "").strip()
-        parsed = _parse_json_loose(content)
-        understood = parsed.get("query_understood") or user_query
-        summary = parsed.get("summary") or content
-        recs = parsed.get("recommendations", [])
-        if not isinstance(recs, list):
-            recs = []
-        risk = parsed.get("risk_level")
-        if risk not in ("low", "medium", "high", None):
-            risk = None
-        follow = parsed.get("follow_up_questions", [])
-        if not isinstance(follow, list):
-            follow = []
+        logger.info(f"Invoking LLM for advisory analysis (structured output) | mode={mode}")
+        structured_llm = base_llm.with_structured_output(FinancialAnalysisSchema)
+        result: FinancialAnalysisSchema = structured_llm.invoke(prompt, config=config)
+        
+        understood = result.query_understood
+        summary = result.summary
+        recs = result.recommendations
+        risk = result.risk_level
+        follow = result.follow_up_questions
+        parsed = result.model_dump()
+        
+        if result.runway_analysis:
+            summary = f"{summary}\n\n**Runway Analysis**: {result.runway_analysis}"
+
     except Exception as exc:
-        logger.error("advisory_node LLM failed: %s", exc, exc_info=True)
+        logger.error("advisory_node structured LLM failed: %s", exc, exc_info=True)
         understood = user_query
         summary = "I could not complete advisory analysis right now. Please try again shortly."
         recs = ["Retry your question with any specific numbers you know."]

@@ -6,32 +6,13 @@ from dotenv import load_dotenv
 from logger.logger import logger
 from langchain_core.prompts import ChatPromptTemplate
 from llm.base_llm import base_llm
+from schemas.responses import IntentDetectionSchema
 
 load_dotenv()
 
 
-class StructureIntentDetectionOutput(BaseModel):
-    intent: List[
-        Literal[
-            "greeting_request",
-            "database_request",
-            "advisory_request",
-            "hybrid_request",
-            "out_of_scope_request",
-            "general_information_request",
-            "logs_request",
-            "metrics_request",
-        ]
-    ] = Field(
-        description=(
-            "Ordered intents: usually ONE. For compound questions, order data → general → advisory. "
-            "Casual hellos are greeting_request, NEVER out_of_scope."
-        )
-    )
-
-
 intent_detection_llm_with_structure = base_llm.with_structured_output(
-    StructureIntentDetectionOutput
+    IntentDetectionSchema
 )
 
 
