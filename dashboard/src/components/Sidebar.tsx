@@ -41,9 +41,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [showChatbot] = useState(readShowChatbotFlag);
 
   const dashboardMenu = [
-    { label: "Overview", href: "/", icon: <DashboardIcon size={18} /> },
-    ...(showChatbot ? [{ label: "AI Chatbot", href: "/chatbot", icon: <ChatbotIcon size={18} /> }] : []),
-    { label: "Import Data", href: "/import", icon: <FileUpIcon size={18} /> },
+    { id: "tour-dashboard", label: "Overview", href: "/", icon: <DashboardIcon size={18} /> },
+    ...(showChatbot ? [{ id: "tour-chatbot", label: "AI Chatbot", href: "/chatbot", icon: <ChatbotIcon size={18} /> }] : []),
+    { id: "tour-import", label: "Import Data", href: "/import", icon: <FileUpIcon size={18} /> },
   ];
 
   // Business section (Kushal-dev se)
@@ -51,13 +51,13 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { label: "Transactions", href: "/transactions", icon: <ReceiptIcon size={18} /> },
     { label: "Inventory", href: "/inventory", icon: <PackageIcon size={18} /> },
     { label: "Staff", href: "/staff", icon: <UsersIcon size={18} /> },
-    { label: "Alerts", href: "/alerts", icon: <AlertTriangleIcon size={18} /> },
+    { id: "tour-alerts", label: "Alerts", href: "/alerts", icon: <AlertTriangleIcon size={18} /> },
   ];
 
   // System section (Kushal-dev se)
   const systemMenu = [
     { label: "Profile", href: "/profile", icon: <SparklesIcon size={18} /> },
-    { label: "Settings", href: "/settings", icon: <SettingsIcon size={18} /> },
+    { id: "tour-settings", label: "Settings", href: "/settings", icon: <SettingsIcon size={18} /> },
 
   ];
 
@@ -73,7 +73,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         className={`sidebar ${isOpen ? "open" : ""}`}
       >
         {/* Logo */}
-        <div className="sidebar-logo">
+        <div className="sidebar-logo" id="tour-logo">
           <div className="logo-icon"></div>
           <span className="logo-text">ProfitPilot</span>
           <button
@@ -95,6 +95,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           <Link
             key={item.href}
             href={item.href}
+            id={item.id}
             className={`nav-link ${pathname === item.href ? "active" : ""}`}
             onClick={onClose}
           >
@@ -113,6 +114,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           <Link
             key={item.href}
             href={item.href}
+            id={(item as any).id}
             className={`nav-link ${pathname === item.href ? "active" : ""}`}
             onClick={onClose}
           >
@@ -131,6 +133,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           <Link
             key={item.href}
             href={item.href}
+            id={(item as any).id}
             className={`nav-link ${pathname === item.href ? "active" : ""}`}
             onClick={onClose}
           >
