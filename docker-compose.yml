@@ -52,7 +52,6 @@ services:
     ports:
       - "5173:5173"
     volumes:
-      - ./landing-page:/app
       - /app/node_modules
     environment:
       - VITE_API_URL=http://backend:5000
