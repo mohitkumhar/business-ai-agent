@@ -125,14 +125,13 @@ def auth_signup():
         token = jwt.encode({
             "user_id": user_id,
             "business_id": biz_id,
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.now(timezone.utc) + timedelta(days=7)
         }, app.config["SECRET_KEY"], algorithm="HS256")
 
         return jsonify({"token": token, "business_id": biz_id, "user": {"name": name, "email": email}}), 201
     except Exception as e:
+        conn.rollback()
         return internal_error_response(e, field="message")
-    finally:
-        conn.close()
 
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
@@ -159,11 +158,12 @@ def auth_login():
         token = jwt.encode({
             "user_id": user["user_id"],
             "business_id": user["business_id"],
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.now(timezone.utc) + timedelta(days=7)
         }, app.config["SECRET_KEY"], algorithm="HS256")
 
         return jsonify({"token": token, "business_id": user["business_id"], "user": {"name": user["name"], "email": email}}), 200
     except Exception as e:
+        conn.rollback()
         return internal_error_response(e, field="message")
     finally:
         conn.close()
@@ -685,7 +685,9 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email:
@@ -712,11 +714,6 @@ def whatsapp_verify():
     if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
     return "failed", 403
 
-
-@app.route("/api/v1/whatsapp/webhook", methods=["GET"])
-def whatsapp_verify():
-    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN: return request.args.get("hub.challenge"), 200
-    return "failed", 403
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
@@ -863,7 +860,9 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
