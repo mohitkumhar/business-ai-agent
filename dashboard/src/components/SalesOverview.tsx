@@ -104,7 +104,7 @@ const { data, loading } = useAsyncData<SalesTarget>(
   const progressPercent = Math.min((sales / target) * 100, 100);
 
   return (
-    <div className="chart-card flex flex-col h-full" key={dataVersion}>
+    <div className="chart-card flex flex-col h-full" key={dataVersion} data-widget-id="sales-overview">
       {/* Header */}
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>Sales Overview</h3>

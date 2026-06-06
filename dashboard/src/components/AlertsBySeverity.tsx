@@ -76,7 +76,7 @@ export default function AlertsBySeverity() {
   }, [data]);
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" data-widget-id="alerts-severity">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <AlertTriangleIcon size={18} color="#F59E0B" />

@@ -55,7 +55,7 @@ export default function RecentTransactions({ search: globalSearch }: RecentTrans
   };
 
   return (
-    <div className="table-card">
+    <div className="table-card" data-widget-id="recent-transactions">
       <div className="table-header">
         <h3 className="table-title">Recent Sales</h3>
         <div className="table-controls">

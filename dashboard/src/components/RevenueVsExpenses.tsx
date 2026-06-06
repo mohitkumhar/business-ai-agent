@@ -111,7 +111,7 @@ export default function RevenueVsExpenses() {
   }, [data, theme]);
 
   return (
-    <div className="chart-card" key={dataVersion}>
+    <div className="chart-card" key={dataVersion} data-widget-id="revenue-vs-expenses">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <BarChartIcon size={18} color="var(--accent-blue)" />

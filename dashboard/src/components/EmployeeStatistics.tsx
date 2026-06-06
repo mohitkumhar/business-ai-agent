@@ -100,7 +100,7 @@ export default function EmployeeStatistics() {
   }, [data]);
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" data-widget-id="employee-stats">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <UsersIcon size={18} color="var(--accent-purple)" />

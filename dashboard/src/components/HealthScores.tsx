@@ -35,7 +35,7 @@ export default function HealthScores() {
   }, []);
 
   return (
-    <div className="chart-card h-full flex flex-col">
+    <div className="chart-card h-full flex flex-col" data-widget-id="health-scores">
       <div className="flex items-center gap-3 mb-6">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center" 
              style={{ background: isDark ? "rgba(239, 68, 68, 0.15)" : "#FEF2F2" }}>

@@ -105,7 +105,7 @@ export default function SalesTrend() {
   }, [data, theme]);
 
   return (
-    <div className="chart-card" key={dataVersion}>
+    <div className="chart-card" key={dataVersion} data-widget-id="sales-trend">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <LineChartIcon size={18} color="var(--accent-blue)" />

@@ -167,7 +167,7 @@ export default function RevenueInsights() {
   const avgMonthlyExpense = data ? sumExp / n : 0;
 
   return (
-    <div className="chart-card" key={dataVersion}>
+    <div className="chart-card" key={dataVersion} data-widget-id="revenue-insights">
       <div className="chart-header">
         <div>
           <div className="chart-title">Revenue Insights</div>
