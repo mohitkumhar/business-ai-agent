@@ -16,7 +16,7 @@ docker compose version
 
 ```bash
 git clone <repo-url>
-cd intelligent-business-agent
+cd business-ai-agent
 ```
 
 ### 3️⃣ Start All Services
@@ -64,10 +64,10 @@ VITE_API_URL=http://localhost:5000
 
 ### Docker Deployment
 
-The default Docker configuration in `docker-compose.yml` uses:
+For browser-based access during local Docker development:
 
 ```env
-VITE_API_URL=http://backend:5000
+VITE_API_URL=http://localhost:5000
 ```
 
 ### Production Deployment
@@ -87,10 +87,16 @@ VITE_API_URL=https://your-api-domain.com
 * `landing-page/src/constants.ts`
 * `landing-page/src/vite-env.d.ts`
 
-### Example
+### Typical Configuration
 
 ```env
 VITE_AGENT_API_URL=http://localhost:5000
+```
+
+### Production Deployment
+
+```env
+VITE_AGENT_API_URL=https://your-api-domain.com
 ```
 
 ---
@@ -153,7 +159,7 @@ NEXT_PUBLIC_AGENT_API_URL=http://localhost:5000
 ### Docker Deployment
 
 ```env
-NEXT_PUBLIC_AGENT_API_URL=http://backend:5000
+NEXT_PUBLIC_AGENT_API_URL=http://localhost:5000
 ```
 
 ### Production Deployment
@@ -230,9 +236,9 @@ Check:
 
 ## Quick Reference
 
-| Variable                  | Local Development     | Docker              | Production                  |
-| ------------------------- | --------------------- | ------------------- | --------------------------- |
-| VITE_API_URL              | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
-| VITE_AGENT_API_URL        | Optional Override     | Optional Override   | Optional Override           |
-| AGENT_API_URL             | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
-| NEXT_PUBLIC_AGENT_API_URL | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
+| Variable                  | Local Development     | Docker                | Production                  |
+| ------------------------- | --------------------- | --------------------- | --------------------------- |
+| VITE_API_URL              | http://localhost:5000 | http://localhost:5000 | https://your-api-domain.com |
+| VITE_AGENT_API_URL        | Optional Override     | Optional Override     | Optional Override           |
+| AGENT_API_URL             | http://localhost:5000 | http://backend:5000   | https://your-api-domain.com |
+| NEXT_PUBLIC_AGENT_API_URL | http://localhost:5000 | http://localhost:5000 | https://your-api-domain.com |
