@@ -1198,7 +1198,9 @@ def api_forecast():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -1227,7 +1229,9 @@ def iter_query_sse(input_query, thread_id):
 
 @app.route("/api/chat/send", methods=["POST"])
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
     conv_id = data.get("conversation_id")
     msg = data.get("message")
     # Wrap iter_query_sse in SSE Response
