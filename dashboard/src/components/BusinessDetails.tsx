@@ -1,9 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, BusinessInfo } from "@/lib/api";
+import { useTheme } from "@/context/ThemeContext";
 
 export default function BusinessDetails() {
   const [business, setBusiness] = useState<BusinessInfo | null>(null);
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   useEffect(() => {
     api.getBusinessInfo().then(setBusiness).catch(console.error);
@@ -14,9 +17,9 @@ export default function BusinessDetails() {
   return (
     <div className="charts-row" style={{ gridTemplateColumns: "1fr" }}>
       <div className="chart-card" style={{ padding: "24px" }}>
-        <h3 style={{ marginBottom: "20px", display: "flex", alignItems: "center", gap: "10px" }}>
+        <h3 style={{ marginBottom: "20px", display: "flex", alignItems: "center", gap: "10px", color: "var(--text-primary)" }}>
           🚀 Your Business Profile
-          <span style={{ fontSize: "12px", background: "rgba(0,0,0,0.05)", padding: "4px 12px", borderRadius: "100px", fontWeight: "normal" }}>
+          <span style={{ fontSize: "12px", background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", padding: "4px 12px", borderRadius: "100px", fontWeight: "normal", color: "var(--text-secondary)" }}>
             Data from Onboarding
           </span>
         </h3>
@@ -30,7 +33,7 @@ export default function BusinessDetails() {
         </div>
         
         {business.onboarding_notes && (
-          <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
+          <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: `1px solid ${isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"}` }}>
             <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px" }}>Onboarding Notes</p>
             <p style={{ fontSize: "14px", lineHeight: "1.6", color: "var(--text-primary)" }}>{business.onboarding_notes || "nill"}</p>
           </div>

@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { api, Forecast } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useTheme } from "@/context/ThemeContext";
 import { TrendingUpIcon, TrendingDownIcon, MinusIcon } from "./Icons";
 
 const formatCurrency = (value: unknown) =>
@@ -19,9 +20,15 @@ const formatCurrency = (value: unknown) =>
 
 export default function ForecastChart() {
   const { period } = useDashboardPeriod();
+  const { theme } = useTheme();
   const [data, setData] = useState<Forecast | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const isDark = theme === "dark";
+  const textColor = isDark ? "#94A3B8" : "#64748B";
+  const gridColor = isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.04)";
+  const tooltipBg = isDark ? "#1E293B" : "#0F172A";
 
   useEffect(() => {
     let cancelled = false;
@@ -134,8 +141,8 @@ export default function ForecastChart() {
     }
   };
 
-  const trendColor = trend === "up" ? "#DCFCE7" : trend === "down" ? "#FEE2E2" : "#F3F4F6";
-  const trendTextColor = trend === "up" ? "#166534" : trend === "down" ? "#991B1B" : "#374151";
+  const trendColor = trend === "up" ? (isDark ? "#064E3B" : "#DCFCE7") : trend === "down" ? (isDark ? "#7F1D1D" : "#FEE2E2") : (isDark ? "#1F2937" : "#F3F4F6");
+  const trendTextColor = trend === "up" ? (isDark ? "#34D399" : "#166534") : trend === "down" ? (isDark ? "#FCA5A5" : "#991B1B") : (isDark ? "#D1D5DB" : "#374151");
 
   return (
     <div className="chart-card">
@@ -173,7 +180,7 @@ export default function ForecastChart() {
                 <stop offset="95%" stopColor="#A855F7" stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
             <XAxis 
               dataKey="date" 
               hide={true}
@@ -181,12 +188,19 @@ export default function ForecastChart() {
             <YAxis 
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: 12, fill: "#94A3B8" }}
+              tick={{ fontSize: 12, fill: textColor }}
               tickFormatter={formatCurrency}
 
             />
             <Tooltip 
-              contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
+              contentStyle={{ 
+                backgroundColor: tooltipBg,
+                borderRadius: "12px", 
+                border: "none", 
+                boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                color: isDark ? "#E2E8F0" : "#0F172A"
+              }}
+              itemStyle={{ color: isDark ? "#E2E8F0" : "#0F172A" }}
               formatter={(value: unknown) => [formatCurrency(value), "Amount"]}
             />
 
@@ -244,11 +258,11 @@ export default function ForecastChart() {
       <div style={{ 
         marginTop: "20px", 
         padding: "16px", 
-        backgroundColor: "rgba(0,0,0,0.02)", 
+        backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0,0,0,0.02)", 
         borderRadius: "12px",
         borderLeft: "4px solid #A855F7"
       }}>
-        <p style={{ margin: 0, fontSize: "14px", color: "#4B5563", lineHeight: "1.5" }}>
+        <p style={{ margin: 0, fontSize: "14px", color: isDark ? "#D1D5DB" : "#4B5563", lineHeight: "1.5" }}>
           <strong>💡 AI Insight:</strong> {data.insight}
         </p>
       </div>

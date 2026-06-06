@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, AlertsBySeverity as AlertsData } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { AlertTriangleIcon } from "./Icons";
 
@@ -10,6 +11,7 @@ Chart.register(...registerables);
 
 export default function AlertsBySeverity() {
   const { period, dataVersion } = useDashboardPeriod();
+  const { theme } = useTheme();
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const loadAlertsBySeverity = useCallback(
@@ -27,6 +29,11 @@ export default function AlertsBySeverity() {
 
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
+
+    const isDark = theme === "dark";
+    const textColor = isDark ? "#94A3B8" : "#64748B";
+    const gridColor = isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.04)";
+    const tooltipBg = isDark ? "#1E293B" : "#0F172A";
 
     const colorMap: Record<string, string> = {
       critical: "#EF4444",
@@ -58,7 +65,7 @@ export default function AlertsBySeverity() {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: "#1E293B",
+            backgroundColor: tooltipBg,
             titleFont: { family: "Inter", size: 12 },
             bodyFont: { family: "Inter", size: 11 },
             padding: 12,
@@ -66,14 +73,14 @@ export default function AlertsBySeverity() {
           },
         },
         scales: {
-          x: { grid: { color: "rgba(0,0,0,0.04)" }, ticks: { font: { family: "Inter", size: 11 }, color: "#94A3B8" }, border: { display: false } },
-          y: { grid: { display: false }, ticks: { font: { family: "Inter", size: 12, weight: 500 as const }, color: "#1E293B" }, border: { display: false } },
+          x: { grid: { color: gridColor }, ticks: { font: { family: "Inter", size: 11 }, color: textColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { font: { family: "Inter", size: 12, weight: 500 as const }, color: isDark ? "#E2E8F0" : "#1E293B" }, border: { display: false } },
         },
       },
     });
 
     return () => { chartInstance.current?.destroy(); };
-  }, [data]);
+  }, [data, theme]);
 
   return (
     <div className="chart-card">

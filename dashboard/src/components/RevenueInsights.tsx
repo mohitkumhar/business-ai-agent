@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, FinancialOverview } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useAsyncData } from "@/lib/useAsyncData";
 
 Chart.register(...registerables);
@@ -20,6 +21,7 @@ function formatYAxisTick(n: number): string {
 
 export default function RevenueInsights() {
   const { period, dataVersion } = useDashboardPeriod();
+  const { theme } = useTheme();
 
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
@@ -74,6 +76,12 @@ export default function RevenueInsights() {
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
 
+    const isDark = theme === "dark";
+    const textColor = isDark ? "#94A3B8" : "#64748B";
+    const gridColor = isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.04)";
+    const tooltipBg = isDark ? "#1E293B" : "#0F172A";
+    const expenseBarColor = isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(226, 232, 240, 0.8)";
+
     // Create gradient fill for revenue bars
     const gradient = ctx.createLinearGradient(0, 0, 0, 300);
     gradient.addColorStop(0, "rgba(59, 130, 246, 0.9)");
@@ -97,8 +105,8 @@ export default function RevenueInsights() {
           {
             label: "Expenses",
             data: chartPayload.expenses,
-            backgroundColor: "rgba(226, 232, 240, 0.8)",
-            borderColor: "rgba(226, 232, 240, 1)",
+            backgroundColor: expenseBarColor,
+            borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(226, 232, 240, 1)",
             borderWidth: 0,
             borderRadius: 6,
             borderSkipped: false,
@@ -115,7 +123,7 @@ export default function RevenueInsights() {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: "#1E293B",
+            backgroundColor: tooltipBg,
             titleFont: { family: "Inter", size: 12, weight: "bold" },
             bodyFont: { family: "Inter", size: 11 },
             padding: 14,
@@ -134,17 +142,17 @@ export default function RevenueInsights() {
             grid: { display: false },
             ticks: {
               font: { family: "Inter", size: 11, weight: 500 },
-              color: "#94A3B8",
+              color: textColor,
             },
             border: { display: false },
           },
           y: {
             grid: {
-              color: "rgba(0,0,0,0.04)",
+              color: gridColor,
             },
             ticks: {
               font: { family: "Inter", size: 11 },
-              color: "#94A3B8",
+              color: textColor,
               callback(value) {
                 return formatYAxisTick(Number(value));
               },
@@ -158,7 +166,7 @@ export default function RevenueInsights() {
     return () => {
       chartInstance.current?.destroy();
     };
-  }, [chartPayload, view]);
+  }, [chartPayload, view, theme]);
 
   const sumRev = data ? data.revenue.reduce((a, b) => a + b, 0) : 0;
   const sumExp = data ? data.expenses.reduce((a, b) => a + b, 0) : 0;

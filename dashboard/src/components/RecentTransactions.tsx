@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, Transaction } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useTheme } from "@/context/ThemeContext";
 import { SearchIcon, FilterIcon } from "./Icons";
 
 interface RecentTransactionsProps {
@@ -10,6 +11,7 @@ interface RecentTransactionsProps {
 
 export default function RecentTransactions({ search: globalSearch }: RecentTransactionsProps) {
   const { period, dataVersion } = useDashboardPeriod();
+  const { theme } = useTheme();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,7 @@ export default function RecentTransactions({ search: globalSearch }: RecentTrans
         <h3 className="table-title">Recent Sales</h3>
         <div className="table-controls">
           <div className="table-search">
-            <SearchIcon size={15} color="var(--text-muted)" />
+            <SearchIcon size={15} color={theme === "dark" ? "#71717A" : "var(--text-muted)"} />
             <input
               type="text"
               placeholder="Search"
