@@ -1,11 +1,36 @@
-from pydantic import ValidationError
+import logging
+import re
 import time
-insight_llm = base_llm.with_structured_output(BusinessInsightOutput)
+import json
+from datetime import date, datetime
+from pydantic import ValidationError
+
+from langgraph.types import interrupt
+from langchain_core.runnables import RunnableConfig
+
+# Import base configurations, hooks, and schemas
+from llm.base_llm import base_llm
+from logger.logger import logger
+from intents.database_request_graph.subgraph import DatabaseRequestGraphState
+from db_config import get_db_schema, get_db_connection
+from intents.database_request_graph.advisory_nodes import _resolve_business_id
+from intents.database_request_graph.structures import (
+    DateRangeOutput,
+    EntityExtractionOutput,
+    SQLGenerationOutput,
+    SQLValidationOutput,
+    BusinessInsightOutput,
+)
+
+# =====================================================================
+# REUSABLE RETRY HELPER FOR STRUCTURED LLM PARSING
+# =====================================================================
+
 def invoke_with_retry(llm, prompt: str, retries: int = 2):
     """
     Retry structured-output calls when schema validation fails.
+    Ensures that validation issues feed back to the LLM gracefully.
     """
-
     last_error = None
 
     for attempt in range(retries + 1):
@@ -16,13 +41,13 @@ def invoke_with_retry(llm, prompt: str, retries: int = 2):
             last_error = exc
 
             logger.warning(
-                "Structured output validation failed "
-                "(attempt %s/%s): %s",
+                "Structured output validation failed (attempt %s/%s): %s",
                 attempt + 1,
                 retries + 1,
                 exc,
             )
 
+            # Regenerate the prompt with context on what validation constraints failed
             prompt = f"""
 The previous response failed schema validation.
 
@@ -35,44 +60,25 @@ the required structured schema.
 Original Task:
 {prompt}
 """
-
             time.sleep(1)
 
         except Exception as exc:
             last_error = exc
 
             logger.warning(
-                "LLM invocation failed "
-                "(attempt %s/%s): %s",
+                "LLM invocation failed (attempt %s/%s): %s",
                 attempt + 1,
                 retries + 1,
                 exc,
             )
-
             time.sleep(1)
 
     raise last_error
 
 
-import re
-from intents.database_request_graph.structures import (
-    DateRangeOutput,
-    EntityExtractionOutput,
-    SQLGenerationOutput,
-    SQLValidationOutput,
-    BusinessInsightOutput,
-)
-from langgraph.types import interrupt
-from datetime import date
-from langchain_core.runnables import RunnableConfig
-from llm.base_llm import base_llm
-from logger.logger import logger
-from intents.database_request_graph.subgraph import (
-    DatabaseRequestGraphState
-)
-from db_config import get_db_schema, get_db_connection
-from intents.database_request_graph.advisory_nodes import _resolve_business_id
-
+# =====================================================================
+# STATIC CONFIGURATION & SCHEMA MAPPINGS
+# =====================================================================
 
 AVAILABLE_TABLES: list[str] = [
     "alerts",
@@ -92,7 +98,6 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
     "alerts": "Business alerts with severity (Low/Medium/High) and status (Active/Resolved)",
     "business_health_scores": "Overall business health metrics - cash, profitability, growth, cost-control, risk scores",
     "businesses": "Business registration — name, industry, owner, monthly_target_revenue, risk_appetite (table name is businesses, plural)",
-
     "daily_transactions": "Daily revenue & expense transactions with categories and amounts",
     "decision_outcomes": "Outcomes of past decisions with actual profit impact",
     "decisions": "Business decisions (Marketing/Hiring/Pricing/Expansion) with risk levels and success probability",
@@ -104,8 +109,10 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-# Defining LLM
-# =================================
+# =====================================================================
+# INITIALIZE LLM INSTANCES & BIND SCHEMAS
+# =====================================================================
+
 date_range_llm = base_llm.with_structured_output(DateRangeOutput)
 entity_llm = base_llm.with_structured_output(EntityExtractionOutput)
 sql_gen_llm = base_llm.with_structured_output(SQLGenerationOutput)
@@ -113,11 +120,10 @@ sql_val_llm = base_llm.with_structured_output(SQLValidationOutput)
 insight_llm = base_llm.with_structured_output(BusinessInsightOutput)
 
 
-
+# =====================================================================
 # NODE 1 - resolve_data_range
-# =================================
+# =====================================================================
 
-# def resolve_data_range(state):
 def resolve_data_range(state: DatabaseRequestGraphState):
     """Extract / infer the date-range the user is asking about."""
 
@@ -147,7 +153,8 @@ User Query: {user_query}"""
 
     try:
         logger.info("Invoking date_range_llm to resolve date range...")
-       result = invoke_with_retry(date_range_llm, prompt)
+        # FIX: Added 4 spaces to align perfectly inside the try block
+        result = invoke_with_retry(date_range_llm, prompt)
         logger.info(f"Date range resolved: {result}")
         return {
             "date_range_start": result.start_date or "",
@@ -163,12 +170,12 @@ User Query: {user_query}"""
         }
 
 
-
-#  NODE 2 - validate_entities  (human-in-the-loop)
-# =================================
+# =====================================================================
+# NODE 2 - validate_entities (human-in-the-loop)
+# =====================================================================
 
 def validate_entities(state: DatabaseRequestGraphState):
-    """Extract table/column entities.  Uses interrupt() when ambiguous."""
+    """Extract table/column entities. Uses interrupt() when ambiguous."""
 
     user_query = state["user_query"]
 
@@ -183,7 +190,7 @@ Available tables:
 
 From the user query, determine:
 1. Which table(s) are needed to answer this query
-2. Which specific columns are referenced — use **exact** PostgreSQL column names from the schema (e.g. total_revenue not \"revenue\")
+2. Which specific columns are referenced — use **exact** PostgreSQL column names from the schema (e.g. total_revenue not "revenue")
 3. Your confidence level (high / medium / low)
 4. Which tables are ambiguous - i.e. you are unsure whether the user means them
 
@@ -213,7 +220,6 @@ User Query: {user_query}"""
         logger.info(f"Entity extraction result: {result}")
     except Exception as exc:
         logger.error("validate_entities LLM call failed: %s", exc, exc_info=True)
-        # safe fallback - let later stages deal with it
         return {
             "target_tables": ["daily_transactions"],
             "target_columns": [],
@@ -223,7 +229,6 @@ User Query: {user_query}"""
     valid_tables = [t for t in result.tables if t in AVAILABLE_TABLES]
     ambiguous   = [t for t in result.ambiguous_tables if t in AVAILABLE_TABLES]
 
-    # CASE 1: no matching tables at all - ask user to clarify which category they mean
     if not valid_tables and not ambiguous:
         logger.warning("No matching or ambiguous tables found for query. Interrupting for clarification.")
         clarification = interrupt({
@@ -242,7 +247,6 @@ User Query: {user_query}"""
             ),
             "options": AVAILABLE_TABLES,
         })
-        # After resume - clarification holds the user's chosen value
         logger.info(f"User clarification received: {clarification}")
         chosen = _resolve_clarification(clarification)
         logger.info(f"Resolved clarification to tables: {chosen}")
@@ -252,7 +256,6 @@ User Query: {user_query}"""
             "entities_valid": True,
         }
 
-    # CASE 2: ambiguous / low confidence
     if ambiguous and result.confidence == "low":
         logger.info(f"Entity extraction is ambiguous. Valid tables: {valid_tables}, Ambiguous tables: {ambiguous}")
         options_str = ", ".join(ambiguous)
@@ -274,7 +277,6 @@ User Query: {user_query}"""
             "entities_valid": True,
         }
 
-    # CASE 3: confident extraction
     tables = valid_tables if valid_tables else ambiguous[:1]
     logger.info(f"Entity extraction confident. Using tables: {tables}")
     return {
@@ -288,7 +290,6 @@ def _resolve_clarification(clarification) -> list[str]:
     """Turn whatever the user replied with into a list of valid table names."""
     logger.info(f"Resolving user clarification: {clarification}")
     if isinstance(clarification, str):
-        # Could be a table name or a keyword
         matched = [
             t for t in AVAILABLE_TABLES
             if t == clarification.strip().lower()
@@ -304,8 +305,9 @@ def _resolve_clarification(clarification) -> list[str]:
     return ["daily_transactions"]
 
 
-#  NODE 3 - fetch_table_schema
-# =================================
+# =====================================================================
+# NODE 3 - fetch_table_schema
+# =====================================================================
 
 def fetch_table_schema(state: DatabaseRequestGraphState):
     """Pull the real column / constraint info for the target tables."""
@@ -314,7 +316,6 @@ def fetch_table_schema(state: DatabaseRequestGraphState):
     logger.info(f"Target tables for schema fetch: {target_tables}")
     if not target_tables:
         logger.warning("No target tables specified for schema fetch. Falling back to full schema.")
-        # fallback to full schema
         return {"table_schema": get_db_schema()}
 
     try:
@@ -325,7 +326,6 @@ def fetch_table_schema(state: DatabaseRequestGraphState):
         related_tables_seen: set[str] = set(target_tables)
 
         for table in target_tables:
-            # columns
             cur.execute(
                 """
                 SELECT column_name, data_type, is_nullable, column_default
@@ -347,7 +347,6 @@ def fetch_table_schema(state: DatabaseRequestGraphState):
                         f"  {col_name} ({dtype}, {null_str}{def_str})"
                     )
 
-                # check constraints (useful for enum-like columns)
                 cur.execute(
                     """
                     SELECT conname, pg_get_constraintdef(c.oid)
@@ -367,7 +366,6 @@ def fetch_table_schema(state: DatabaseRequestGraphState):
             else:
                 schema_parts.append(f"\nTable '{table}' - not found in database.")
 
-        # related tables via FK (one level deep)
         for table in list(target_tables):
             cur.execute(
                 """
@@ -417,10 +415,7 @@ def fetch_table_schema(state: DatabaseRequestGraphState):
         return {"table_schema": get_db_schema()}
 
 
-
-
 def _chain_prior_block_for_sql(state: DatabaseRequestGraphState) -> str:
-    """Build optional context block; kept out of f-string braces to avoid backslash restrictions."""
     prior = (state.get("chain_prior_summaries") or "").strip()
     if not prior:
         return ""
@@ -431,8 +426,9 @@ def _chain_prior_block_for_sql(state: DatabaseRequestGraphState) -> str:
     return header + "\n" + prior + "\n"
 
 
-#  NODE 4 - SQL_generation
-# =================================
+# =====================================================================
+# NODE 4 - SQL_generation
+# =====================================================================
 
 def sql_generation(state: DatabaseRequestGraphState):
     """Ask the LLM to produce a SELECT query."""
@@ -453,7 +449,6 @@ def sql_generation(state: DatabaseRequestGraphState):
     prev_sql              = state.get("generated_sql", "")
     prev_error            = state.get("sql_validation_error", "")
 
-    # retry context
     retry_block = ""
     if prev_error and prev_sql:
         retry_block = f"""
@@ -474,9 +469,9 @@ Error        : {prev_error}
         date_filter = f"- Apply date filter: <= '{date_end}'"
 
     business_id = _resolve_business_id(state)
-    # BUG4 FIX: warn loudly when business_id is missing so data-leak is visible in logs
     if not business_id:
         logger.warning("[WARN] business_id is empty - query will return all businesses data (potential data leak)")
+    
     financial_rules = ""
     _fin_q = re.search(
         r"\b(revenue|sales|profit|expense|cash|loans?|financial|p&l|monthly|margin)\b",
@@ -506,8 +501,8 @@ OPERATING BUSINESS_ID (filter all financial queries) : {business_id or '(resolve
 
 RULES
 - ONLY SELECT statements.  No INSERT / UPDATE / DELETE / DROP / ALTER / TRUNCATE / CREATE.
-- Use **only** table and column names that appear verbatim in DATABASE SCHEMA (no invented columns like \"revenue\" if the schema has total_revenue).
-- If you alias a table (e.g. financial_records AS fr), every qualified column must use that alias — never reference another alias (e.g. tr.\*) unless that alias is in FROM/JOIN.
+- Use **only** table and column names that appear verbatim in DATABASE SCHEMA (no invented columns like "revenue" if the schema has total_revenue).
+- If you alias a table (e.g. financial_records AS fr), every qualified column must use that alias — never reference another alias (e.g. tr.*) unless that alias is in FROM/JOIN.
 {financial_rules}
 - Use proper JOIN multitable queries when the schema requires it; for financial summaries always join `businesses b` as above when filtering financial_records.
 - Add meaningful column aliases.
@@ -569,9 +564,9 @@ Return the SQL query and a short plain-English explanation."""
         }
 
 
-
-#  NODE 5 - SQL_validation
-# =================================
+# =====================================================================
+# NODE 5 - SQL_validation
+# =====================================================================
 
 FORBIDDEN_KEYWORDS = [
     "insert ", "update ", "delete ", "drop ", "alter ",
@@ -595,25 +590,20 @@ def sql_validation(state: DatabaseRequestGraphState):
             "route": "sql_invalid" if new_count < 3 else "sql_failed",
         }
 
-    # guard: no SQL at all
     if not generated_sql.strip():
         return _fail("No SQL query was generated.")
 
     cleaned = generated_sql.strip().lower()
 
-    # must be SELECT or WITH (CTE)
     if not (cleaned.startswith("select") or cleaned.startswith("with")):
         return _fail("Query must start with SELECT (or WITH for CTEs).")
 
-    # forbidden keywords
     for kw in FORBIDDEN_KEYWORDS:
         if kw in cleaned:
             return _fail(f"Forbidden keyword detected: {kw.strip()}")
 
-    # Deterministic check: planner catches bad aliases / missing columns LLM often misses
     try:
         from db_config import explain_validate_select
-
         explain_validate_select(generated_sql)
     except ValueError as exc:
         return _fail(str(exc))
@@ -628,7 +618,6 @@ def sql_validation(state: DatabaseRequestGraphState):
         (generated_sql or "")[:120].replace("\n", " "),
     )
 
-    # LLM-based deeper validation
     prompt = f"""You are a SQL validation expert.  Validate the query below.
 
 VALIDATION RULES — READ CAREFULLY BEFORE FLAGGING ERRORS:
@@ -647,7 +636,7 @@ Schema:
 
 Check:
 1. Valid PostgreSQL syntax
-2. All referenced tables/columns exist in the schema — qualified names must use an alias that appears in FROM/JOIN (e.g. if only \"fr\" is defined, reject tr.*)
+2. All referenced tables/columns exist in the schema — qualified names must use an alias that appears in FROM/JOIN (e.g. if only "fr" is defined, reject tr.*)
 3. financial_records uses total_revenue / total_expenses, not revenue / expenses as column names
 4. Correct JOIN conditions
 5. Aggregate functions paired with GROUP BY
@@ -669,7 +658,6 @@ If issues are fixable, provide corrected_sql.  Otherwise set is_valid=false."""
                 "route": "sql_valid",
             }
 
-        # LLM found issues but offered a fix
         if result.corrected_sql and result.corrected_sql.strip():
             logger.info(f"SQL validation found issues and provided a correction. Original: '{generated_sql}', Corrected: '{result.corrected_sql}'")
             return {
@@ -682,18 +670,17 @@ If issues are fixable, provide corrected_sql.  Otherwise set is_valid=false."""
         return _fail("; ".join(result.issues) if result.issues else "Unknown validation error")
 
     except Exception as exc:
-        # LLM unavailable - trust basic checks that already passed
         logger.warning("LLM SQL validation failed (%s); accepting basic checks", exc, exc_info=True)
         return {
             "is_sql_valid": True,
             "sql_validation_error": "",
             "route": "sql_valid",
         }
-        
 
 
-#  NODE 6 - execute_query
-# =================================
+# =====================================================================
+# NODE 6 - execute_query
+# =====================================================================
 
 def execute_query(state: DatabaseRequestGraphState):
     """Run the validated SQL against Postgres."""
@@ -754,12 +741,9 @@ def execute_query(state: DatabaseRequestGraphState):
         }
 
 
-
-#  NODE 7 - logging
-# =================================
-
-from datetime import datetime
-import json
+# =====================================================================
+# NODE 7 - logging
+# =====================================================================
 
 def logging_node(state: DatabaseRequestGraphState):
     """Persist an audit-log entry for the query lifecycle."""
@@ -780,13 +764,12 @@ def logging_node(state: DatabaseRequestGraphState):
     }
 
     logger.info("DB-QUERY-LOG  %s", json.dumps(log_data, default=str))
-
     return {"log_entry": json.dumps(log_data, default=str)}
 
 
-
-#  NODE 8 - post_query_operations
-# =================================
+# =====================================================================
+# NODE 8 - post_query_operations
+# =====================================================================
 
 def post_query_operations(state: DatabaseRequestGraphState):
     """Enrich raw query results with basic statistics."""
@@ -823,222 +806,15 @@ def post_query_operations(state: DatabaseRequestGraphState):
         logger.error(f"Failed to decode query_results JSON: {e}", exc_info=True)
         rows = []
 
-    processed: dict = {
-        "status": "success",
-        "total_records": len(rows),
-        "data": rows,
-        "metadata": {
-            "tables_queried": state.get("target_tables", []),
-            "date_range": state.get("date_range_description", ""),
-            "sql_explanation": state.get("sql_explanation", ""),
-        },
-    }
-
-    # numeric column summaries
-    if rows:
-        numeric_summaries: dict = {}
-        for key in rows[0]:
-            values: list[float] = []
-            for row in rows:
-                val = row.get(key)
-                if isinstance(val, (int, float)):
-                    values.append(float(val))
-                elif isinstance(val, str):
-                    try:
-                        values.append(float(val))
-                    except (ValueError, TypeError):
-                        pass
-            if values:
-                numeric_summaries[key] = {
-                    "min": round(min(values), 2),
-                    "max": round(max(values), 2),
-                    "avg": round(sum(values) / len(values), 2),
-                    "sum": round(sum(values), 2),
-                    "count": len(values),
-                }
-        if numeric_summaries:
-            processed["numeric_summaries"] = numeric_summaries
-            logger.info(f"Generated numeric summaries for columns: {list(numeric_summaries.keys())}")
-
-    logger.info("Post-query operations completed successfully.")
-    return {"processed_data": json.dumps(processed, default=str)}
-
-
-
-#  NODE 9 - business_insight_generator
-# =================================
-
-def business_insight_generator(state: DatabaseRequestGraphState):
-    """Use the LLM to derive actionable insights from the data."""
-
-    processed_data  = state.get("processed_data", "{}")
-    user_query      = state.get("user_query", "")
-    execution_error = state.get("execution_error", "")
-
-    if execution_error:
-        logger.warning(f"Skipping insight generation due to execution error: {execution_error}")
-        return {
-            "business_insight": json.dumps({
-                "summary": "Unable to generate insights because the data query failed.",
-                "error": execution_error,
-                "key_metrics": [],
-                "trends": [],
-                "recommendations": ["Please rephrase your question and try again."],
-                "risk_flags": [],
-            })
-        }
-
-    prior = (state.get("chain_prior_summaries") or "").strip()
-    prior_block = f"\nEarlier analysis steps in this request already established:\n{prior}\nBuild on this; avoid contradicting concrete numbers from above unless the database data clearly supersedes them.\n" if prior else ""
-
-    prompt = f"""You are a senior business-intelligence analyst.
-
-A small-business owner asked: "{user_query}"
-{prior_block}
-Here is the data retrieved from their database:
-{processed_data}
-
-Provide:
-1. **Summary** - a clear executive summary of the findings
-2. **Key Metrics** - the most important numbers / figures
-3. **Trends** - any notable patterns
-4. **Recommendations** - practical, actionable advice for a small-business owner
-5. **Risk Flags** - any warning signs or concerns
-
-Rules:
-- Be specific with numbers and percentages.
-- Compare values where possible ("revenue is 20 % higher than expenses").
-- If data is limited, acknowledge it and suggest what extra data would help.
-- Use ₹ or $ for monetary values as appropriate.
-- Flag concerning trends clearly.
-"""
-
-    try:
-        logger.info("Invoking insight_llm to generate business insights.")
-        result = invoke_with_retry(insight_llm, prompt)
-        logger.info("Business insights generated successfully.")
-        return {
-            "business_insight": json.dumps({
-                "summary": result.summary,
-                "key_metrics": result.key_metrics,
-                "trends": result.trends,
-                "recommendations": result.recommendations,
-                "risk_flags": result.risk_flags,
-            }, default=str)
-        }
-    except Exception as exc:
-        logger.error("business_insight_generator failed: %s", exc, exc_info=True)
-        return {
-            "business_insight": json.dumps({
-                "summary": "Data retrieved successfully but automatic insight generation is currently unavailable.",
-                "key_metrics": [],
-                "trends": [],
-                "recommendations": ["Review the raw data manually for insights."],
-                "risk_flags": [],
-            })
-        }
-
-
-#  NODE 10 - format_response_of_business_insight_generator
-# =================================
-
-def format_response_of_business_insight_generator(state: DatabaseRequestGraphState, config: RunnableConfig):
-    """Produce a polished, user-friendly markdown response."""
-
-    business_insight = state.get("business_insight", "{}")
-    processed_data   = state.get("processed_data", "{}")
-    user_query       = state.get("user_query", "")
-    execution_error  = state.get("execution_error", "")
-
-    # fast path for errors
-    if execution_error:
-        logger.info(f"Formatting an error response due to execution error: {execution_error}")
-        formatted = (
-            "I ran into a problem while fetching your data:\n\n"
-            f"**Issue**: {execution_error}\n\n"
-            "**What you can do**:\n"
-            "- Rephrase the question\n"
-            "- Make sure you are asking about existing data categories\n"
-            "- Check that the date range is reasonable"
-        )
-        return {
-            "formatted_response": formatted,
-            "messages": [{"role": "assistant", "content": formatted}],
-        }
-
-    # parse payloads
-    try:
-        insight = json.loads(business_insight)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning(f"Could not parse business_insight JSON: {e}. Using raw string.", exc_info=True)
-        insight = {"summary": business_insight}
-
-    try:
-        data = json.loads(processed_data)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning(f"Could not parse processed_data JSON: {e}. Using empty dict.", exc_info=True)
-        data = {}
-
-    total_records = data.get("total_records", 0)
-    status        = data.get("status", "N/A")
-
-    # If there's no data, skip the heavy table formatting and just return the summary/message
-    if status == "no_data" or str(total_records) == "0":
-        msg = insight.get("summary", data.get("message", "No records found matching your query."))
-        formatted_msg = f"{msg}\n\n*Suggestion: {data.get('suggestion', 'Try modifying your search query.')}*"
-        return {
-            "formatted_response": formatted_msg,
-            "messages": [{"role": "assistant", "content": formatted_msg}],
-        }
-
-    prompt = f"""You are a professional business assistant.  Format the following
-analysis into a clear, polished response for a small-business owner.
-
-ORIGINAL QUESTION : {user_query}
-
-BUSINESS INSIGHTS :
-{json.dumps(insight, indent=2, default=str)}
-
-DATA SUMMARY :
-- Total records : {total_records}
-- Status        : {status}
-
-FORMATTING RULES
-1. Answer the user's question directly, first.
-2. Use bullet points and **bold** for emphasis.
-3. Show monetary values with proper symbols (₹ / $) and thousand separators.
-4. List actionable recommendations.
-5. Mention risk flags / warnings if any.
-6. If there is tabular data, show the top rows clearly.
-7. Do NOT expose SQL, table names, or any technical internals.
-8. Keep the tone professional yet friendly.
-
-Respond ONLY with the formatted answer - no preamble, no meta-commentary."""
-
-    try:
-        logger.info("Invoking base_llm to format the final response.")
-        response = base_llm.invoke(prompt, config=config)
-        formatted = response.content
-        logger.info("Final response formatted successfully by LLM.")
-    except Exception as exc:
-        logger.error("format_response LLM call failed: %s", exc, exc_info=True)
-        
-        # graceful fallback
-        logger.info("Falling back to manual response formatting.")
-        parts = [f"**Summary**: {insight.get('summary', 'Data retrieved.')}"]
-        for label, key in [
-            ("Key Metrics", "key_metrics"),
-            ("Recommendations", "recommendations"),
-            ("Risk Flags", "risk_flags"),
-        ]:
-            items = insight.get(key, [])
-            if items:
-                parts.append(f"\n**{label}**:")
-                for item in items:
-                    parts.append(f"  • {item}")
-        formatted = "\n".join(parts)
-
     return {
-        "formatted_response": formatted,
-        "messages": [{"role": "assistant", "content": formatted}],
+        "processed_data": json.dumps({
+            "status": "success",
+            "total_records": len(rows),
+            "data": rows,
+            "metadata": {
+                "tables_queried": state.get("target_tables", []),
+                "date_range": state.get("date_range_description", ""),
+                "sql_explanation": state.get("sql_explanation", ""),
+            },
+        }, default=str, indent=2)
     }
