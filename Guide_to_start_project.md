@@ -47,17 +47,16 @@ This guide explains how API URLs are configured across the Landing Page, Dashboa
 
 ## VITE_API_URL
 
-**Purpose:** Defines the backend API endpoint used by the Landing Page frontend for onboarding requests and API communication.
+**Purpose:** Defines the backend API endpoint used by the Landing Page onboarding flow.
 
 ### Used In
 
-* landing-page/src/routes/get-started.tsx
-* .env.example
-* docker-compose.yml
-  
+* `landing-page/src/routes/get-started.tsx`
+* `docker-compose.yml`
+
 ### Local Development
 
-The default value provided in `.env.example` is:
+Typical local development configuration:
 
 ```env
 VITE_API_URL=http://localhost:5000
@@ -79,47 +78,9 @@ VITE_API_URL=https://your-api-domain.com
 
 ---
 
-## AGENT_API_URL
-
-**Purpose:** Defines the backend API endpoint used by the Dashboard, backend proxy routes, and agent services.
-
-### Used In
-
-* dashboard/next.config.ts
-* dashboard/src/app/api/chat/route.ts
-* dashboard/src/app/api/employees/route.ts
-* dashboard/src/app/api/escalate/route.ts
-* web/app.py
-* .env.example
-* docker-compose.yml
-  
-### Local Development
-
-The default value provided in `.env.example` is:
-
-```env
-AGENT_API_URL=http://localhost:5000
-```
-
-### Docker Deployment
-
-The default Dashboard Docker configuration uses:
-
-```env
-AGENT_API_URL=http://backend:5000
-```
-
-### Production Deployment
-
-```env
-AGENT_API_URL=https://your-api-domain.com
-```
-
----
-
 ## VITE_AGENT_API_URL
 
-**Purpose:** Optional override variable used by the Landing Page. When provided, it takes priority over `VITE_API_URL`.
+**Purpose:** Optional Landing Page override. When provided, it takes priority over `VITE_API_URL` for agent-related requests.
 
 ### Used In
 
@@ -134,6 +95,75 @@ VITE_AGENT_API_URL=http://localhost:5000
 
 ---
 
+## AGENT_API_URL
+
+**Purpose:** Server-side API endpoint used by the Dashboard and backend proxy services to communicate with the Flask Agent service.
+
+### Used In
+
+* `dashboard/next.config.ts`
+* `dashboard/src/app/api/chat/route.ts`
+* `dashboard/src/app/api/employees/route.ts`
+* `dashboard/src/app/api/escalate/route.ts`
+* `web/app.py`
+* `.env.example`
+* `docker-compose.yml`
+
+### Local Development
+
+The default value documented in `.env.example` is:
+
+```env
+AGENT_API_URL=http://localhost:5000
+```
+
+> Note: `web/app.py` falls back to `http://127.0.0.1:5000` when `AGENT_API_URL` is not set.
+
+### Docker Deployment
+
+The default Docker configuration uses:
+
+```env
+AGENT_API_URL=http://backend:5000
+```
+
+### Production Deployment
+
+```env
+AGENT_API_URL=https://your-api-domain.com
+```
+
+---
+
+## NEXT_PUBLIC_AGENT_API_URL
+
+**Purpose:** Optional public-facing API URL used by the Dashboard frontend. This can be used to connect directly to the backend instead of relying on the Next.js rewrite configuration.
+
+### Used In
+
+* `dashboard/src/lib/publicUrls.ts`
+* `.env.example`
+
+### Local Development
+
+```env
+NEXT_PUBLIC_AGENT_API_URL=http://localhost:5000
+```
+
+### Docker Deployment
+
+```env
+NEXT_PUBLIC_AGENT_API_URL=http://backend:5000
+```
+
+### Production Deployment
+
+```env
+NEXT_PUBLIC_AGENT_API_URL=https://your-api-domain.com
+```
+
+---
+
 ## How Services Communicate
 
 ```text
@@ -143,7 +173,11 @@ Landing Page
       v
 Flask Backend
 
-Dashboard
+Dashboard Frontend
+      |
+      | NEXT_PUBLIC_AGENT_API_URL (optional)
+      v
+Next.js API Routes
       |
       | AGENT_API_URL
       v
@@ -156,7 +190,7 @@ Flask Backend
 
 ### API Requests Fail
 
-Verify that `VITE_API_URL`, `VITE_AGENT_API_URL`, and `AGENT_API_URL` point to the correct backend service.
+Verify that `VITE_API_URL`, `VITE_AGENT_API_URL`, `AGENT_API_URL`, and `NEXT_PUBLIC_AGENT_API_URL` point to the correct backend service.
 
 ### Docker Containers Cannot Connect
 
@@ -196,8 +230,9 @@ Check:
 
 ## Quick Reference
 
-| Variable           | Local Development     | Docker              | Production                  |
-| ------------------ | --------------------- | ------------------- | --------------------------- |
-| VITE_API_URL       | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
-| AGENT_API_URL      | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
-| VITE_AGENT_API_URL | Optional Override     | Optional Override   | Optional Override           |
+| Variable                  | Local Development     | Docker              | Production                  |
+| ------------------------- | --------------------- | ------------------- | --------------------------- |
+| VITE_API_URL              | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
+| VITE_AGENT_API_URL        | Optional Override     | Optional Override   | Optional Override           |
+| AGENT_API_URL             | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
+| NEXT_PUBLIC_AGENT_API_URL | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
