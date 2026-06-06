@@ -110,6 +110,7 @@ def app_main_module():
     os.environ.setdefault("GROQ_API_KEY", "test-key")
     os.environ.setdefault("OPENROUTER_API_KEY", "test-openrouter-key")
     os.environ.setdefault("JWT_SECRET", "test-secret")
+    os.environ["TELEGRAM_WEBHOOK_SECRET"] = "test-telegram-webhook-secret"
     os.environ["USE_IN_MEMORY_CHECKPOINTER"] = "true"
 
     # Mock psycopg2/psycopg connection before app_main loads
@@ -119,6 +120,7 @@ def app_main_module():
 
     from agent_code import app_main
 
+    app_main.TELEGRAM_WEBHOOK_SECRET = "test-telegram-webhook-secret"
     app_main.app.config.update(
         TESTING=True, RATELIMIT_ENABLED=False, SECRET_KEY="test-secret"
     )
@@ -350,10 +352,74 @@ def test_app_main_whatsapp_webhook_accepts_valid_signature(
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
 def test_app_main_telegram_webhook_invalid_json(app_main_client, payload, content_type):
     response = app_main_client.post(
-        "/api/v1/telegram/webhook", data=payload, content_type=content_type
+        "/api/v1/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "test-telegram-webhook-secret"},
+        data=payload,
+        content_type=content_type,
     )
     assert response.status_code == 400
     assert "Invalid or missing JSON payload" in response.get_json()["error"]
+
+
+def test_app_main_telegram_webhook_rejects_missing_secret_token(
+    app_main_client, app_main_module, monkeypatch
+):
+    ran_agent = False
+    sent_messages = []
+    monkeypatch.setattr(app_main_module, "TELEGRAM_WEBHOOK_SECRET", "telegram-secret")
+
+    def fake_run_agent(*args, **kwargs):
+        nonlocal ran_agent
+        ran_agent = True
+        return "answer"
+
+    monkeypatch.setattr(app_main_module, "_run_agent_to_text", fake_run_agent)
+    monkeypatch.setattr(
+        app_main_module,
+        "_send_telegram_text",
+        lambda chat_id, text: sent_messages.append((chat_id, text)),
+    )
+
+    response = app_main_client.post(
+        "/api/v1/telegram/webhook",
+        json={"message": {"chat": {"id": 42}, "text": "How are sales?"}},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Invalid Telegram webhook secret token"}
+    assert ran_agent is False
+    assert sent_messages == []
+
+
+def test_app_main_telegram_webhook_rejects_wrong_secret_token(
+    app_main_client, app_main_module, monkeypatch
+):
+    ran_agent = False
+    sent_messages = []
+    monkeypatch.setattr(app_main_module, "TELEGRAM_WEBHOOK_SECRET", "telegram-secret")
+
+    def fake_run_agent(*args, **kwargs):
+        nonlocal ran_agent
+        ran_agent = True
+        return "answer"
+
+    monkeypatch.setattr(app_main_module, "_run_agent_to_text", fake_run_agent)
+    monkeypatch.setattr(
+        app_main_module,
+        "_send_telegram_text",
+        lambda chat_id, text: sent_messages.append((chat_id, text)),
+    )
+
+    response = app_main_client.post(
+        "/api/v1/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"},
+        json={"message": {"chat": {"id": 42}, "text": "How are sales?"}},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Invalid Telegram webhook secret token"}
+    assert ran_agent is False
+    assert sent_messages == []
 
 
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
