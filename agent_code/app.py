@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import csv
+import hmac
 import io
 import math
 from flask import Flask, request, jsonify, Response, stream_with_context, g
@@ -264,6 +265,7 @@ WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
 WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 # --- Metrics ---
@@ -937,6 +939,14 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    supplied_secret = (
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    ).strip()
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(
+        supplied_secret, TELEGRAM_WEBHOOK_SECRET
+    ):
+        return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
+
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400

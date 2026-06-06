@@ -455,6 +455,7 @@ Optional configurations to connect your chatbot with external messengers.
 | Variable | Status | Description | Default / Example |
 | :--- | :--- | :--- | :--- |
 | `TELEGRAM_BOT_TOKEN` | Optional | Token from @BotFather to enable messaging via Telegram. | `123456789:ABCdefGh...` |
+| `TELEGRAM_WEBHOOK_SECRET` | Required for Telegram webhook | High-entropy secret passed to Telegram's `setWebhook` `secret_token`; incoming webhooks must send it in `X-Telegram-Bot-Api-Secret-Token`. | `replace-with-a-high-entropy-telegram-webhook-secret` |
 | `MY_WHATSAPP_NUMBER` | Optional | E.164 phone number without leading `+` to receive WhatsApp alerts. | `911234567890` |
 | `WHATSAPP_VERIFY_TOKEN` | Optional | Webhook verification string set in the Meta developer portal. | `your-verify-token` |
 | `WHATSAPP_ACCESS_TOKEN` | Optional | Access token for the WhatsApp cloud API. | `EAAG...` |
@@ -489,10 +490,18 @@ There is no anonymous/email fallback — requests without a valid token receive 
 
 ### Telegram Webhook
 
-Set `TELEGRAM_BOT_TOKEN`, then configure your Telegram bot webhook to POST updates to:
+Set `TELEGRAM_BOT_TOKEN` and a high-entropy `TELEGRAM_WEBHOOK_SECRET`, then configure your Telegram bot webhook to POST updates to:
 
 ```text
 https://<your-agent-domain>/api/v1/telegram/webhook
+```
+
+Register the same secret with Telegram so each update includes `X-Telegram-Bot-Api-Secret-Token`:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<your-token>/setWebhook" \
+  -d "url=https://<your-agent-domain>/api/v1/telegram/webhook" \
+  -d "secret_token=<your-telegram-webhook-secret>"
 ```
 
 Text messages and captions are forwarded to the AI agent. Photo, document, or voice updates without captions receive a helpful fallback message instead of failing silently.

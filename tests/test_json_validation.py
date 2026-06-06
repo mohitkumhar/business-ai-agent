@@ -74,10 +74,12 @@ def agent_app_module():
     os.environ.setdefault("GROQ_API_KEY", "test-key")
     os.environ.setdefault("OPENROUTER_API_KEY", "test-openrouter-key")
     os.environ.setdefault("JWT_SECRET", "test-secret")
+    os.environ["TELEGRAM_WEBHOOK_SECRET"] = "test-telegram-webhook-secret"
     os.environ["USE_IN_MEMORY_CHECKPOINTER"] = "true"
 
     from agent_code import app as agent_app
 
+    agent_app.TELEGRAM_WEBHOOK_SECRET = "test-telegram-webhook-secret"
     agent_app.app.config.update(
         TESTING=True, RATELIMIT_ENABLED=False, SECRET_KEY="test-secret"
     )
@@ -229,7 +231,10 @@ def test_app_chat_conversation_messages_post_invalid_json(
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
 def test_app_telegram_webhook_invalid_json(agent_client, payload, content_type):
     response = agent_client.post(
-        "/api/v1/telegram/webhook", data=payload, content_type=content_type
+        "/api/v1/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "test-telegram-webhook-secret"},
+        data=payload,
+        content_type=content_type,
     )
     assert response.status_code == 400
     assert "Invalid or missing JSON payload" in response.get_json()["error"]
