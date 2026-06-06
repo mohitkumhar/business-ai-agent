@@ -904,6 +904,24 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    """
+    Webhook endpoint that receives incoming WhatsApp event callbacks via POST.
+
+    Request Context:
+        Expects a JSON payload from the WhatsApp Business API containing
+        event data such as messages or status updates.
+
+    Response:
+        Returns a JSON response {"ok": True} with HTTP 200 on receipt.
+
+    Side Effects:
+        Intended to trigger WhatsApp event processing and integration logic
+        (currently a stub; full logic to be merged from app_main.py).
+
+    Error Handling:
+        No explicit validation is performed in the current stub; future
+        iterations should validate payload structure and handle failures.
+    """
     # Full logic from app_main.py simplified for merge
     return jsonify({"ok": True})
 
