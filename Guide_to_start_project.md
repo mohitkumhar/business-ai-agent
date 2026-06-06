@@ -51,10 +51,10 @@ This guide explains how API URLs are configured across the Landing Page, Dashboa
 
 ### Used In
 
-* `landing-page/src/constants.ts`
-* `.env.example`
-* `docker-compose.yml`
-
+* landing-page/src/routes/get-started.tsx
+* .env.example
+* docker-compose.yml
+  
 ### Local Development
 
 The default value provided in `.env.example` is:
@@ -85,15 +85,14 @@ VITE_API_URL=https://your-api-domain.com
 
 ### Used In
 
-* `dashboard/next.config.ts`
-* `dashboard/src/app/api/chat/route.ts`
-* `dashboard/src/app/api/employees/route.ts`
-* `dashboard/src/app/api/escalate/route.ts`
-* `dashboard/src/app/api/chat/proxy.ts`
-* `web/app.py`
-* `.env.example`
-* `docker-compose.yml`
-
+* dashboard/next.config.ts
+* dashboard/src/app/api/chat/route.ts
+* dashboard/src/app/api/employees/route.ts
+* dashboard/src/app/api/escalate/route.ts
+* web/app.py
+* .env.example
+* docker-compose.yml
+  
 ### Local Development
 
 The default value provided in `.env.example` is:
@@ -202,6 +201,3 @@ Check:
 | VITE_API_URL       | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
 | AGENT_API_URL      | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
 | VITE_AGENT_API_URL | Optional Override     | Optional Override   | Optional Override           |
-
-```
-```
