@@ -130,7 +130,7 @@ def get_current_business_id():
     return getattr(g, "business_id", None)
 
 
-def _get_json_body_or_error(*, field: str = "error", message: str = "Invalid or missing JSON request body"):
+def _get_json_body_or_error(*, field: str = "error", message: str = "Invalid or missing JSON payload"):
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return None, jsonify({field: message}), 400
