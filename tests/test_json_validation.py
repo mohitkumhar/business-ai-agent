@@ -129,6 +129,20 @@ def app_main_client(app_main_module):
 
 
 @pytest.fixture()
+def app_main_auth_headers(app_main_module):
+    token = jwt.encode(
+        {
+            "user_id": "user-1",
+            "business_id": "business-1",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        app_main_module.app.config["SECRET_KEY"],
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
 def web_client():
     from web import app as web_app
 
@@ -352,9 +366,14 @@ def test_app_main_telegram_webhook_invalid_json(app_main_client, payload, conten
 
 
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
-def test_app_main_escalate_invalid_json(app_main_client, payload, content_type):
+def test_app_main_escalate_invalid_json(
+    app_main_client, app_main_auth_headers, payload, content_type
+):
     response = app_main_client.post(
-        "/api/v1/escalate", data=payload, content_type=content_type
+        "/api/v1/escalate",
+        data=payload,
+        content_type=content_type,
+        headers=app_main_auth_headers,
     )
     assert response.status_code == 400
     assert "Invalid or missing JSON payload" in response.get_json()["error"]

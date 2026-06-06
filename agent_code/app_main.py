@@ -790,6 +790,7 @@ def get_employees():
 
 
 @app.route("/api/v1/escalate", methods=["POST"])
+@token_required
 def escalate_to_slack():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
