@@ -19,13 +19,39 @@ git clone <repo-url>
 cd business-ai-agent
 ```
 
-### 3️⃣ Start All Services
+### 3️⃣ Setup Environment Variables
+
+Copy the environment variables template to the project root directory:
+
+```bash
+cp .env.example .env
+```
+
+Open the newly created `.env` file and populate the required fields (e.g., database credentials and `GROQ_API_KEY`).
+
+For a detailed breakdown of all variables, refer to the Environment Variables Guide in README.md.
+
+Generate local-only database and pgAdmin passwords before starting Docker Compose:
+
+```bash
+POSTGRES_PASSWORD_VALUE="$(openssl rand -hex 24)"
+PGADMIN_PASSWORD_VALUE="$(openssl rand -hex 24)"
+
+perl -0pi -e "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VALUE}|" .env
+perl -0pi -e "s|DATABASE_URL=.*|DATABASE_URL=postgresql://profitpilot_dev:${POSTGRES_PASSWORD_VALUE}\@db:5432/test_db|" .env
+perl -0pi -e "s|PGADMIN_DEFAULT_EMAIL=.*|PGADMIN_DEFAULT_EMAIL=you\@example.com|" .env
+perl -0pi -e "s|PGADMIN_DEFAULT_PASSWORD=.*|PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD_VALUE}|" .env
+```
+
+Docker Compose binds PostgreSQL and pgAdmin to localhost by default and stops if placeholder credentials are still present.
+
+### 4️⃣ Start All Services
 
 ```bash
 docker compose up
 ```
 
-### 4️⃣ Access Services
+### 5️⃣ Access Services
 
 Frontend:
 
@@ -56,15 +82,13 @@ This guide explains how API URLs are configured across the Landing Page, Dashboa
 
 ### Local Development
 
-Typical local development configuration:
-
 ```env
 VITE_API_URL=http://localhost:5000
 ```
 
 ### Docker Deployment
 
-For browser-based access during local Docker development:
+For browser-accessible Docker environments:
 
 ```env
 VITE_API_URL=http://localhost:5000
@@ -80,7 +104,7 @@ VITE_API_URL=https://your-api-domain.com
 
 ## VITE_AGENT_API_URL
 
-**Purpose:** Optional Landing Page override. When provided, it takes priority over `VITE_API_URL` for agent-related requests.
+**Purpose:** Optional Landing Page override. When provided, it takes priority over `VITE_API_URL`.
 
 ### Used In
 
@@ -103,7 +127,7 @@ VITE_AGENT_API_URL=https://your-api-domain.com
 
 ## AGENT_API_URL
 
-**Purpose:** Server-side API endpoint used by the Dashboard and backend proxy services to communicate with the Flask Agent service.
+**Purpose:** Server-side API endpoint used by Dashboard API routes and backend proxy services.
 
 ### Used In
 
@@ -117,17 +141,13 @@ VITE_AGENT_API_URL=https://your-api-domain.com
 
 ### Local Development
 
-The default value documented in `.env.example` is:
-
 ```env
 AGENT_API_URL=http://localhost:5000
 ```
 
-> Note: `web/app.py` falls back to `http://127.0.0.1:5000` when `AGENT_API_URL` is not set.
+> Note: `web/app.py` falls back to `http://127.0.0.1:5000` if `AGENT_API_URL` is not set.
 
 ### Docker Deployment
-
-The default Docker configuration uses:
 
 ```env
 AGENT_API_URL=http://backend:5000
@@ -143,7 +163,7 @@ AGENT_API_URL=https://your-api-domain.com
 
 ## NEXT_PUBLIC_AGENT_API_URL
 
-**Purpose:** Optional public-facing API URL used by the Dashboard frontend. This can be used to connect directly to the backend instead of relying on the Next.js rewrite configuration.
+**Purpose:** Optional public-facing API URL used by the Dashboard frontend.
 
 ### Used In
 
@@ -192,53 +212,11 @@ Flask Backend
 
 ---
 
-## Common Configuration Mistakes
-
-### API Requests Fail
-
-Verify that `VITE_API_URL`, `VITE_AGENT_API_URL`, `AGENT_API_URL`, and `NEXT_PUBLIC_AGENT_API_URL` point to the correct backend service.
-
-### Docker Containers Cannot Connect
-
-Inside Docker containers, use:
-
-```env
-http://backend:5000
-```
-
-instead of:
-
-```env
-http://localhost:5000
-```
-
-### Production API Errors
-
-Check:
-
-* Production API URL
-* CORS configuration
-* Environment variable values
-* Reverse proxy settings (if applicable)
-
----
-
-## Troubleshooting
-
-1. Confirm environment variables are set correctly.
-2. Restart containers after updating `.env` values.
-3. Verify the backend service is running.
-4. Test API endpoints directly before debugging frontend issues.
-5. Check Docker logs for networking or startup errors.
-6. Ensure frontend and backend services use matching API URLs.
-
----
-
 ## Quick Reference
 
-| Variable                  | Local Development     | Docker                | Production                  |
-| ------------------------- | --------------------- | --------------------- | --------------------------- |
-| VITE_API_URL              | http://localhost:5000 | http://localhost:5000 | https://your-api-domain.com |
-| VITE_AGENT_API_URL        | Optional Override     | Optional Override     | Optional Override           |
-| AGENT_API_URL             | http://localhost:5000 | http://backend:5000   | https://your-api-domain.com |
+| Variable | Local Development | Docker | Production |
+|-----------|-----------|-----------|-----------|
+| VITE_API_URL | http://localhost:5000 | http://localhost:5000 | https://your-api-domain.com |
+| VITE_AGENT_API_URL | Optional Override | Optional Override | Optional Override |
+| AGENT_API_URL | http://localhost:5000 | http://backend:5000 | https://your-api-domain.com |
 | NEXT_PUBLIC_AGENT_API_URL | http://localhost:5000 | http://localhost:5000 | https://your-api-domain.com |
