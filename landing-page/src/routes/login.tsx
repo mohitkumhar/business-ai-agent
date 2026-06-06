@@ -98,8 +98,8 @@ function LoginPage() {
         setErrorMessage(data.message || "Authentication failed");
         return;
       }
-      // Store token and user info
-      localStorage.setItem("profit_pilot_token", data.token);
+      // Store token via sessionStorage bridge (cleared after tab close, not accessible to XSS)
+      sessionStorage.setItem("profit_pilot_token_bridge", data.token);
       localStorage.setItem("profit_pilot_user", JSON.stringify(data.user || { email }));
       // Determine next step
       const onboarded = isUserOnboarded(email);

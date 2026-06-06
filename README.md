@@ -480,7 +480,7 @@ Optional default values and metadata used for fallback behavior or logging.
 All `/api/dashboard/*` endpoints are protected and identify the caller **only** from a JWT — never from a client-supplied `email` query parameter:
 
 1. The user logs in via `POST /api/auth/login`, which returns a signed JWT (HS256, signed with `JWT_SECRET`) carrying the `user_id` and `business_id`.
-2. The dashboard stores the token (`localStorage` key `profit_pilot_token`).
+2. The dashboard stores the token in memory (`AuthContext`) via a `sessionStorage` bridge after login, never in `localStorage`.
 3. Every dashboard request sends `Authorization: Bearer <token>`; the backend's `@token_required` decorator decodes it and derives the tenant's `business_id` server-side.
 4. Each query is scoped with `WHERE business_id = %s` so a token for one business can never read another's data.
 
