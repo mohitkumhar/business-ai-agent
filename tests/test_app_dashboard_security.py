@@ -48,6 +48,10 @@ def _auth(business_id: str) -> dict:
     return {"Authorization": f"Bearer {_token(business_id)}"}
 
 
+def _auth_headers() -> dict:
+    return _auth(BUSINESS_A)
+
+
 @pytest.fixture
 def recorded_queries(monkeypatch):
     """Capture every (sql, params) sent to the DB layer; return no rows by default."""

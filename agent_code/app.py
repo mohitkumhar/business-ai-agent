@@ -129,6 +129,13 @@ def get_current_business_id():
     """
     return getattr(g, "business_id", None)
 
+
+def _get_json_body_or_error(*, field: str = "error", message: str = "Invalid or missing JSON payload"):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, jsonify({field: message}), 400
+    return data, None, None
+
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
@@ -158,9 +165,9 @@ def auth_signup():
         Inserts a new record into the PostgreSQL users table with a bcrypt-hashed password.
         Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
     """
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"message": "Invalid or missing JSON payload"}), 400
+    data, error_response, status_code = _get_json_body_or_error(field="message")
+    if error_response is not None:
+        return error_response, status_code
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -225,11 +232,9 @@ def auth_login():
         Reads from the PostgreSQL users table.
         Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
     """
-
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"message": "Invalid or missing JSON payload"}), 400
-
+    data, error_response, status_code = _get_json_body_or_error(field="message")
+    if error_response is not None:
+        return error_response, status_code
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -893,9 +898,9 @@ def onboarding():
         Exception: Any unexpected database or application error is
         handled and returned as an internal error response.
     """
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    data, error_response, status_code = _get_json_body_or_error()
+    if error_response is not None:
+        return error_response, status_code
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -1170,9 +1175,9 @@ def query_agent():
 @token_required
 def api_chat_send():
     try:
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+        data, error_response, status_code = _get_json_body_or_error()
+        if error_response is not None:
+            return error_response, status_code
         msg = data.get("message")
         conv_id = data.get("conversation_id") or str(uuid.uuid4())
         bid = get_current_business_id()
