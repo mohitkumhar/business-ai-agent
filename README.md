@@ -443,6 +443,7 @@ Optional configurations to connect your chatbot with external messengers.
 | `WHATSAPP_VERIFY_TOKEN` | Optional | Webhook verification string set in the Meta developer portal. | `your-verify-token` |
 | `WHATSAPP_ACCESS_TOKEN` | Optional | Access token for the WhatsApp cloud API. | `EAAG...` |
 | `WHATSAPP_PHONE_NUMBER_ID` | Optional | Phone number ID registered with WhatsApp Cloud API. | `123456789012345` |
+| `WHATSAPP_APP_SECRET` | Required for WhatsApp webhooks | Meta app secret used to verify `X-Hub-Signature-256` on incoming webhook events. | `your-whatsapp-app-secret` |
 | `SLACK_BOT_TOKEN` | Optional | Bot token to trigger Slack workflows. | `xoxb-your-token-here` |
 | `SLACK_SIGNING_SECRET` | Optional | Signing secret to verify incoming webhook payloads from Slack. | `slack_signing_secret` |
 | `SLACK_DEMO_CHANNEL_ID` | Optional | Channel ID where Slack reports/alerts are pushed. | `C0123456789` |

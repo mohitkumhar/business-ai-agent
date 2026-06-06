@@ -17,6 +17,7 @@ import uuid
 import jwt
 import bcrypt
 import hashlib
+import hmac
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date, timezone
@@ -261,6 +262,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
+WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
@@ -590,6 +592,22 @@ def _list_serialized_conversations(db: sqlite3.Connection, *, business_id: str, 
     return [_serialize_conversation(db, row) for row in rows]
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not WHATSAPP_APP_SECRET or not signature_header:
+        return False
+
+    scheme, separator, received_signature = signature_header.partition("=")
+    if separator != "=" or scheme != "sha256" or not received_signature:
+        return False
+
+    expected_signature = hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
+
+
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     if not WHATSAPP_ACCESS_TOKEN:
         raise ValueError("WhatsApp token missing")
@@ -907,6 +925,13 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    raw_body = request.get_data(cache=True)
+    if not _verify_whatsapp_signature(
+        raw_body,
+        request.headers.get("X-Hub-Signature-256"),
+    ):
+        return jsonify({"error": "Invalid WhatsApp signature"}), 403
+
     # Full logic from app_main.py simplified for merge
     return jsonify({"ok": True})
 
@@ -1679,4 +1704,3 @@ _init_chat_db()
 if __name__ == "__main__":
 
     app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
-
