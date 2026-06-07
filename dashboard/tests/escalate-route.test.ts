@@ -1,39 +1,71 @@
-// Focused unit test skeleton for `dashboard/src/app/api/escalate/route.ts`
-// NOTE: This commit follows the maintainer's request to add focused unit tests
-// covering normal behavior, edge cases, and failure paths. This file contains
-// explicit test cases to implement and a minimal passing placeholder test so
-// the branch is syntactically valid for common JS/TS test runners. Replace
-// placeholders with real assertions that call into the route's exported
-// handler when the test environment is configured.
+import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import { POST } from "../src/app/api/escalate/route";
 
-/**
- * Test plan (to be implemented):
- * - Normal: should accept a valid escalate payload and return 200/expected body
- * - Edge: empty or partial payloads (missing fields) -> returns 4xx validation
- * - Edge: extremely large inputs -> graceful handling / validation error
- * - Failure: dependency error (DB/email service) -> returns 5xx error
- * - Security: unexpected extra fields are either ignored or validated
- */
+describe("POST /api/escalate", () => {
+  const originalFetch = global.fetch;
 
-describe("escalate route - test plan (skeleton)", () => {
-  test("placeholder: test runner is configured (replace with real tests)", () => {
-    // This is a minimal assertion so the test file is valid across runners.
-    expect(true).toBe(true);
+  beforeEach(() => {
+    global.fetch = originalFetch;
   });
 
-  // Example test stubs (implement when test environment supports route imports):
-  // test("returns 200 for valid request", async () => {
-  //   const req = createMockRequest({ /* valid payload */ });
-  //   const res = createMockResponse();
-  //   await handler(req, res);
-  //   expect(res.statusCode).toBe(200);
-  // });
-  //
-  // test("returns 400 for missing required fields", async () => {
-  //   // ...
-  // });
-  //
-  // test("returns 500 when dependency fails", async () => {
-  //   // mock dependency failure and assert 500
-  // });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("returns ok when upstream succeeds", async () => {
+    global.fetch = async () =>
+      ({
+        ok: true,
+        json: async () => ({}),
+        text: async () => "",
+      }) as any;
+
+    const req = new Request("http://localhost", {
+      method: "POST",
+      body: JSON.stringify({ test: "data" }),
+    });
+
+    const res = await POST(req as any);
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data).toEqual({ status: "ok" });
+  });
+
+  it("returns upstream error when backend fails", async () => {
+    global.fetch = async () =>
+      ({
+        ok: false,
+        status: 400,
+        text: async () => "bad request from upstream",
+      }) as any;
+
+    const req = new Request("http://localhost", {
+      method: "POST",
+      body: JSON.stringify({ test: "data" }),
+    });
+
+    const res = await POST(req as any);
+    const data = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(data).toEqual({ error: "bad request from upstream" });
+  });
+
+  it("returns 502 when fetch throws", async () => {
+    global.fetch = async () => {
+      throw new Error("network down");
+    };
+
+    const req = new Request("http://localhost", {
+      method: "POST",
+      body: JSON.stringify({ test: "data" }),
+    });
+
+    const res = await POST(req as any);
+    const data = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(data).toEqual({ error: "Failed to reach backend agent" });
+  });
 });
