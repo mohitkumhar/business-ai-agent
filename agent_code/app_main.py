@@ -1303,6 +1303,16 @@ def api_forecast():
         """, (bid, cutoff))
         
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
+        
+        if not hist:
+            return jsonify({
+                "historical": [], 
+                "forecast": [], 
+                "trend_direction": "flat", 
+                "trend_percent": 0,
+                "insight": "No revenue data available for forecasting yet."
+            })
+        
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
