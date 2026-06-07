@@ -572,7 +572,7 @@ def billing_analyze_all():
             "analysis": "The top expense category is 'Office Supplies' with $4,500..."
         }
     """
-    data = request.get_json(force=True, silent=True)
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     question = (data.get("question") or "Analyze all business billing data").strip()
@@ -600,7 +600,7 @@ def whatsapp_events():
     if not _verify_whatsapp_signature(raw_body, request.headers.get("X-Hub-Signature-256")):
         return jsonify({"error": "Invalid WhatsApp signature"}), 403
 
-    data = request.get_json(force=True, silent=True)
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
@@ -663,7 +663,7 @@ def telegram_webhook():
     ):
         return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
 
-    data = request.get_json(force=True, silent=True)
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
