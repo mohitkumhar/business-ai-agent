@@ -274,7 +274,10 @@ export default function ChatbotPage() {
       setEscalatingMsgId(null);
       const res = await fetch("/api/escalate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({ query: query, summary: summary, assignee_name: assigneeName }),
       });
       if (!res.ok) {
@@ -291,7 +294,7 @@ export default function ChatbotPage() {
     } catch {
       showToast("Error escalating conversation.", "error");
     }
-  }, [messages]);
+  }, [messages, showToast]);
 
   const switchChat = useCallback(
     (id: string) => {

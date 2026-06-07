@@ -7,6 +7,8 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_IMAGE_NAMESPACE: ${{ vars.DOCKER_NAMESPACE || github.repository_owner }}
 
     permissions:
       contents: read
@@ -22,6 +24,13 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Validate Docker image namespace
+        run: |
+          if ! [[ "$DOCKER_IMAGE_NAMESPACE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "::error::DOCKER_IMAGE_NAMESPACE must be a valid lowercase Docker Hub namespace. Set repository variable DOCKER_NAMESPACE if it differs from the GitHub owner."
+            exit 1
+          fi
+
       - name: Login to DockerHub
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -35,8 +44,8 @@ jobs:
           file: ./landing-page/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/ai-business-agent:${{ env.VERSION }}
-            ${{ secrets.DOCKER_USERNAME }}/ai-business-agent:latest
+            ${{ env.DOCKER_IMAGE_NAMESPACE }}/ai-business-agent:${{ env.VERSION }}
+            ${{ env.DOCKER_IMAGE_NAMESPACE }}/ai-business-agent:latest
           
       # Build Backend image
       - name: Build & Push AI-Agent API
@@ -46,5 +55,5 @@ jobs:
           file: ./agent_code/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/intelligent-business-ai-agent:${{ env.VERSION }}
-            ${{ secrets.DOCKER_USERNAME }}/intelligent-business-ai-agent:latest
+            ${{ env.DOCKER_IMAGE_NAMESPACE }}/intelligent-business-ai-agent:${{ env.VERSION }}
+            ${{ env.DOCKER_IMAGE_NAMESPACE }}/intelligent-business-ai-agent:latest

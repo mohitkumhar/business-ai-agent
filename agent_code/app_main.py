@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -75,7 +77,9 @@ else:
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
+WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 
@@ -274,6 +278,22 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     )
     blob.raise_for_status()
     return blob.content, mime_type
+
+
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not WHATSAPP_APP_SECRET or not signature_header:
+        return False
+
+    scheme, separator, received_signature = signature_header.partition("=")
+    if separator != "=" or scheme != "sha256" or not received_signature:
+        return False
+
+    expected_signature = hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
 
 
 def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
@@ -576,6 +596,10 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    raw_body = request.get_data(cache=True)
+    if not _verify_whatsapp_signature(raw_body, request.headers.get("X-Hub-Signature-256")):
+        return jsonify({"error": "Invalid WhatsApp signature"}), 403
+
     data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -631,6 +655,14 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    supplied_secret = (
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    ).strip()
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(
+        supplied_secret, TELEGRAM_WEBHOOK_SECRET
+    ):
+        return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
+
     data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -767,6 +799,7 @@ def get_employees():
 
 
 @app.route("/api/v1/escalate", methods=["POST"])
+@token_required
 def escalate_to_slack():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):

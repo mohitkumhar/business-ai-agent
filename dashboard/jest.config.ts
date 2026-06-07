@@ -17,7 +17,9 @@ const config: Config = {
   testMatch: ["**/__tests__/**/*.test.ts", "**/*.test.ts"],
   collectCoverageFrom: [
     "src/app/api/**/*.ts",
+    "src/lib/**/*.ts", 
     "!src/app/api/**/*.d.ts",
+    "!src/lib/**/*.d.ts",
   ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov"],
