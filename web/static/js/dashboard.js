@@ -80,11 +80,24 @@ Promise.all([
             return names[index];
           });
 
-        if (failed.length > 0) {
-    console.warn("Failed to load charts:", failed);
+        const totalFailures = failed.length;
 
-    document.getElementById("emptyState").style.display = "block";
-    document.getElementById("kpiRow").style.display = "none";
+const dashboardEmpty =
+  totalFailures === results.length;
+
+const emptyState = document.getElementById("emptyState");
+const dashboardContent = document.getElementById("dashboardContent");
+
+if (dashboardEmpty) {
+  emptyState.style.display = "block";
+  dashboardContent.style.display = "none";
+} else {
+  emptyState.style.display = "none";
+  dashboardContent.style.display = "block";
+}
+
+if (failed.length > 0) {
+  console.warn("Failed to load charts:", failed);
 }
       } catch (err) {
         console.error("Dashboard initialization error:", err);
