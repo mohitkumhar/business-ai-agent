@@ -43,7 +43,8 @@ from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
-from api_errors import internal_error_response
+from api_errors import internal_error_response, SAFE_INTERNAL_ERROR_MESSAGE
+from request_ids import get_request_id
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, verify_password
 from swagger_docs import register_swagger_docs
 
@@ -101,6 +102,8 @@ def token_required(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
         try:
             identity = decode_jwt_identity(
                 request.headers.get("Authorization"),
@@ -128,6 +131,122 @@ def get_current_business_id():
               unauthenticated call).
     """
     return getattr(g, "business_id", None)
+
+
+ASSIGNMENTS_FILE = "assigned_issues.json"
+
+
+def get_assigned_counts():
+    if not os.path.exists(ASSIGNMENTS_FILE):
+        return {}
+    try:
+        with open(ASSIGNMENTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def increment_assigned_count(username: str):
+    counts = get_assigned_counts()
+    counts[username] = counts.get(username, 0) + 1
+    with open(ASSIGNMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(counts, f)
+
+
+@app.before_request
+def _attach_request_id():
+    g.request_id = get_request_id(request.headers.get("X-Request-ID"))
+
+
+@app.route("/api/v1/employees", methods=["GET"])
+def get_employees():
+    repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
+    try:
+        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
+        counts = get_assigned_counts()
+        if res.status_code != 200:
+            logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
+            return jsonify(
+                {
+                    "employees": [
+                        {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
+                        {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
+                    ],
+                    "degraded": True,
+                    "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
+                }
+            )
+        contributors = res.json()
+        return jsonify(
+            {
+                "employees": [
+                    {
+                        "login": c.get("login", "Unknown"),
+                        "avatar_url": c.get("avatar_url", ""),
+                        "assigned_issues": counts.get(c.get("login", "Unknown"), 0),
+                    }
+                    for c in contributors
+                ]
+            }
+        )
+    except Exception as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "Employees API failed request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
+
+
+@app.route("/api/v1/escalate", methods=["POST"])
+@token_required
+def escalate_to_slack():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    try:
+        query = data.get("query", "No specific query")
+        summary = data.get("summary", "No summary provided")
+        from slack_integration.slack_handler import SlackDelivery
+        from slack_integration.smart_assigner import pick_assignee_slack_id
+
+        delivery = SlackDelivery()
+        if not delivery.configured():
+            return jsonify({"error": "Slack is not configured"}), 500
+        ch = delivery.demo_channel_id
+        if not ch:
+            return jsonify({"error": "No Slack channel configured"}), 500
+
+        assignee_id = data.get("assignee_name") or pick_assignee_slack_id(user_query=query, summary=summary)
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Web User Escalation", "emoji": True},
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Query:*\n>{query[:500]}\n\n*Context:*\n```{summary[:2000]}```"},
+            },
+        ]
+        if assignee_id:
+            increment_assigned_count(str(assignee_id))
+        delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
+        return jsonify({"status": "ok"}), 200
+    except Exception as exc:
+        return internal_error_response(exc)
+
 
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
