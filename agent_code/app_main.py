@@ -776,6 +776,12 @@ def get_employees():
     
        
         contributors = res.json()
+
+        if not isinstance(contributors, list):
+            raise ValueError(
+                f"Unexpected contributors payload type: {type(contributors).__name__}"
+            )
+
         return jsonify(
             {
                 "employees": [
@@ -826,6 +832,25 @@ def get_employees():
             500,
         )
 
+    except Exception as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "Failed to process GitHub contributors response request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
 @app.route("/api/v1/escalate", methods=["POST"])
 @token_required

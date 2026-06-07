@@ -114,3 +114,39 @@ def test_app_main_employees_invalid_request_id_is_sanitized(monkeypatch):
     assert re.fullmatch(r"[0-9a-f]{32}", payload["request_id"])
     assert payload["request_id"] != "bad/request-id"
     assert "github token" not in response.get_data(as_text=True)
+
+def test_app_main_employees_invalid_json_returns_safe_error(monkeypatch):
+    os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret")
+
+    try:
+        app_main = importlib.import_module("agent_code.app_main")
+    except Exception as exc:
+        pytest.skip(f"backend app dependencies unavailable: {exc}")
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("invalid json")
+
+    monkeypatch.setattr(
+        app_main.requests,
+        "get",
+        lambda *args, **kwargs: MockResponse(),
+    )
+
+    monkeypatch.setattr(app_main, "get_assigned_counts", lambda: {})
+
+    app_main.app.config.update(TESTING=True)
+
+    response = app_main.app.test_client().get(
+        "/api/v1/employees",
+        headers={"X-Request-Id": "req-employees-test"},
+    )
+
+    assert response.status_code == 500
+    assert response.get_json() == {
+        "error": app_main.SAFE_INTERNAL_ERROR_MESSAGE,
+        "code": "employees_unavailable",
+        "request_id": "req-employees-test",
+    }
