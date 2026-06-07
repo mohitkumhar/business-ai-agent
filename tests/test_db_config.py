@@ -8,8 +8,27 @@ from agent_code import db_config
 @pytest.mark.parametrize(
     ("sql", "expected"),
     [
+        ("SELECT * FROM businesses", "SELECT * FROM businesses"),
+        ("SELECT * FROM t WHERE name = 'Alice'", "SELECT * FROM t WHERE name = ''"),
+        ('SELECT * FROM t WHERE name = "Alice"', 'SELECT * FROM t WHERE name = ""'),
+        ("SELECT ';'; DROP TABLE t", "SELECT ''; DROP TABLE t"),
+        ("SELECT 'it''s'", "SELECT ''''"),
+        ("SELECT '\\'; DROP TABLE t", "SELECT ''; DROP TABLE t"),
+        ("SELECT col -- comment", "SELECT col -- comment"),
+    ],
+)
+def test_remove_string_literals(sql, expected):
+    assert db_config._remove_string_literals(sql) == expected
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
         ("SELECT * FROM businesses;", "SELECT * FROM businesses"),
         ("  with recent as (select 1) select * from recent  ", "with recent as (select 1) select * from recent"),
+        ("SELECT * FROM daily_transactions WHERE description = 'Salary; Q1';", "SELECT * FROM daily_transactions WHERE description = 'Salary; Q1'"),
+        ("SELECT * FROM logs WHERE message = 'Please delete this account';", "SELECT * FROM logs WHERE message = 'Please delete this account'"),
+        ("SELECT * FROM events WHERE title = 'Rent; May' AND notes = 'insert info';", "SELECT * FROM events WHERE title = 'Rent; May' AND notes = 'insert info'"),
     ],
 )
 def test_assert_read_only_select_accepts_single_selects(sql, expected):
@@ -24,6 +43,10 @@ def test_assert_read_only_select_accepts_single_selects(sql, expected):
         "DELETE FROM users",
         "SELECT * FROM users; SELECT * FROM roles",
         "WITH changed AS (UPDATE users SET role = 'admin' RETURNING *) SELECT * FROM changed",
+        "SELECT * FROM users; DROP TABLE users",
+        "SELECT * FROM users WHERE username = 'admin'; UPDATE users SET role = 'admin'",
+        "SELECT * FROM users WHERE username = 'admin' UNION SELECT * FROM roles; DROP TABLE roles",
+        "SELECT '\\'; DROP TABLE users",
     ],
 )
 def test_assert_read_only_select_rejects_unsafe_sql(sql):

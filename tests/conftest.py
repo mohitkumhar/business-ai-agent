@@ -157,12 +157,26 @@ if importlib.util.find_spec("langchain_openai") is None:
 
 if importlib.util.find_spec("langgraph") is None:
     langgraph = types.ModuleType("langgraph")
+    langgraph.__path__ = []
+
     langgraph_types = types.ModuleType("langgraph.types")
     class Command(dict):
         pass
     langgraph_types.Command = Command
-    sys.modules["langgraph"] = langgraph
     sys.modules["langgraph.types"] = langgraph_types
+
+    langgraph_graph = types.ModuleType("langgraph.graph")
+    langgraph.graph = langgraph_graph
+    sys.modules["langgraph.graph"] = langgraph_graph
+
+    langgraph_graph_message = types.ModuleType("langgraph.graph.message")
+    def add_messages(left, right):
+        return right
+    langgraph_graph_message.add_messages = add_messages
+    langgraph.graph.message = langgraph_graph_message
+    sys.modules["langgraph.graph.message"] = langgraph_graph_message
+
+    sys.modules["langgraph"] = langgraph
 
 # Stub graph workflows that are imported by agent_code/app.py
 workflow_modules = {
