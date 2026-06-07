@@ -987,8 +987,13 @@ def telegram_webhook():
             chat_id = (message.get("chat") or {}).get("id")
             if chat_id is not None:
                 _send_telegram_text(chat_id, "Sorry, I could not process that Telegram update.")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error(
+                "Failed to send Telegram fallback notification chat_id=%s: %s",
+                chat_id,
+                exc,
+                exc_info=True,
+            )
         return internal_error_response(e)
 
 # --- Transaction Import Endpoints ---
@@ -1021,6 +1026,7 @@ def import_transactions():
     except Exception as e:
         logger.error(f"Import failed: {str(e)}", exc_info=True)
         return internal_error_response(e)
+
 @app.route("/api/v1/import/notebook", methods=["POST"])
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
