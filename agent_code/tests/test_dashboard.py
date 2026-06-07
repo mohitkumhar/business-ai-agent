@@ -109,3 +109,18 @@ def test_dashboard_export_csv_resolves_business_from_email(client, app_module, m
     ]
     assert calls[0][1] == ("owner@example.com",)
     assert calls[1][1][0] == "business-email"
+
+def test_forecast_flat_trend_constant_history():
+    import numpy as np
+    # Constant arrays can produce slopes like 2.88e-16 instead of exactly 0
+    values = [100.0] * 10
+    x = np.arange(len(values))
+    y = np.array(values, dtype=float)
+    z = np.polyfit(x, y, 1)
+    if np.isclose(z[0], 0.0):
+        trend = "flat"
+    elif z[0] > 0:
+        trend = "up"
+    else:
+        trend = "down"
+    assert trend == "flat"

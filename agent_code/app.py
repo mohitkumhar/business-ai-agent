@@ -819,12 +819,12 @@ def api_forecast():
             z = np.polyfit(x, y, 1)
             p = np.poly1d(z)
             #fix: handle zero slope - return "flat" for value 0
-            if z[0] > 0:
-                trend = "up"
-            elif z[0] < 0:
-                trend = "down"
-            else:
+            if np.isclose(z[0], 0.0):
                 trend = "flat"
+            elif z[0] > 0:
+                trend = "up"
+            else:
+                trend = "down"
             percent = abs(round(float(z[0] / (np.mean(y) or 1) * 100), 1))
         else:
             p = lambda val: y[0] if len(y) > 0 else 0
