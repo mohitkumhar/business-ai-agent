@@ -263,7 +263,7 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://graph.facebook.com/v21.0/{media_id}",
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=30,
+        timeout=(5, 30),
     )
     meta.raise_for_status()
     meta_json = meta.json()
@@ -274,7 +274,7 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     blob = requests.get(
         media_url,
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=60,
+        timeout=(5, 60),
     )
     blob.raise_for_status()
     return blob.content, mime_type
@@ -302,7 +302,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
         params={"file_id": file_id},
-        timeout=30,
+        timeout=(5, 30),
     )
     meta.raise_for_status()
     info = meta.json().get("result") or {}
@@ -310,7 +310,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     if not file_path:
         raise ValueError("Telegram getFile missing file_path.")
     url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
-    blob = requests.get(url, timeout=60)
+    blob = requests.get(url, timeout=(5, 60))
     blob.raise_for_status()
     return blob.content, "image/jpeg"
 
@@ -484,7 +484,7 @@ def _send_whatsapp_text(to_number: str, text: str):
             "Content-Type": "application/json",
         },
         json=body,
-        timeout=30,
+        timeout=(5, 30),
     ).raise_for_status()
 
 
@@ -496,10 +496,21 @@ def _send_telegram_text(chat_id: int, text: str):
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": chat_id, "text": text[:4096]},
-            timeout=30,
+            timeout=(5, 30),
         ).raise_for_status()
-    except Exception as exc:
-        logger.error("Failed to send Telegram message: %s", exc, exc_info=True)
+
+    except requests.Timeout:
+        logger.error(
+            "Telegram API request timed out",
+            exc_info=True,
+        )
+
+    except requests.RequestException as exc:
+        logger.error(
+            "Failed to send Telegram message: %s",
+            exc,
+            exc_info=True,
+        )
 
 
 @app.route("/")
@@ -748,7 +759,7 @@ def increment_assigned_count(username: str):
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
     try:
-        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
+        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=(5, 20))
         counts = get_assigned_counts()
         if res.status_code != 200:
             logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
@@ -777,7 +788,25 @@ def get_employees():
                 ]
             }
         )
-    except Exception as exc:
+    except requests.Timeout as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "GitHub contributors API timed out request_id=%s repo=%s",
+            request_id,
+            repo,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
+    except requests.RequestException as exc:
         request_id = get_request_id(getattr(g, "request_id", None))
         logger.error(
             "Employees API failed request_id=%s repo=%s: %s",
