@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import csv
+import hmac
 import io
 import math
 from flask import Flask, request, jsonify, Response, stream_with_context, g
@@ -17,11 +18,15 @@ import uuid
 import jwt
 import bcrypt
 import hashlib
+import hmac
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date, timezone
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 
 # Database & AI Imports
 from db_config import get_db_connection, execute_read_query_params
@@ -38,16 +43,29 @@ from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
-from api_errors import internal_error_response
+from api_errors import internal_error_response, SAFE_INTERNAL_ERROR_MESSAGE
+from request_ids import get_request_id
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, verify_password
 from swagger_docs import register_swagger_docs
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
 
 DEFAULT_RATE_LIMITS = [
     limit.strip()
@@ -84,6 +102,8 @@ def token_required(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
         try:
             identity = decode_jwt_identity(
                 request.headers.get("Authorization"),
@@ -112,6 +132,122 @@ def get_current_business_id():
     """
     return getattr(g, "business_id", None)
 
+
+ASSIGNMENTS_FILE = "assigned_issues.json"
+
+
+def get_assigned_counts():
+    if not os.path.exists(ASSIGNMENTS_FILE):
+        return {}
+    try:
+        with open(ASSIGNMENTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def increment_assigned_count(username: str):
+    counts = get_assigned_counts()
+    counts[username] = counts.get(username, 0) + 1
+    with open(ASSIGNMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(counts, f)
+
+
+@app.before_request
+def _attach_request_id():
+    g.request_id = get_request_id(request.headers.get("X-Request-ID"))
+
+
+@app.route("/api/v1/employees", methods=["GET"])
+def get_employees():
+    repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
+    try:
+        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
+        counts = get_assigned_counts()
+        if res.status_code != 200:
+            logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
+            return jsonify(
+                {
+                    "employees": [
+                        {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
+                        {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
+                    ],
+                    "degraded": True,
+                    "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
+                }
+            )
+        contributors = res.json()
+        return jsonify(
+            {
+                "employees": [
+                    {
+                        "login": c.get("login", "Unknown"),
+                        "avatar_url": c.get("avatar_url", ""),
+                        "assigned_issues": counts.get(c.get("login", "Unknown"), 0),
+                    }
+                    for c in contributors
+                ]
+            }
+        )
+    except Exception as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "Employees API failed request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
+
+
+@app.route("/api/v1/escalate", methods=["POST"])
+@token_required
+def escalate_to_slack():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    try:
+        query = data.get("query", "No specific query")
+        summary = data.get("summary", "No summary provided")
+        from slack_integration.slack_handler import SlackDelivery
+        from slack_integration.smart_assigner import pick_assignee_slack_id
+
+        delivery = SlackDelivery()
+        if not delivery.configured():
+            return jsonify({"error": "Slack is not configured"}), 500
+        ch = delivery.demo_channel_id
+        if not ch:
+            return jsonify({"error": "No Slack channel configured"}), 500
+
+        assignee_id = data.get("assignee_name") or pick_assignee_slack_id(user_query=query, summary=summary)
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Web User Escalation", "emoji": True},
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Query:*\n>{query[:500]}\n\n*Context:*\n```{summary[:2000]}```"},
+            },
+        ]
+        if assignee_id:
+            increment_assigned_count(str(assignee_id))
+        delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
+        return jsonify({"status": "ok"}), 200
+    except Exception as exc:
+        return internal_error_response(exc)
+
+
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
@@ -131,7 +267,8 @@ def auth_signup():
             business_id (str): UUID of the newly created business.
             user (dict): Basic user info with 'name' and 'email' keys.
         HTTP 201 on successful registration.
-        HTTP 400 if any required fields are missing.
+
+        HTTP 400 if any of email, password, name, or business_name are missing.
         HTTP 409 if the email address is already registered.
         HTTP 500 on unexpected server error.
 
@@ -191,25 +328,27 @@ def auth_login():
 
     Expects a JSON request body with:
         email (str): The user's registered email address (case-insensitive).
-        password (str): The user's plain-text password.
+        password (str): The user's plain-text password (verified against bcrypt hash).
 
     Returns:
         JSON response containing:
             token (str): Signed JWT valid for 7 days (HS256).
-            business_id (str): The authenticated user's business UUID.
+            business_id (str): UUID of the user's associated business.
             user (dict): Basic user info with 'name' and 'email' keys.
-        HTTP 200 on success.
-        HTTP 400 if email or password fields are missing.
-        HTTP 401 if credentials are invalid or user does not exist.
+        HTTP 200 on successful authentication.
+        HTTP 400 if email or password are missing.
+        HTTP 401 if the email is not found or the password does not match.
         HTTP 500 on unexpected server error.
 
     Side effects:
-        Queries the PostgreSQL users table to validate credentials.
+        Reads from the PostgreSQL users table.
         Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
     """
+
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"message": "Invalid or missing JSON payload"}), 400
+
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -243,7 +382,9 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
+WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 # --- Metrics ---
@@ -572,6 +713,22 @@ def _list_serialized_conversations(db: sqlite3.Connection, *, business_id: str, 
     return [_serialize_conversation(db, row) for row in rows]
 
 # --- External Integration Helpers (WhatsApp/Telegram) ---
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not WHATSAPP_APP_SECRET or not signature_header:
+        return False
+
+    scheme, separator, received_signature = signature_header.partition("=")
+    if separator != "=" or scheme != "sha256" or not received_signature:
+        return False
+
+    expected_signature = hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
+
+
 def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     if not WHATSAPP_ACCESS_TOKEN:
         raise ValueError("WhatsApp token missing")
@@ -889,11 +1046,26 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    raw_body = request.get_data(cache=True)
+    if not _verify_whatsapp_signature(
+        raw_body,
+        request.headers.get("X-Hub-Signature-256"),
+    ):
+        return jsonify({"error": "Invalid WhatsApp signature"}), 403
+
     # Full logic from app_main.py simplified for merge
     return jsonify({"ok": True})
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    supplied_secret = (
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    ).strip()
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(
+        supplied_secret, TELEGRAM_WEBHOOK_SECRET
+    ):
+        return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
+
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -1089,6 +1261,8 @@ def confirm_notebook():
 def query_agent():
     try:
         input_query = request.args.get("input-query", "")
+        if input_query:
+            input_query = sanitize_input(input_query)
         thread_id = request.args.get("thread-id", "")
         business_id = request.args.get("business-id", "")
 
@@ -1500,6 +1674,24 @@ def api_alerts_list():
 @app.route("/api/dashboard/business-info", methods=["GET", "OPTIONS"])
 @token_required
 def get_business_info():
+    """
+    Retrieve information for the current business.
+
+    Returns:
+        flask.Response:
+            A JSON response containing the business record associated with
+            the current authenticated business ID, or an empty object when no
+            matching business record is found.
+
+    Raises:
+        Exception:
+            Propagates unexpected errors encountered while retrieving business
+            information to the shared internal error response handler.
+
+    Notes:
+        This endpoint looks up the business ID from the current request context
+        and queries the businesses table for the associated metadata.
+    """
     bid = get_current_business_id()
     if not bid: return jsonify({"error": "No business found"}), 404
     try:
@@ -1587,7 +1779,13 @@ def api_health_scores():
 def api_top_products():
     bid = get_current_business_id()
     try:
-        rows = execute_read_query_params("SELECT product_name, stock_quantity, selling_price, cost_price FROM products WHERE business_id = %s ORDER BY stock_quantity DESC LIMIT 10", (bid,))
+        rows = execute_read_query_params(
+            "SELECT product_name, stock_quantity, selling_price, cost_price, "
+            "(COALESCE(selling_price, 0) - COALESCE(cost_price, 0)) * COALESCE(stock_quantity, 0) AS business_value "
+            "FROM products WHERE business_id = %s "
+            "ORDER BY business_value DESC LIMIT 10",
+            (bid,)
+        )
         margin_amount = [float((r["selling_price"] or 0) - (r["cost_price"] or 0)) for r in rows]
         margin_pct = [
             round(((r["selling_price"] or 0) - (r["cost_price"] or 0)) / (r["selling_price"] or 1) * 100, 1)
@@ -1600,7 +1798,8 @@ def api_top_products():
             "stock": [int(r["stock_quantity"] or 0) for r in rows],
             "margin": margin_pct,
             "margin_amount": margin_amount,
-            "margin_pct": margin_pct
+            "margin_pct": margin_pct,
+            "business_value": [round(float(r["business_value"] or 0), 2) for r in rows]
         })
     except Exception as exc:
         return internal_error_response(exc)
@@ -1632,4 +1831,5 @@ def health():
 register_swagger_docs(app)
 _init_chat_db()
 if __name__ == "__main__":
+
     app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -23,12 +25,26 @@ from logger.logger import logger
 from request_ids import get_request_id
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
-
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
 
 if "agent_requests_total" in REGISTRY._names_to_collectors:
     AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
@@ -61,7 +77,9 @@ else:
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
+WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 
@@ -260,6 +278,22 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     )
     blob.raise_for_status()
     return blob.content, mime_type
+
+
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not WHATSAPP_APP_SECRET or not signature_header:
+        return False
+
+    scheme, separator, received_signature = signature_header.partition("=")
+    if separator != "=" or scheme != "sha256" or not received_signature:
+        return False
+
+    expected_signature = hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
 
 
 def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
@@ -481,6 +515,8 @@ def metrics_endpoint():
 @app.route("/api/v1/query", methods=["POST", "GET"])
 def query_agent():
     input_query = request.args.get("input-query", "")
+    if input_query:
+        input_query = sanitize_input(input_query)    
     thread_id = request.args.get("thread-id", "")
     business_id = request.args.get("business-id", "") or ""
     if not input_query:
@@ -560,6 +596,10 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    raw_body = request.get_data(cache=True)
+    if not _verify_whatsapp_signature(raw_body, request.headers.get("X-Hub-Signature-256")):
+        return jsonify({"error": "Invalid WhatsApp signature"}), 403
+
     data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -615,6 +655,14 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    supplied_secret = (
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    ).strip()
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(
+        supplied_secret, TELEGRAM_WEBHOOK_SECRET
+    ):
+        return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
+
     data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
@@ -751,6 +799,7 @@ def get_employees():
 
 
 @app.route("/api/v1/escalate", methods=["POST"])
+@token_required
 def escalate_to_slack():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -1154,7 +1203,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 load_dotenv()
 
 # Use the existing app object defined at the top of the file
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -1287,6 +1336,16 @@ def api_forecast():
         """, (bid, cutoff))
         
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
+        
+        if not hist:
+            return jsonify({
+                "historical": [], 
+                "forecast": [], 
+                "trend_direction": "flat", 
+                "trend_percent": 0,
+                "insight": "No revenue data available for forecasting yet."
+            })
+        
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])

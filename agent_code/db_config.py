@@ -61,19 +61,43 @@ _FORBIDDEN = [
 # Tables that MUST be scoped by business_id to prevent data leakage
 TENANT_TABLES = ["daily_transactions", "alerts", "products", "financial_records"]
 
+def _remove_string_literals(sql: str) -> str:
+    """Replace string literal contents with empty strings for structural safety checks.
+    Handles PostgreSQL's standard SQL escaping (doubled quotes).
+    Backslash has no special meaning in standard_conforming_strings=on (the default)."""
+    result = []
+    in_single_quote = False
+    in_double_quote = False
+
+    for char in sql:
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            result.append(char)
+        elif char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            result.append(char)
+        elif not in_single_quote and not in_double_quote:
+            result.append(char)
+
+    return "".join(result)
+
+
 def _assert_read_only_select(sql: str) -> str:
     """Normalize SQL and enforce read-only and tenant-scoping security rules."""
     s = sql.strip().rstrip(";")
     cleaned = s.lower()
     
     if not (cleaned.startswith("select") or cleaned.startswith("with")):
-        raise ValueError("Only SELECT or WITH...SELECT queries are allowed.")
-    if s.count(";") > 0:
+        raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
+
+    structural_sql = _remove_string_literals(s)
+    structural_cleaned = structural_sql.lower()
+
+    if structural_sql.count(";") > 0:
         raise ValueError("Multiple SQL statements are not allowed.")
-    
-    # SQL Injection prevention
+
     for keyword in _FORBIDDEN:
-        if keyword in cleaned:
+        if keyword in structural_cleaned:
             raise ValueError(f"Forbidden SQL keyword detected: {keyword.strip()}")
             
     # BOLA / Tenant Isolation Enforcement
