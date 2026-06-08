@@ -82,6 +82,8 @@ TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
+pending_approvals: dict[str, dict] = {}
+
 
 def token_required(f):
     @wraps(f)
@@ -801,38 +803,94 @@ def get_employees():
 @app.route("/api/v1/escalate", methods=["POST"])
 @token_required
 def escalate_to_slack():
+    """
+    Escalate a conversation to Slack.
+    
+    Supports Human-in-the-Loop (HITL) approval:
+    - If require_confirmation=true, returns a confirmation token instead of executing
+    - If confirm_token is provided, executes the pending escalation
+    
+    For high-impact actions like sending external notifications, this ensures
+    human oversight before executing sensitive operations.
+    """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    
+    query = data.get("query", "No specific query")
+    summary = data.get("summary", "No summary provided")
+    require_confirmation = data.get("require_confirmation", False)
+    confirm_token = data.get("confirm_token")
+    
+    from slack_integration.slack_handler import SlackDelivery
+    from slack_integration.smart_assigner import pick_assignee_slack_id
+    
+    delivery = SlackDelivery()
+    if not delivery.configured():
+        return jsonify({"error": "Slack is not configured"}), 500
+    ch = delivery.demo_channel_id
+    if not ch:
+        return jsonify({"error": "No Slack channel configured"}), 500
+    
+    assignee_id = data.get("assignee_name") or pick_assignee_slack_id(user_query=query, summary=summary)
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Web User Escalation", "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Query:*\n>{query[:500]}\n\n*Context:*\n```{summary[:2000]}```"},
+        },
+    ]
+    
+    escalation_details = {
+        "assignee_id": assignee_id,
+        "channel": ch,
+        "blocks": blocks,
+    }
+    
+    if require_confirmation and not confirm_token:
+        import secrets
+        confirm_token = secrets.token_urlsafe(32)
+        import hashlib
+        token_hash = hashlib.sha256(confirm_token.encode()).hexdigest()
+        
+        pending_approvals[token_hash] = {
+            "action": "escalate_to_slack",
+            "details": escalation_details,
+            "user_id": g.get("user_id"),
+            "business_id": g.get("business_id"),
+        }
+        
+        return jsonify({
+            "requires_confirmation": True,
+            "confirm_token": confirm_token,
+            "message": "This action will send a message to Slack. Confirm to proceed.",
+            "action_summary": f"Escalate conversation to Slack channel {ch}" + (f" (assignee: {assignee_id})" if assignee_id else ""),
+        }), 202
+    
+    if confirm_token:
+        import hashlib
+        token_hash = hashlib.sha256(confirm_token.encode()).hexdigest()
+        pending = pending_approvals.pop(token_hash, None)
+        
+        if not pending:
+            return jsonify({"error": "Invalid or expired confirmation token"}), 400
+        
+        escalation_details = pending["details"]
+        assignee_id = escalation_details.get("assignee_id")
+        blocks = escalation_details.get("blocks")
+        ch = escalation_details.get("channel")
+    
+    if assignee_id:
+        increment_assigned_count(str(assignee_id))
+    
     try:
-        query = data.get("query", "No specific query")
-        summary = data.get("summary", "No summary provided")
-        from slack_integration.slack_handler import SlackDelivery
-        from slack_integration.smart_assigner import pick_assignee_slack_id
-
-        delivery = SlackDelivery()
-        if not delivery.configured():
-            return jsonify({"error": "Slack is not configured"}), 500
-        ch = delivery.demo_channel_id
-        if not ch:
-            return jsonify({"error": "No Slack channel configured"}), 500
-
-        assignee_id = data.get("assignee_name") or pick_assignee_slack_id(user_query=query, summary=summary)
-        blocks = [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": "Web User Escalation", "emoji": True},
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Query:*\n>{query[:500]}\n\n*Context:*\n```{summary[:2000]}```"},
-            },
-        ]
-        if assignee_id:
-            increment_assigned_count(str(assignee_id))
         delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
-        return jsonify({"status": "ok"}), 200
+        return jsonify({"status": "ok", "message": "Escalation sent to Slack successfully."}), 200
     except Exception as exc:
+        logger.error("Slack escalation failed: %s", exc, exc_info=True)
         return internal_error_response(exc)
 
 
