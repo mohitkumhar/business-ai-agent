@@ -348,7 +348,7 @@ export default function ChatbotPage() {
     let assistantContent = "";
     let assistantIntent: string | null = null;
     let shouldPersistAssistant = false;
-
+    let streamParseErrorShown = false;
     setInput("");
     setCompletedNodes([]);
 
@@ -506,7 +506,34 @@ export default function ChatbotPage() {
                   setStatus({ kind: "idle" });
                   break;
               }
-            } catch { /* skip malformed */ }
+            } catch (error) {
+  if (process.env.NODE_ENV === "development") {
+    console.warn("[Chatbot SSE] Failed to parse SSE chunk", {
+      chunk: jsonStr,
+      error,
+    });
+  }
+
+  if (!streamParseErrorShown) {
+    streamParseErrorShown = true;
+
+    updateActiveMessages((prev) => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+
+      if (last?.role === "assistant") {
+        updated[updated.length - 1] = {
+          ...last,
+          content:
+            last.content ||
+            "Stream error: Unable to process part of the response. Please try again.",
+        };
+      }
+
+      return updated;
+    });
+  }
+}
           }
         }
       }
