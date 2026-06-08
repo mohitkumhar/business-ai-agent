@@ -747,16 +747,16 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         logger.warning("Telegram send skipped; TELEGRAM_BOT_TOKEN is not configured.")
         return
 
-try:
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-        json={"chat_id": chat_id, "text": text[:4096]},
-        timeout=(5, 30),
-    ).raise_for_status()
-except requests.exceptions.Timeout:
-    logger.warning("Telegram message send timed out.")
-except requests.exceptions.RequestException as e:
-    logger.warning(f"Telegram message send failed: {e}")
+    try:
+        requests.post(
+         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": chat_id, "text": text[:4096]},
+            timeout=(5, 30),
+        ).raise_for_status()
+    except requests.exceptions.Timeout:
+        logger.warning("Telegram message send timed out.")
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Telegram message send failed: {e}")
 
 # --- Helper Functions (From Kushal-Dev) ---
 def get_period_dates(period):
