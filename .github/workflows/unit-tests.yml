@@ -7,6 +7,8 @@ on:
       - "agent_code/**"
       - "web/**"
       - "tests/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/unit-tests.yml"
   pull_request:
     branches: [main]
@@ -14,6 +16,8 @@ on:
       - "agent_code/**"
       - "web/**"
       - "tests/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/unit-tests.yml"
   workflow_dispatch:
 
@@ -25,6 +29,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend-unit-tests:
+    name: Frontend JS unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run frontend JS unit tests
+        run: npm test
+
   python-unit-tests:
     name: Python unit tests
     runs-on: ubuntu-latest
@@ -45,7 +70,8 @@ jobs:
           python -m pip install \
             pytest PyJWT openpyxl Flask flask-cors Flask-Limiter requests \
             bcrypt python-dateutil prometheus-client flasgger \
-            alembic==1.13.1 SQLAlchemy==2.0.46 psycopg2-binary==2.9.10
+            alembic==1.13.1 SQLAlchemy==2.0.46 psycopg2-binary==2.9.10 \
+            Faker==40.11.1
 
       - name: Run unit tests
         env:

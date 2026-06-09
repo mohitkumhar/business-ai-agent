@@ -126,11 +126,12 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
                     
                 return transactions
             except json.JSONDecodeError as e:
-                logger.error(f"JSON Decode Error: {text_result}")
-                raise ValueError(f"AI returned unreadable data: {str(e)[:100]}")
+                logger.error("JSON Decode Error: %s", text_result)
+                logger.error("JSON parsing failed: %s", e, exc_info=True)
+                raise ValueError("AI returned unreadable data.")
         else:
             raise ValueError("The AI service could not read this notebook page.")
 
     except Exception as e:
-        logger.error(f"Error during Gemini OCR processing: {str(e)}", exc_info=True)
-        raise e
+        logger.error("Error during Gemini OCR processing: %s", e, exc_info=True)
+        raise
