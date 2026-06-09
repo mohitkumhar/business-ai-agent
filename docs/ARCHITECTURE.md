@@ -15,7 +15,7 @@ SQL, advice, logs, or metrics), and the answer is streamed back over Server-Sent
 ```mermaid
 flowchart TD
     subgraph Frontend
-        LP["Landing Page<br/>Vite + TanStack · :5173"]
+        LP["Landing Page<br/>Vite + TanStack · :3003 (dev) / :5173 (Docker)"]
         DASH["Dashboard<br/>Next.js · :3001"]
     end
 

@@ -65,7 +65,7 @@ Small business owners take important decisions every day — ads spending, hirin
 
 ```
 Browser
-  ├── Landing Page (Vite / TanStack :5173)
+  ├── Landing Page (Vite / TanStack :3003 dev / :5173 Docker)
   │       POST /api/v1/onboarding ──────► Flask Agent (:5000) ──► PostgreSQL (:5432)
   │       Google OAuth (client-side)
   │
@@ -107,7 +107,7 @@ SSE streaming response to browser
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| 🌐 **Landing Page** | http://localhost:5173 | Onboarding & marketing site |
+| 🌐 **Landing Page** | http://localhost:3003 | Onboarding & marketing site |
 | 🤖 **Flask Agent API** | http://localhost:5000 | AI chatbot backend |
 | 📊 **Dashboard** | http://localhost:3001 | Business analytics dashboard |
 | 🗄️ **pgAdmin** | http://localhost:5050 | PostgreSQL UI (set local credentials in `.env`) |
@@ -276,7 +276,7 @@ npm run dev
 cd landing-page
 npm install
 npm run dev
-# Landing page runs on http://localhost:5173
+# Landing page runs on http://localhost:3003
 ```
 
 ### 4. Legacy Web Flask (Optional)
@@ -433,10 +433,10 @@ Variables prefixed with `NEXT_PUBLIC_` are exposed to client-side browser script
 | :--- | :--- | :--- | :--- |
 | `AGENT_API_URL` | **Required** | Server-side URL of the Flask agent backend. | `http://localhost:5000` |
 | `NEXT_PUBLIC_AGENT_API_URL` | Optional | Browser-accessible URL of the Flask agent (overrides Next.js proxying). | `http://localhost:5000` |
-| `NEXT_PUBLIC_LANDING_URL` | **Required** | Public web URL pointing to the Vite landing/onboarding page. | `http://localhost:5173` |
-| `NEXT_PUBLIC_VIEWER_URL`  | **Required** | Public web URL pointing to the viewer interface. | `http://localhost:5173` |
+| `NEXT_PUBLIC_LANDING_URL` | **Required** | Public web URL pointing to the Vite landing/onboarding page. | `http://localhost:3003` |
+| `NEXT_PUBLIC_VIEWER_URL`  | **Required** | Public web URL pointing to the viewer interface. | `http://localhost:3003` |
 | `VITE_API_URL` | **Required** | Onboarding API URL referenced by the Vite landing page. | `http://localhost:5000` |
-| `NEXTAUTH_URL` | Optional | Callback root address for OAuth and credential sessions. | `http://localhost:5173` |
+| `NEXTAUTH_URL` | Optional | Callback root address for OAuth and credential sessions. | `http://localhost:3003` |
 | `VITE_GOOGLE_CLIENT_ID` | Optional | Google OAuth client ID for user login/signup integrations. | `your-google-client-id` |
 | `ENCRYPTION_SECRET` | Optional | 32-character encryption key for frontend integration credentials. | `12345678901234567890123456789012` |
 
@@ -567,7 +567,7 @@ business-ai-agent/
 │   ├── src/lib/api.ts       # Centralized API calls + mock fallback
 │   └── next.config.ts       # API rewrites to Flask agent
 │
-├── landing-page/            # 🌐 Marketing + Onboarding (Port 5173)
+├── landing-page/            # 🌐 Marketing + Onboarding (Port 3003)
 │   ├── src/routes/          # TanStack Router pages
 │   │   ├── index.tsx        # Home page
 │   │   ├── get-started.tsx  # Onboarding form

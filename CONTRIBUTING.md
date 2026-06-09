@@ -109,7 +109,7 @@ npm run dev  # http://localhost:3000
 **Landing Page (Vite)**
 ```bash
 cd landing-page
-npm run dev  # http://localhost:5173
+npm run dev  # http://localhost:3003
 ```
 
 ---

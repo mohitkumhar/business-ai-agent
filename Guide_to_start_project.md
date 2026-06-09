@@ -38,7 +38,7 @@ docker compose up
 ### 5️⃣ Access Services
 Frontend:
 
-http://localhost:5173
+http://localhost:3003 (dev) / http://localhost:5173 (Docker)
 
 
 ### Stop Services

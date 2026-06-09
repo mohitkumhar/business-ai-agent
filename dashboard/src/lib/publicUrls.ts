@@ -1,6 +1,6 @@
-/** Landing (Vite / TanStack) — docker-compose maps `5173:5173`. Grafana uses host `:3000`, so never use 3000 as landing. */
-const DEFAULT_LANDING_PAGE = "http://localhost:5173";
+/** Landing (Vite / TanStack) — runs on port 3003 in dev, port 5173 in Docker. */
 
+const DEFAULT_LANDING_PAGE = "http://localhost:3003";
 function resolveLandingPageUrl(): string {
   const raw = (process.env.NEXT_PUBLIC_LANDING_URL ?? "").trim();
   if (!raw) return DEFAULT_LANDING_PAGE;
