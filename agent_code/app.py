@@ -1181,10 +1181,12 @@ def import_notebook():
         Exception: Any unexpected processing error is logged and
         returned as an internal error response.
     """
-if "file" not in request.files:
-    return jsonify({"error": "No file part"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
     file = request.files["file"]
     bid = get_current_business_id()
+
     try:
         content = file.read()
         filename = file.filename
