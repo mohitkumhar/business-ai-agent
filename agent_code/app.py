@@ -1039,32 +1039,32 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-"""
-Verify incoming WhatsApp webhook subscription requests.
+    """
+    Verify incoming WhatsApp webhook subscription requests.
 
-This endpoint handles the GET verification challenge sent by
-WhatsApp during webhook setup. It validates the provided
-verification token against the configured
-``WHATSAPP_VERIFY_TOKEN``.
+    This endpoint handles the GET verification challenge sent by
+    WhatsApp during webhook setup. It validates the provided
+    verification token against the configured
+    ``WHATSAPP_VERIFY_TOKEN``.
 
-Returns:
-    tuple | str:
-        - The WhatsApp challenge response with a success status
-          when the verification token is valid.
-        - ("failed", 403) when the verification token does not
-          match the configured value.
+    Returns:
+        tuple | str:
+            - The WhatsApp challenge response with a success status
+              when the verification token is valid.
+            - ("failed", 403) when the verification token does not
+              match the configured value.
 
-Side Effects:
-    Reads query parameters from the incoming HTTP request.
+    Side Effects:
+        Reads query parameters from the incoming HTTP request.
 
-Failure Modes:
-    Returns HTTP 403 if the supplied verification token is
-    missing or invalid.
-"""
-if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
-    return request.args.get("hub.challenge"), 200
+    Failure Modes:
+        Returns HTTP 403 if the supplied verification token is
+        missing or invalid.
+    """
+    if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
+        return request.args.get("hub.challenge"), 200
     return "failed", 403
-
+    
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
     raw_body = request.get_data(cache=True)
