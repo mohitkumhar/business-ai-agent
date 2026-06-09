@@ -156,7 +156,7 @@ def _start_timer():
 def _record_metrics(response):
     # CORS headers for Next.js dashboard
     origin = request.headers.get("Origin", "")
-    if origin in ("http://localhost:3000", "http://localhost:3001", "http://localhost:5173"):
+    if origin in ("http://localhost:3000", "http://localhost:3001", "http://localhost:3003", "http://localhost:5173"):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
