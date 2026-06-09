@@ -89,6 +89,31 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
+    """
+    Register a new user and create an associated business account.
+
+    Expects a JSON request body with:
+        email (str): The new user's email address (stored lowercase).
+        password (str): The user's plain-text password (bcrypt-hashed before storage).
+        name (str): The user's full name.
+        business_name (str): The name of the user's business.
+        industry (str, optional): Industry type for the business (default: "Other").
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): UUID of the newly created business.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 201 on successful registration.
+        HTTP 400 if any of email, password, name, or business_name are missing.
+        HTTP 409 if the email address is already registered.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Inserts a new record into the PostgreSQL businesses table.
+        Inserts a new record into the PostgreSQL users table with a bcrypt-hashed password.
+        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
+    """
     data = request.json
     email = data.get("email", "").lower().strip()
     password = data.get("password")
@@ -133,6 +158,27 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
+    """
+    Authenticate an existing user and return a JWT access token.
+
+    Expects a JSON request body with:
+        email (str): The user's registered email address.
+        password (str): The user's plain-text password (verified against bcrypt hash).
+
+    Returns:
+        JSON response containing:
+            token (str): Signed JWT valid for 7 days (HS256).
+            business_id (str): UUID of the user's associated business.
+            user (dict): Basic user info with 'name' and 'email' keys.
+        HTTP 200 on successful authentication.
+        HTTP 400 if email or password are missing.
+        HTTP 401 if the email is not found or the password does not match.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Reads from the PostgreSQL users table.
+        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
+    """
     data = request.json
     email = data.get("email", "").lower().strip()
     password = data.get("password")
@@ -665,6 +711,28 @@ def api_forecast():
 @app.route("/api/dashboard/categories", methods=["GET", "OPTIONS"])
 @token_required
 def api_categories():
+    """
+    Retrieve all distinct transaction categories for the authenticated business.
+
+    Authentication:
+        Requires a valid JWT via the token_required decorator.
+        The business_id is read from Flask's g object.
+
+    Query Parameters:
+        None.
+
+    Returns:
+        JSON response containing:
+            categories (list[str]): Alphabetically sorted list of unique
+                category names from the business's daily_transactions table,
+                excluding NULL values.
+        HTTP 200 on success.
+        HTTP 500 on unexpected server error.
+
+    Side effects:
+        Reads from the PostgreSQL daily_transactions table.
+        Rate-limited via the default limiter (200/day, 50/hour).
+    """
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params(
