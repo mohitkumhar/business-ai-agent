@@ -5,6 +5,7 @@ import Topbar from "@/components/Topbar";
 import { ChatbotIcon } from "@/components/Icons";
 import {
   appendChatMessage,
+  getAuthHeaders,
   listChatConversations,
   removeChatConversation,
   upsertChatConversation,
@@ -362,13 +363,12 @@ export default function ChatbotPage() {
         "thread-id": activeId,
       });
 
-      const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
       const res = await fetch(`/api/chat?${params.toString()}`, {
         method: "POST",
         signal: ctrl.signal,
         headers: {
           Accept: "text/event-stream",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
       });
 
