@@ -102,8 +102,14 @@ def _assert_read_only_select(sql: str) -> str:
             
     # BOLA / Tenant Isolation Enforcement
     if any(table in cleaned for table in TENANT_TABLES):
-        if "business_id" not in cleaned:
-             raise ValueError("Security Violation: Tenant-scoped tables require a 'business_id' filter.")
+        # Check for WHERE clause and business_id in the WHERE clause
+        if "where" not in cleaned:
+            raise ValueError("Security Violation: Tenant-scoped tables require a 'WHERE business_id = ...' filter.")
+        
+        # Split on 'where' and check the part after the first WHERE
+        parts = cleaned.split("where", 1)
+        if len(parts) < 2 or "business_id" not in parts[1]:
+            raise ValueError("Security Violation: Tenant-scoped tables require a 'WHERE business_id = ...' filter.")
              
     return s
 
@@ -127,3 +133,10 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
         raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
+
+# Helper functions for backward compatibility
+def execute_read_query(sql: str) -> list[dict]:
+    return execute_read_query_params(sql, params=())
+
+def explain_validate_select(sql: str) -> str:
+    return sql
