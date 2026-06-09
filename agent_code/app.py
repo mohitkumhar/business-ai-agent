@@ -999,8 +999,6 @@ def api_categories():
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
     """
-def onboarding():
-    """
     Creates a new business and associated user account during onboarding.
 
     Expects a JSON request containing business and user information,
@@ -1019,9 +1017,12 @@ def onboarding():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
-    if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
+
+    if not business_name or not email:
+        return jsonify({"error": "Missing fields"}), 400
     
     conn = get_db_connection()
     try:
