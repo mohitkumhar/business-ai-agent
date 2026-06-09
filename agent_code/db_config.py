@@ -14,6 +14,11 @@ DATABASE_URL = os.getenv(
     "postgresql://admin:root@localhost:5432/test_db",
 )
 
+# SECURITY: First line of defense - simple string matching for dangerous keywords
+_FORBIDDEN = [
+    "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE", 
+    "GRANT", "REVOKE", "EXECUTE"
+]
 
 def get_db_connection():
     """Returns a new psycopg2 connection to the PostgreSQL database."""
@@ -55,8 +60,8 @@ def get_db_schema() -> str:
         return "Error reading schema"
 
 
-# SECURITY FIX: Replaced weak string list with strict regex boundary matching
-_FORBIDDEN_PATTERN = re.compile(r'\b(insert|update|delete|drop|alter|truncate|create)\b')
+# SECURITY FIX: Second line of defense - strict regex boundary matching
+_FORBIDDEN_PATTERN = re.compile(r'\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|execute)\b', re.IGNORECASE)
 
 
 def _remove_string_literals(sql: str) -> str:
@@ -97,9 +102,9 @@ def _assert_read_only_select(sql: str) -> str:
     if _FORBIDDEN_PATTERN.search(cleaned):
         raise ValueError("Forbidden SQL keyword detected. Query blocked.")
 
-    # Main branch keyword check
+    # Main branch keyword check - First line of defense
     for keyword in _FORBIDDEN:
-        if keyword in structural_cleaned:
+        if keyword.lower() in structural_cleaned:
             raise ValueError(f"Forbidden SQL keyword detected: {keyword.strip()}")
 
     return s
