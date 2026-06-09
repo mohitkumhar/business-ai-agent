@@ -86,10 +86,32 @@ def token_required(f):
 def get_current_business_id():
     return getattr(g, "business_id", None)
 
+
+def _get_json_body_or_error(
+    *, field: str = "error", message: str = "Invalid or missing JSON payload"
+):
+    """Parse the request body as a JSON object.
+
+    Returns ``(data, None, None)`` on success, or ``(None, response, status)``
+    when the body is absent or not a JSON object (dict).  Callers should check
+    the second element and return early when it is not ``None``:
+
+        data, err, code = _get_json_body_or_error(field="message")
+        if err is not None:
+            return err, code
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, jsonify({field: message}), 400
+    return data, None, None
+
+
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
-    data = request.json
+    data, err, code = _get_json_body_or_error(field="message")
+    if err is not None:
+        return err, code
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -133,7 +155,9 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
-    data = request.json
+    data, err, code = _get_json_body_or_error(field="message")
+    if err is not None:
+        return err, code
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -678,7 +702,9 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data, err, code = _get_json_body_or_error()
+    if err is not None:
+        return err, code
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -824,12 +850,9 @@ def import_notebook():
 @limiter.limit(IMPORT_RATE_LIMIT)
 @token_required
 def confirm_notebook():
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return jsonify({
-            "error": "Invalid or missing JSON body"
-        }), 400
+    data, err, code = _get_json_body_or_error()
+    if err is not None:
+        return err, code
 
     bid = get_current_business_id()
     transactions = data.get("transactions", [])
@@ -883,7 +906,9 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    data = request.json
+    data, err, code = _get_json_body_or_error()
+    if err is not None:
+        return err, code
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
@@ -937,7 +962,9 @@ def api_chat_conversation(conversation_id: str):
         db.commit()
         return ("", 204)
 
-    data = request.get_json(silent=True) or {}
+    data, err, code = _get_json_body_or_error()
+    if err is not None:
+        return err, code
     raw_messages = data.get("messages") or []
     if not isinstance(raw_messages, list):
         return jsonify({"error": "messages must be an array"}), 400
@@ -979,7 +1006,9 @@ def api_chat_conversation(conversation_id: str):
 @token_required
 def api_chat_conversation_messages(conversation_id: str):
     business_id, user_id = _chat_owner_filter()
-    data = request.get_json(silent=True) or {}
+    data, err, code = _get_json_body_or_error()
+    if err is not None:
+        return err, code
     db = _get_chat_db()
 
     try:
