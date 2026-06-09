@@ -9,7 +9,8 @@
     "dev": "dotenv -e ./.env -- vite dev --port 3003",
     "start": "node .output/server/index.mjs",
     "build": "npm run check-broken-links && dotenv -e ./.env -- vite build",
-    "check-broken-links": "mdx-local-link-checker content public '*/(index.mdx|blog|about|pricing?isTiersModalOpened=true)'"
+    "check-broken-links": "mdx-local-link-checker content public '*/(index.mdx|blog|about|pricing?isTiersModalOpened=true)'",
+    "test": "bun test src/lib/packages/lib/extensionFromMimeType.test.ts"
   },
   "dependencies": {
     "@base-ui-components/react": "^1.0.0-beta.4",

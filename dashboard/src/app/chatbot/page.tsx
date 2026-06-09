@@ -5,6 +5,7 @@ import Topbar from "@/components/Topbar";
 import { ChatbotIcon } from "@/components/Icons";
 import {
   appendChatMessage,
+  getAuthHeaders,
   listChatConversations,
   removeChatConversation,
   upsertChatConversation,
@@ -54,9 +55,17 @@ export default function ChatbotPage() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ kind: "loading", label: "Loading history…" });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [completedNodes, setCompletedNodes] = useState<CompletedNode[]>([]);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
   const [employees, setEmployees] = useState<{login: string, avatar_url?: string, assigned_issues: number}[]>([]);
   const [escalatingMsgId, setEscalatingMsgId] = useState<number | null>(null);
+  
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = useCallback((message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+}, []);
 
   useEffect(() => {
     fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
@@ -190,8 +199,17 @@ export default function ChatbotPage() {
 
   /* Persist whenever conversations change */
   useEffect(() => {
-    if (conversations.length > 0) saveConversations(conversations);
-  }, [conversations]);
+    if (conversations.length > 0) {
+      const result = saveConversations(conversations);
+      if (!result.success) {
+        setStorageWarning("Local storage limit reached. Chat history could not be saved.");
+      } else if (result.prunedCount > 0) {
+        setStorageWarning(`Local storage limit reached. Oldest ${result.prunedCount} chat(s) were pruned to save space.`);
+        const prunedList = conversations.slice(0, conversations.length - result.prunedCount);
+        applyConversationState(prunedList);
+      }
+    }
+  }, [conversations, applyConversationState]);
 
   const activeConv = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? null,
@@ -256,14 +274,17 @@ export default function ChatbotPage() {
       setEscalatingMsgId(null);
       const res = await fetch("/api/escalate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({ query: query, summary: summary, assignee_name: assigneeName }),
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(`Escalation failed: ${err.error || "Unknown error"}`);
+    showToast(`Escalation failed: ${err.error || "Unknown error"}`, "error");
       } else {
-        alert("Conversation escalated to Slack successfully!");
+      showToast("Conversation escalated to Slack successfully!", "success");
         // Refresh employees to bump issue counts
         fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
           .then(r => r.json())
@@ -271,9 +292,9 @@ export default function ChatbotPage() {
           .catch(console.error);
       }
     } catch {
-      alert("Error escalating conversation.");
+      showToast("Error escalating conversation.", "error");
     }
-  }, [messages]);
+  }, [messages, showToast]);
 
   const switchChat = useCallback(
     (id: string) => {
@@ -362,13 +383,12 @@ export default function ChatbotPage() {
         "thread-id": activeId,
       });
 
-      const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
       const res = await fetch(`/api/chat?${params.toString()}`, {
         method: "POST",
         signal: ctrl.signal,
         headers: {
           Accept: "text/event-stream",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
       });
 
@@ -618,6 +638,35 @@ export default function ChatbotPage() {
       <div className="main-area">
         <Topbar onSearch={() => { }} />
         <div className="content-wrapper" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 69px)", padding: 0 }}>
+          {storageWarning && (
+            <div style={{
+              background: "#fee2e2",
+              borderBottom: "1px solid #fca5a5",
+              color: "#991b1b",
+              padding: "10px 16px",
+              fontSize: "13px",
+              fontWeight: 500,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <span>⚠️ {storageWarning}</span>
+              <button
+                onClick={() => setStorageWarning(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#991b1b",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  padding: "2px 6px"
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* ── Chat Header ── */}
           <div className="chat-header">
@@ -871,6 +920,54 @@ export default function ChatbotPage() {
               <button id="chat-send-btn" onClick={sendMessage} disabled={!input.trim()} className="chat-btn send-btn">Send</button>
             )}
           </div>
+          {/* ── Escalation Toast ── */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          tabIndex={-1}
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "10px",
+            maxWidth: "360px",
+            padding: "14px 16px",
+            borderRadius: "10px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            background: toast.type === "success" ? "#f0fdf4" : "#fef2f2",
+            border: `1px solid ${toast.type === "success" ? "#86efac" : "#fca5a5"}`,
+            color: toast.type === "success" ? "#166534" : "#991b1b",
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: "18px" }}>
+            {toast.type === "success" ? "✅" : "❌"}
+          </span>
+          <p style={{ flex: 1, margin: 0, fontSize: "13px", fontWeight: 500 }}>
+            {toast.message}
+          </p>
+          <button
+            onClick={() => setToast(null)}
+            aria-label="Dismiss notification"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "18px",
+              lineHeight: 1,
+              color: "inherit",
+              opacity: 0.6,
+              padding: "0 2px",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
         </div>
       </div>
     </div>
