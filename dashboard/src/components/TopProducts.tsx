@@ -4,6 +4,7 @@ import { Chart, registerables } from "chart.js";
 import { api, TopProducts as TopProductsData } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { PackageIcon } from "./Icons";
+import { LoadingSpinner } from "./LoadingStates";
 
 Chart.register(...registerables);
 
@@ -92,7 +93,11 @@ export default function TopProducts() {
         </div>
       </div>
       <div className="chart-body">
-        {loading ? <div className="loading-spinner">Loading...</div> : <canvas ref={chartRef}></canvas>}
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 260, width: "100%" }}>
+            <LoadingSpinner label="Loading products…" />
+          </div>
+        ) : <canvas ref={chartRef}></canvas>}
       </div>
     </div>
   );
