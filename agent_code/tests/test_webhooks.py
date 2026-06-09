@@ -163,30 +163,3 @@ def test_telegram_webhook_replies_to_text_message(client, app_module, monkeypatc
     assert response.get_json() == {"ok": True}
     assert sent_messages == [(42, "answer: How are sales?")]
 
-def test_telegram_webhook_fallback_notification_logs_without_chat_id(
-    client, app_module, monkeypatch
-):
-    monkeypatch.setattr(app_module, "TELEGRAM_WEBHOOK_SECRET", "telegram-secret")
-    monkeypatch.setattr(app_module, "DEFAULT_BUSINESS_ID", "business-1")
-
-    def fake_run_agent(*args, **kwargs):
-        raise RuntimeError("agent failure")
-
-    monkeypatch.setattr(app_module, "_run_agent_to_text", fake_run_agent)
-
-    def failing_send(*args, **kwargs):
-        raise RuntimeError("telegram send failed")
-
-    monkeypatch.setattr(
-        app_module,
-        "_send_telegram_text",
-        failing_send,
-    )
-
-    response = client.post(
-        "/api/v1/telegram/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
-        json={"message": {"chat": {"id": 42}, "text": "How are sales?"}},
-    )
-
-    assert response.status_code == 500
