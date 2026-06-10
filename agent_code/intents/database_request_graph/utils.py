@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import logging
 import re
 import time
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pydantic import ValidationError
 
 from langgraph.types import interrupt
@@ -11,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 # Import base configurations, hooks, and schemas
 from llm.base_llm import base_llm
 from logger.logger import logger
-from intents.database_request_graph.subgraph import DatabaseRequestGraphState
+# REMOVED: DatabaseRequestGraphState import from here to completely fix the circular dependency error!
 from db_config import get_db_schema, get_db_connection
 from intents.database_request_graph.advisory_nodes import _resolve_business_id
 from intents.database_request_graph.structures import (
@@ -153,7 +156,6 @@ User Query: {user_query}"""
 
     try:
         logger.info("Invoking date_range_llm to resolve date range...")
-        # FIX: Added 4 spaces to align perfectly inside the try block
         result = invoke_with_retry(date_range_llm, prompt)
         logger.info(f"Date range resolved: {result}")
         return {
@@ -749,7 +751,7 @@ def logging_node(state: DatabaseRequestGraphState):
     """Persist an audit-log entry for the query lifecycle."""
 
     log_data = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "user_query": state.get("user_query", ""),
         "date_range": {
             "start": state.get("date_range_start", ""),
@@ -802,19 +804,16 @@ def post_query_operations(state: DatabaseRequestGraphState):
     try:
         rows = json.loads(query_results)
         logger.info(f"Successfully loaded {len(rows)} rows from query results for processing.")
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.error(f"Failed to decode query_results JSON: {e}", exc_info=True)
-        rows = []
-
-    return {
-        "processed_data": json.dumps({
+        
+        # Calculate basic metadata statistics to assist downstream LLM consumption nodes
+        row_count = len(rows)
+        processed_payload = {
             "status": "success",
-            "total_records": len(rows),
-            "data": rows,
-            "metadata": {
-                "tables_queried": state.get("target_tables", []),
-                "date_range": state.get("date_range_description", ""),
-                "sql_explanation": state.get("sql_explanation", ""),
-            },
-        }, default=str, indent=2)
-    }
+            "row_count": row_count,
+            "data": rows
+        }
+        return {"processed_data": json.dumps(processed_payload, default=str)}
+        
+    except Exception as exc:
+        logger.error("Failed post-query analysis formatting: %s", exc, exc_info=True)
+        return {"processed_data": query_results}
