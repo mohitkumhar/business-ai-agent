@@ -66,7 +66,7 @@ export const parseAllowedFileTypesMetadata = (
     .filter(([mimeType, extension]) => {
       const mimeBaseType = mimeType.split("/")[0];
       return (
-        allowedFileTypes.some((fileType) => fileType.includes(extension)) ||
+        allowedFileTypes.some((fileType) => fileType === extension) ||
         wildcardExtensions.includes(mimeBaseType)
       );
     })
