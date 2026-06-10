@@ -756,3 +756,83 @@ a:hover { text-decoration: underline; }
     animation: shimmer 1.5s infinite;
 }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+/* ── Copy Button & Toast Notification (#516) ────────────────────── */
+.message-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    gap: 12px;
+}
+
+.btn-copy-response {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-xs);
+    font-size: 0.8rem;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-copy-response:hover {
+    color: var(--accent-blue);
+    background: rgba(91, 138, 245, 0.1);
+}
+
+.btn-copy-response.copied {
+    color: var(--accent-green);
+    background: rgba(78, 203, 113, 0.1);
+}
+
+#toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast-message {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 12px 18px;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: auto;
+}
+
+.toast-message.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast-message.success i {
+    color: var(--accent-green);
+}
+
+.toast-message.error {
+    border-color: var(--accent-red);
+}
+
+.toast-message.error i {
+    color: var(--accent-red);
+}
+
