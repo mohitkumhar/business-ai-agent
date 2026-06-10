@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, HealthScores as HealthScoresData } from "@/lib/api";
 import { HeartPulseIcon } from "./Icons";
 import { useTheme } from "@/context/ThemeContext";
+import { LoadingSpinner } from "./LoadingStates";
 
 function getScoreColor(score: number): string {
   if (score >= 75) return "#10B981"; // Excellent
@@ -48,8 +49,8 @@ export default function HealthScores() {
 
       <div className="flex-1">
         {loading ? (
-          <div className="flex items-center justify-center h-full text-sm" style={{ color: "var(--text-muted)" }}>
-            Calculating scores...
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, width: "100%" }}>
+            <LoadingSpinner label="Calculating scores…" />
           </div>
         ) : data && data.scores.length > 0 ? (
           <div className="space-y-6">
