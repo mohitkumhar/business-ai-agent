@@ -89,7 +89,9 @@ def get_current_business_id():
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_signup():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -133,7 +135,9 @@ def auth_signup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid or missing JSON payload"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
