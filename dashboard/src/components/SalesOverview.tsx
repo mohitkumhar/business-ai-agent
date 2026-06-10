@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { api, SalesTarget } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAsyncData } from "@/lib/useAsyncData";
+import { LoadingSpinner } from "./LoadingStates";
 
 function SemiCircleGauge({ percentage, isDark }: { percentage: number; isDark: boolean }) {
   const size = 200;
@@ -88,17 +90,15 @@ export default function SalesOverview() {
 
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const [data, setData] = useState<SalesTarget | null>(null);
-  const [loading, setLoading] = useState(true);
+  const loadSalesTarget = useCallback(
+  () => api.getSalesTarget(period),
+  [period],
+);
 
-  useEffect(() => {
-    setLoading(true);
-    api.getSalesTrend(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
-
+const { data, loading } = useAsyncData<SalesTarget>(
+  `sales-overview:${period}:${dataVersion}`,
+  loadSalesTarget,
+);
   const sales = data?.current_revenue ?? 0;
   const target = data?.target_revenue ?? 0;
   const percentage = data?.percentage ?? 0;
@@ -119,8 +119,8 @@ export default function SalesOverview() {
       </div>
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>
-          Loading metrics...
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, padding: "40px 0", width: "100%" }}>
+          <LoadingSpinner label="Loading sales metrics…" />
         </div>
       ) : (
         <div className="flex flex-col flex-1">

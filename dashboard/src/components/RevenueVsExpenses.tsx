@@ -1,10 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, RevenueVsExpense } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 import { BarChartIcon } from "./Icons";
+import { LoadingSpinner } from "./LoadingStates";
 
 Chart.register(...registerables);
 
@@ -14,16 +16,14 @@ export default function RevenueVsExpenses() {
   const { theme } = useTheme();
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const [data, setData] = useState<RevenueVsExpense | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.getRevenueVsExpense(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
+  const loadRevenueVsExpense = useCallback(
+    () => api.getRevenueVsExpense(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<RevenueVsExpense>(
+    `revenue-vs-expense:${period}:${dataVersion}`,
+    loadRevenueVsExpense,
+  );
 
   useEffect(() => {
     if (!data || !chartRef.current) return;
@@ -120,7 +120,11 @@ export default function RevenueVsExpenses() {
         </div>
       </div>
       <div className="chart-body">
-        {loading ? <div className="loading-spinner">Loading...</div> : <canvas ref={chartRef}></canvas>}
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 260, width: "100%" }}>
+            <LoadingSpinner label="Loading revenue data…" />
+          </div>
+        ) : <canvas ref={chartRef}></canvas>}
       </div>
     </div>
   );

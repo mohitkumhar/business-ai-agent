@@ -22,13 +22,18 @@ Add your token to the `agent_code/.env` file:
 ```env
 # Telegram Bot Token
 TELEGRAM_BOT_TOKEN=your_bot_api_token_here
+
+# Shared webhook secret sent by Telegram in X-Telegram-Bot-Api-Secret-Token
+TELEGRAM_WEBHOOK_SECRET=replace-with-a-high-entropy-telegram-webhook-secret
 ```
 
 ### Step 3: Set Up the Webhook
-You need to tell Telegram where to send messages. Run the following command in your terminal (replace `<your-domain>` and `<your-token>`):
+You need to tell Telegram where to send messages. Register the same secret from `TELEGRAM_WEBHOOK_SECRET` with Telegram so the backend can verify incoming updates before processing them. Run the following command in your terminal (replace `<your-domain>`, `<your-token>`, and `<your-secret>`):
 
 ```bash
-curl -X POST "https://api.telegram.org/bot<your-token>/setWebhook?url=https://<your-domain>/api/v1/telegram/webhook"
+curl -X POST "https://api.telegram.org/bot<your-token>/setWebhook" \
+  -d "url=https://<your-domain>/api/v1/telegram/webhook" \
+  -d "secret_token=<your-secret>"
 ```
 
 ---
@@ -52,6 +57,7 @@ Send a **text message** to the bot:
 ## 3. Technical Implementation Details
 
 - **Webhook Endpoint**: `POST /api/v1/telegram/webhook` in `agent_code/app.py`.
+- **Webhook Authenticity**: The endpoint requires `X-Telegram-Bot-Api-Secret-Token` to match `TELEGRAM_WEBHOOK_SECRET`.
 - **Core Functions**:
     - `_download_telegram_file(file_id)`: Uses `getFile` and the file path to fetch image blobs from Telegram servers.
     - `_send_telegram_text(chat_id, text)`: Sends asynchronous replies back to your Telegram chat.
