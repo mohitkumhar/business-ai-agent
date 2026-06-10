@@ -4,6 +4,7 @@ import { Chart, registerables } from "chart.js";
 import { api, FinancialOverview } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { LoadingSpinner } from "./LoadingStates";
 
 Chart.register(...registerables);
 
@@ -207,7 +208,9 @@ export default function RevenueInsights() {
       </div>
       <div className="chart-body">
         {loading ? (
-          <div className="loading-spinner">Loading chart data...</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 260, width: "100%" }}>
+            <LoadingSpinner label="Loading financial data…" />
+          </div>
         ) : (
           <canvas ref={chartRef}></canvas>
         )}

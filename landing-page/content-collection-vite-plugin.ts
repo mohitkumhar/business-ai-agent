@@ -19,6 +19,14 @@ function resolveConfigPath(root: string, configPath: string) {
   return configPath;
 }
 
+function debugContentCollections(message: string, ...args: unknown[]) {
+  if (process.env.CONTENT_COLLECTIONS_DEBUG !== "true") {
+    return;
+  }
+
+  console.debug(`[content-collections] ${message}`, ...args);
+}
+
 export default function contentCollectionsPlugin(
   options: Partial<Options> = {},
 ): Plugin {
@@ -79,8 +87,8 @@ export default function contentCollectionsPlugin(
         config.root,
         pluginOptions.configPath,
       );
-      console.log(
-        "Starting content-collections with config",
+      debugContentCollections(
+        "Starting with config",
         path.relative(process.cwd(), configPath),
       );
 
@@ -94,7 +102,7 @@ export default function contentCollectionsPlugin(
       if (!builder) {
         return;
       }
-      console.log("Start initial build");
+      debugContentCollections("Start initial build");
       await builder.build();
       return;
     },
@@ -103,7 +111,7 @@ export default function contentCollectionsPlugin(
       if (!builder) {
         return;
       }
-      console.log("Start watching");
+      debugContentCollections("Start watching");
       builder.watch();
       return;
     },
