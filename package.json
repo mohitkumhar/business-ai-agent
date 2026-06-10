@@ -1,0 +1,8 @@
+{
+  "name": "intelligent-business-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"web/static/js/__tests__/*.test.js\""
+  }
+}
