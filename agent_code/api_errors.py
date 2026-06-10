@@ -2,8 +2,10 @@ from __future__ import annotations
 import uuid
 
 from flask import jsonify
+from flask import g
 
 from logger.logger import logger
+from request_ids import get_request_id
 
 
 SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try again later."

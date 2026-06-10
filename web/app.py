@@ -245,6 +245,15 @@ def _pg_query(sql, params=None):
         conn.close()
 
 
+SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try again later."
+
+
+def _internal_error_response(exc: Exception | None = None, *, field: str = "error"):
+    if exc is not None:
+        app.logger.error("Unhandled API exception: %s", exc, exc_info=True)
+    return jsonify({field: SAFE_INTERNAL_ERROR_MESSAGE}), 500
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Page routes
 # ═══════════════════════════════════════════════════════════════════
@@ -311,7 +320,7 @@ def api_dashboard_summary():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/revenue-vs-expense")
@@ -349,7 +358,7 @@ def api_revenue_vs_expense():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/transactions-by-category")
@@ -374,7 +383,7 @@ def api_transactions_by_category():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/sales-trend")
@@ -402,7 +411,7 @@ def api_sales_trend():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/alerts-by-severity")
@@ -424,7 +433,7 @@ def api_alerts_by_severity():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/health-scores")
@@ -461,7 +470,7 @@ def api_health_scores():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/top-products")
@@ -487,7 +496,7 @@ def api_top_products():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/financial-overview")
@@ -519,7 +528,7 @@ def api_financial_overview():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/employee-stats")
@@ -541,7 +550,7 @@ def api_employee_stats():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/recent-transactions")
@@ -573,7 +582,7 @@ def api_recent_transactions():
                 r["transaction_date"] = r["transaction_date"].isoformat()
         return jsonify({"transactions": rows})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/sales-target")
@@ -606,7 +615,7 @@ def api_sales_target():
             })
         return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/categories")
@@ -616,7 +625,7 @@ def api_categories():
         rows = _pg_query("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -636,8 +645,14 @@ def api_list_conversations():
 @app.route("/api/chat/conversations", methods=["POST"])
 def api_create_conversation():
     """Create a new conversation."""
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    else:
+        data = {}
     conv_id = str(uuid.uuid4())
-    title = request.json.get("title", "New Chat") if request.is_json else "New Chat"
+    title = data.get("title", "New Chat") if data else "New Chat"
     db = _get_chat_db()
     db.execute(
         "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
@@ -674,7 +689,9 @@ def api_chat_send():
     Send a message to the agent and store the exchange.
     Expects JSON: { conversation_id, message }
     """
-    data = request.get_json(force=True)
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     conv_id = data.get("conversation_id")
     user_msg = data.get("message", "").strip()
 
