@@ -1,26 +1,18 @@
 version: 2
-
 updates:
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/agent_code"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
-
   - package-ecosystem: "npm"
     directory: "/dashboard"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
-
   - package-ecosystem: "npm"
     directory: "/landing-page"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
