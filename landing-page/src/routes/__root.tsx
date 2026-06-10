@@ -52,6 +52,8 @@ export const Route = createRootRoute({
   }),
 });
 
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
 function RootComponent() {
   const { isHeaderOpened } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -76,22 +78,24 @@ function RootComponent() {
         <HeadContent />
       </head>
       <body>
-        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-          <div className="isolate flex flex-col items-stretch">
-            <div className="fixed z-10 top-4 md:bottom-12 md:top-auto w-full">
-              <Header
-                onOpen={openHeader}
-                onClose={closeHeader}
-                isOpened={isHeaderOpened}
-              />
-            </div>
-            <Outlet />
+        <ErrorBoundary label="Landing Page">
+          <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+            <div className="isolate flex flex-col items-stretch">
+              <div className="fixed z-10 top-4 md:bottom-12 md:top-auto w-full">
+                <Header
+                  onOpen={openHeader}
+                  onClose={closeHeader}
+                  isOpened={isHeaderOpened}
+                />
+              </div>
+              <Outlet />
 
-            <Footer />
-          </div>
-          <FloatingChatbot />
-          <Scripts />
-        </GoogleOAuthProvider>
+              <Footer />
+            </div>
+            <FloatingChatbot />
+            <Scripts />
+          </GoogleOAuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
