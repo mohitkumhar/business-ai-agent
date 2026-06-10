@@ -6,6 +6,7 @@ import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { LineChartIcon } from "./Icons";
+import { LoadingSpinner } from "./LoadingStates";
 
 Chart.register(...registerables);
 
@@ -113,7 +114,11 @@ export default function SalesTrend() {
         </div>
       </div>
       <div className="chart-body">
-        {loading ? <div className="loading-spinner">Loading...</div> : <canvas ref={chartRef}></canvas>}
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 260, width: "100%" }}>
+            <LoadingSpinner label="Loading sales data…" />
+          </div>
+        ) : <canvas ref={chartRef}></canvas>}
       </div>
     </div>
   );
