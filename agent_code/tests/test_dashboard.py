@@ -110,17 +110,17 @@ def test_dashboard_export_csv_resolves_business_from_email(client, app_module, m
     assert calls[0][1] == ("owner@example.com",)
     assert calls[1][1][0] == "business-email"
 
-def test_forecast_flat_trend_constant_history():
-    import numpy as np
-    # Constant arrays can produce slopes like 2.88e-16 instead of exactly 0
-    values = [100.0] * 10
-    x = np.arange(len(values))
-    y = np.array(values, dtype=float)
-    z = np.polyfit(x, y, 1)
-    if np.isclose(z[0], 0.0):
-        trend = "flat"
-    elif z[0] > 0:
-        trend = "up"
-    else:
-        trend = "down"
-    assert trend == "flat"
+def test_forecast_returns_flat_trend_for_constant_history(client, app_module, auth_headers, monkeypatch):
+    from datetime import date
+    constant_rows = [
+        {"transaction_date": date(2026, 1, i + 1), "amount": 100.0}
+        for i in range(10)
+    ]
+    monkeypatch.setattr(app_module, "execute_read_query_params", lambda *args, **kwargs: constant_rows)
+
+    response = client.get("/api/dashboard/forecast", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["trend_direction"] == "flat"
+    assert payload["trend_percent"] == 0
