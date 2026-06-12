@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -38,12 +40,27 @@ from langgraph.types import Command
 from transaction_import import parse_csv_bytes, parse_xlsx_bytes
 from ocr_processor import extract_transactions_from_image
 
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 CORS(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
 
 if "agent_requests_total" in REGISTRY._names_to_collectors:
     AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
@@ -76,7 +93,9 @@ else:
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
+WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
 
 
@@ -260,7 +279,7 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://graph.facebook.com/v21.0/{media_id}",
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=30,
+        timeout=(5, 30),
     )
     meta.raise_for_status()
     meta_json = meta.json()
@@ -271,10 +290,26 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     blob = requests.get(
         media_url,
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=60,
+        timeout=(5, 60),
     )
     blob.raise_for_status()
     return blob.content, mime_type
+
+
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not WHATSAPP_APP_SECRET or not signature_header:
+        return False
+
+    scheme, separator, received_signature = signature_header.partition("=")
+    if separator != "=" or scheme != "sha256" or not received_signature:
+        return False
+
+    expected_signature = hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
 
 
 def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
@@ -283,7 +318,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
         params={"file_id": file_id},
-        timeout=30,
+        timeout=(5, 30),
     )
     meta.raise_for_status()
     info = meta.json().get("result") or {}
@@ -291,7 +326,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     if not file_path:
         raise ValueError("Telegram getFile missing file_path.")
     url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
-    blob = requests.get(url, timeout=60)
+    blob = requests.get(url, timeout=(5, 60))
     blob.raise_for_status()
     return blob.content, "image/jpeg"
 
@@ -465,7 +500,7 @@ def _send_whatsapp_text(to_number: str, text: str):
             "Content-Type": "application/json",
         },
         json=body,
-        timeout=30,
+        timeout=(5, 30),
     ).raise_for_status()
 
 
@@ -477,10 +512,21 @@ def _send_telegram_text(chat_id: int, text: str):
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": chat_id, "text": text[:4096]},
-            timeout=30,
+            timeout=(5, 30),
         ).raise_for_status()
-    except Exception as exc:
-        logger.error("Failed to send Telegram message: %s", exc, exc_info=True)
+
+    except requests.Timeout:
+        logger.error(
+            "Telegram API request timed out",
+            exc_info=True,
+        )
+
+    except requests.RequestException as exc:
+        logger.error(
+            "Failed to send Telegram message: %s",
+            exc,
+            exc_info=True,
+        )
 
 
 @app.route("/")
@@ -496,6 +542,8 @@ def metrics_endpoint():
 @app.route("/api/v1/query", methods=["POST", "GET"])
 def query_agent():
     input_query = request.args.get("input-query", "")
+    if input_query:
+        input_query = sanitize_input(input_query)    
     thread_id = request.args.get("thread-id", "")
     business_id = request.args.get("business-id", "") or ""
     if not input_query:
@@ -513,7 +561,45 @@ def query_agent():
 
 @app.route("/api/v1/billing/analyze-all", methods=["POST"])
 def billing_analyze_all():
-    data = request.get_json(force=True, silent=True)
+    """
+    Analyze all billing data for the business and return an AI-generated summary.
+
+    This endpoint triggers a comprehensive analysis of the business's financial
+    transactions, including revenue, expenses, and recent activity. It uses the
+    LLM to answer a user-provided question or a default analysis prompt.
+
+    Args:
+        The request body should be a JSON object with the following optional fields:
+        - question (str): The specific question or instruction for the analysis.
+          Defaults to "Analyze all business billing data".
+        - business_id (str): The business identifier. If not provided, the function
+          resolves the default business ID from the environment or the first business
+          in the database.
+
+    Returns:
+        JSON response with the following structure:
+        - business_id (str): The business ID used for the analysis.
+        - analysis (str): The LLM-generated analysis text.
+
+    Raises:
+        400: If the request body is invalid or missing JSON.
+        500: If an internal error occurs during database queries or LLM invocation.
+
+    Example:
+        Request:
+        POST /api/v1/billing/analyze-all
+        {
+            "question": "What are the top expense categories this month?",
+            "business_id": "123e4567-e89b-12d3-a456-426614174000"
+        }
+
+        Response:
+        {
+            "business_id": "123e4567-e89b-12d3-a456-426614174000",
+            "analysis": "The top expense category is 'Office Supplies' with $4,500..."
+        }
+    """
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     question = (data.get("question") or "Analyze all business billing data").strip()
@@ -524,7 +610,6 @@ def billing_analyze_all():
     except Exception as exc:
         logger.error("Analyze all failed: %s", exc, exc_info=True)
         return internal_error_response(exc)
-
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
@@ -538,7 +623,11 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
-    data = request.get_json(force=True, silent=True)
+    raw_body = request.get_data(cache=True)
+    if not _verify_whatsapp_signature(raw_body, request.headers.get("X-Hub-Signature-256")):
+        return jsonify({"error": "Invalid WhatsApp signature"}), 403
+
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
@@ -593,7 +682,15 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
-    data = request.get_json(force=True, silent=True)
+    supplied_secret = (
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    ).strip()
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(
+        supplied_secret, TELEGRAM_WEBHOOK_SECRET
+    ):
+        return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
+
+    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
@@ -678,7 +775,7 @@ def increment_assigned_count(username: str):
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
     try:
-        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
+        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=(5, 20))
         counts = get_assigned_counts()
         if res.status_code != 200:
             logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
@@ -695,6 +792,12 @@ def get_employees():
     
        
         contributors = res.json()
+
+        if not isinstance(contributors, list):
+            raise ValueError(
+                f"Unexpected contributors payload type: {type(contributors).__name__}"
+            )
+
         return jsonify(
             {
                 "employees": [
@@ -707,7 +810,25 @@ def get_employees():
                 ]
             }
         )
-    except Exception as exc:
+    except requests.Timeout as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "GitHub contributors API timed out request_id=%s repo=%s",
+            request_id,
+            repo,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
+    except requests.RequestException as exc:
         request_id = get_request_id(getattr(g, "request_id", None))
         logger.error(
             "Employees API failed request_id=%s repo=%s: %s",
@@ -727,8 +848,28 @@ def get_employees():
             500,
         )
 
+    except Exception as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "Failed to process GitHub contributors response request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
 @app.route("/api/v1/escalate", methods=["POST"])
+@token_required
 def escalate_to_slack():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -1232,6 +1373,16 @@ def api_forecast():
         """, (bid, cutoff))
         
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
+        
+        if not hist:
+            return jsonify({
+                "historical": [], 
+                "forecast": [], 
+                "trend_direction": "flat", 
+                "trend_percent": 0,
+                "insight": "No revenue data available for forecasting yet."
+            })
+        
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
@@ -1292,6 +1443,7 @@ def api_chat_send():
     return Response(stream_with_context(iter_query_sse(msg, conv_id)), mimetype="text/event-stream")
 
 _init_chat_db()
+_initialize_whatsapp_tables_safe()
 
 if __name__ == "__main__":
     logger.info("Starting Flask development server.")
