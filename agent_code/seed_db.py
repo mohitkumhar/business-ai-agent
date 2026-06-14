@@ -7,15 +7,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:root@db:5432/test_db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://business_ai_user:replace-with-a-local-db-password@db:5432/test_db",
+)
 
 def get_db_connection():
-    return psycopg2.connect(
-    host="db",
-    database="test_db",
-    user="admin",
-    password="root"
-)
+    return psycopg2.connect(DATABASE_URL)
 
 def seed_data():
     conn = get_db_connection()

@@ -43,5 +43,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run tests
+        run: npm test
+
       - name: Build landing page
         run: npm run build

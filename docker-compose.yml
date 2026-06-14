@@ -1,4 +1,14 @@
 services:
+  compose-env-check:
+    image: alpine:3.20
+    container_name: compose-env-check
+    restart: "no"
+    env_file:
+      - ./.env
+    volumes:
+      - ./scripts/validate-compose-env.sh:/usr/local/bin/validate-compose-env.sh:ro
+    command: ["/bin/sh", "/usr/local/bin/validate-compose-env.sh"]
+
   db:
     image: postgres:16
     container_name: postgres_db
@@ -8,9 +18,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-test_db}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    depends_on:
+      compose-env-check:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
@@ -25,39 +38,42 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
-      - "5050:80"
+      - "127.0.0.1:${PGADMIN_HOST_PORT:-5050}:80"
+    depends_on:
+      compose-env-check:
+        condition: service_completed_successfully
 
-  # landing-page:
-  #   build:
-  #     context: ./landing-page
-  #     dockerfile: Dockerfile
-  #   container_name: landing-page
-  #   restart: always
-  #   ports:
-  #     - "5173:5173"
-  #   volumes:
-  #     - ./landing-page:/app
-  #     - /app/node_modules
-  #   environment:
-  #     - VITE_API_URL=http://backend:5000
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - ENCRYPTION_SECRET=12345678901234567890123456789012
-  #     - NEXTAUTH_URL=http://localhost:5173
-  #     - NEXT_PUBLIC_VIEWER_URL=http://localhost:5173
-  #     # - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
-  #   depends_on:
-  #     backend:
-  #       condition: service_healthy
-  #     db:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "wget -qO- http://localhost:5173 >/dev/null 2>&1 || exit 1"]
-  #     interval: 15s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 30s
-  #   stdin_open: true
-  #   tty: true
+  landing-page:
+    build:
+      context: ./landing-page
+      dockerfile: Dockerfile
+    container_name: landing-page
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./landing-page:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://backend:5000
+      - DATABASE_URL=${DATABASE_URL}
+      - ENCRYPTION_SECRET=12345678901234567890123456789012
+      - NEXTAUTH_URL=http://localhost:5173
+      - NEXT_PUBLIC_VIEWER_URL=http://localhost:5173
+      # - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5173 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stdin_open: true
+    tty: true
 
   backend:
     build:

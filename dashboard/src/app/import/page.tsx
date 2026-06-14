@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DragEvent } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -24,12 +24,27 @@ function getUserEmail(): string | null {
 
 type TabId = "excel" | "accounting" | "manual" | "none";
 
+type PreviewTransaction = {
+  amount?: number | string;
+  category?: string;
+  date?: string;
+  description?: string;
+  type?: string;
+};
+
+type NotebookImportResponse = {
+  error?: string;
+  hash?: string;
+  message?: string;
+  transactions?: PreviewTransaction[];
+};
+
 export default function ImportPage() {
   const [activeTab, setActiveTab] = useState<TabId>("manual");
   const [flash, setFlash] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [previewData, setPreviewData] = useState<any[] | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewTransaction[] | null>(null);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const router = useRouter();
 
@@ -84,11 +99,11 @@ export default function ImportPage() {
         headers,
         body: fd,
       });
-      const data = await res.json();
+      const data = (await res.json()) as NotebookImportResponse;
 
       if (res.ok) {
-        setPreviewData(data.transactions);
-        setPreviewHash(data.hash);
+        setPreviewData(data.transactions || []);
+        setPreviewHash(data.hash || null);
         setFlash({ kind: "success", text: "Handwriting extracted! Please review below." });
       } else {
         setFlash({ kind: "error", text: data.error || "Processing failed." });
@@ -202,7 +217,7 @@ export default function ImportPage() {
               className={`import-tab-btn ${activeTab === "none" ? "active" : ""}`}
               onClick={() => router.push("/")}
             >
-              Don't track
+              Don&apos;t track
             </button>
           </div>
 
@@ -247,7 +262,7 @@ export default function ImportPage() {
               ) : (
                 <>
                   <p className="manual-upload-tagline">
-                    "No problem! Take a photo of your latest ledger entries and our AI will extract the data for you."
+                    &quot;No problem! Take a photo of your latest ledger entries and our AI will extract the data for you.&quot;
                   </p>
 
                   <div
@@ -328,7 +343,7 @@ export default function ImportPage() {
                   {activeTab === "excel" ? "Spreadsheet Upload" : "Accounting Software Export"}
                 </h3>
                 <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24 }}>
-                  Drop your exported .csv or .xlsx file here to sync transactions. Ensure you have 'date' and 'amount'
+                  Drop your exported .csv or .xlsx file here to sync transactions. Ensure you have &apos;date&apos; and &apos;amount&apos;
                   columns.
                 </p>
 
@@ -401,4 +416,3 @@ export default function ImportPage() {
     </div>
   );
 }
-

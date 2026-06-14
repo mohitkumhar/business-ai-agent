@@ -12,8 +12,12 @@ import uuid
 import time
 import sqlite3
 import requests
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import wraps
+from typing import Any, Optional
 
+import jwt
 import psycopg2
 import psycopg2.extras
 from flask import (
@@ -49,6 +53,64 @@ CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key-change-me")
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
+
+
+@dataclass(frozen=True)
+class AuthError(Exception):
+    message: str
+    status_code: int = 401
+
+
+def _extract_bearer_token(auth_header: Optional[str]) -> str:
+    if not auth_header:
+        raise AuthError("Authorization header is required")
+
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise AuthError("Authorization header must use Bearer token")
+
+    return token.strip()
+
+
+def _decode_jwt_identity(auth_header: Optional[str], secret_key: str) -> dict[str, Any]:
+    token = _extract_bearer_token(auth_header)
+
+    try:
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthError("Token has expired") from exc
+    except jwt.InvalidTokenError as exc:
+        raise AuthError("Invalid authentication token") from exc
+
+    user_id = payload.get("user_id")
+    business_id = payload.get("business_id")
+    if not user_id or not business_id:
+        raise AuthError("Token is missing required identity claims")
+
+    return {"user_id": str(user_id), "business_id": str(business_id)}
+
+
+def token_required(route_handler):
+    @wraps(route_handler)
+    def decorated(*args, **kwargs):
+        try:
+            identity = _decode_jwt_identity(
+                request.headers.get("Authorization"),
+                app.config["JWT_SECRET_KEY"],
+            )
+        except AuthError as exc:
+            return jsonify({"message": exc.message}), exc.status_code
+
+        g.user_id = identity["user_id"]
+        g.business_id = identity["business_id"]
+        return route_handler(*args, **kwargs)
+
+    return decorated
+
+
+def get_current_business_id():
+    return getattr(g, "business_id", None)
 
 # ═══════════════════════════════════════════════════════════════════
 # Prometheus metrics
@@ -183,6 +245,15 @@ def _pg_query(sql, params=None):
         conn.close()
 
 
+SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try again later."
+
+
+def _internal_error_response(exc: Exception | None = None, *, field: str = "error"):
+    if exc is not None:
+        app.logger.error("Unhandled API exception: %s", exc, exc_info=True)
+    return jsonify({field: SAFE_INTERNAL_ERROR_MESSAGE}), 500
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Page routes
 # ═══════════════════════════════════════════════════════════════════
@@ -208,9 +279,11 @@ def chatbot(conv_id=None):
 
 
 @app.route("/api/dashboard/summary")
+@token_required
 def api_dashboard_summary():
     """KPI summary cards – totals for last 24 h."""
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    business_id = get_current_business_id()
     try:
         txn = _pg_query(
             """
@@ -219,17 +292,20 @@ def api_dashboard_summary():
                 COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS total_expenses,
                 COUNT(*) AS total_transactions
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         alerts = _pg_query(
             """
             SELECT COUNT(*) AS active_alerts
             FROM alerts
-            WHERE status = 'Active' AND created_at >= %s
+            WHERE business_id = %s
+              AND status = 'Active'
+              AND created_at >= %s
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         row = txn[0] if txn else {}
         alert_row = alerts[0] if alerts else {}
@@ -244,7 +320,7 @@ def api_dashboard_summary():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/revenue-vs-expense")
@@ -282,7 +358,7 @@ def api_revenue_vs_expense():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/transactions-by-category")
@@ -307,7 +383,7 @@ def api_transactions_by_category():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/sales-trend")
@@ -335,7 +411,7 @@ def api_sales_trend():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/alerts-by-severity")
@@ -357,7 +433,7 @@ def api_alerts_by_severity():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/health-scores")
@@ -394,7 +470,7 @@ def api_health_scores():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/top-products")
@@ -420,7 +496,7 @@ def api_top_products():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/financial-overview")
@@ -452,7 +528,7 @@ def api_financial_overview():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/employee-stats")
@@ -474,7 +550,7 @@ def api_employee_stats():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/recent-transactions")
@@ -506,7 +582,7 @@ def api_recent_transactions():
                 r["transaction_date"] = r["transaction_date"].isoformat()
         return jsonify({"transactions": rows})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/sales-target")
@@ -539,7 +615,7 @@ def api_sales_target():
             })
         return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 @app.route("/api/dashboard/categories")
@@ -549,7 +625,7 @@ def api_categories():
         rows = _pg_query("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error_response(e)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -569,8 +645,14 @@ def api_list_conversations():
 @app.route("/api/chat/conversations", methods=["POST"])
 def api_create_conversation():
     """Create a new conversation."""
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid or missing JSON payload"}), 400
+    else:
+        data = {}
     conv_id = str(uuid.uuid4())
-    title = request.json.get("title", "New Chat") if request.is_json else "New Chat"
+    title = data.get("title", "New Chat") if data else "New Chat"
     db = _get_chat_db()
     db.execute(
         "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
@@ -607,7 +689,9 @@ def api_chat_send():
     Send a message to the agent and store the exchange.
     Expects JSON: { conversation_id, message }
     """
-    data = request.get_json(force=True)
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     conv_id = data.get("conversation_id")
     user_msg = data.get("message", "").strip()
 
