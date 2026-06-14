@@ -7,7 +7,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "lint": "eslint",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch"
@@ -37,3 +36,4 @@
     "ts-jest": "^29.4.11",
     "typescript": "^5"
   }
+}
