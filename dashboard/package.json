@@ -36,9 +36,4 @@
     "tailwindcss": "^4",
     "ts-jest": "^29.4.11",
     "typescript": "^5"
-  },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node"
   }
-}
