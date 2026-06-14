@@ -515,7 +515,7 @@
 
         <div class="message-content"></div>
 
-        <button class="copy-btn" onclick="copyMessage(this)">
+        <button class="copy-btn">
             Copy
         </button>
 
@@ -679,9 +679,13 @@
         }
     })();
 })();
-async function copyMessage(button) {
-    const text =
-        button.parentElement.querySelector(".message-content").innerText;
+document.addEventListener("click", async (e) => {
+    if (!e.target.classList.contains("copy-btn")) return;
+
+    const button = e.target;
+    const text = button.parentElement
+        .querySelector(".message-content")
+        .innerText;
 
     try {
         await navigator.clipboard.writeText(text);
@@ -691,8 +695,7 @@ async function copyMessage(button) {
         setTimeout(() => {
             button.innerText = "Copy";
         }, 1500);
-
     } catch (err) {
         console.error("Copy failed:", err);
     }
-}
+});
