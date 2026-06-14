@@ -522,7 +522,6 @@
         <div class="message-time">${timeStr}</div>
     </div>
 `;
-        `;
         chatMessages.appendChild(bubble);
         scrollToBottom();
         return {
