@@ -1,4 +1,6 @@
 "use client";
+import type { CompletedNode, AgentStatus, SyncStatus } from "@/types/chat";
+import { friendlyNodeName, relativeTime } from "@/lib/chatUtils";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
@@ -25,27 +27,6 @@ import {
 } from "@/lib/chatHistory";
 import MessageRenderer from "@/components/MessageRenderer";
 
-interface CompletedNode {
-  name: string;
-  friendlyName: string;
-}
-
-type AgentStatus =
-  | { kind: "idle" }
-  | { kind: "connecting" }
-  | { kind: "streaming"; label: string; node?: string }
-  | { kind: "clarification"; text: string };
-
-function friendlyNodeName(node: string): string {
-  return node.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-type SyncStatus =
-  | { kind: "loading"; label: string }
-  | { kind: "syncing"; label: string }
-  | { kind: "synced"; label: string }
-  | { kind: "local"; label: string };
-
 /* ─── Component ─── */
 export default function ChatbotPage() {
   const [input, setInput] = useState("");
@@ -56,23 +37,19 @@ export default function ChatbotPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [completedNodes, setCompletedNodes] = useState<CompletedNode[]>([]);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
-
   const [employees, setEmployees] = useState<{login: string, avatar_url?: string, assigned_issues: number}[]>([]);
   const [escalatingMsgId, setEscalatingMsgId] = useState<number | null>(null);
-  
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const showToast = useCallback((message: string, type: "success" | "error") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 5000);
-}, []);
+  }, []);
 
   useEffect(() => {
     fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
       .then(r => r.json())
-      .then(d => {
-         if (d.employees) setEmployees(d.employees);
-      })
+      .then(d => { if (d.employees) setEmployees(d.employees); })
       .catch(console.error);
   }, []);
 
@@ -80,6 +57,7 @@ export default function ChatbotPage() {
   const abortRef = useRef<AbortController | null>(null);
   const lastStreamActivityRef = useRef<number>(0);
   const streamWatchdogFiredRef = useRef(false);
+
   const applyConversationState = useCallback((nextConversations: ChatConversation[], preferredId?: string | null) => {
     if (nextConversations.length === 0) {
       const fresh = createConversation();
@@ -87,7 +65,6 @@ export default function ChatbotPage() {
       setActiveId(fresh.id);
       return;
     }
-
     setConversations(nextConversations);
     setActiveId((current) => {
       const desiredId = preferredId ?? current;
@@ -103,17 +80,13 @@ export default function ChatbotPage() {
       const conversationsToSync = sourceConversations.filter(
         (conversation) => conversation.messages.length > 0 && !pendingDeletes.includes(conversation.id)
       );
-
       if (pendingDeletes.length === 0 && conversationsToSync.length === 0) {
         setSyncStatus({ kind: "synced", label: "Synced" });
         return;
       }
-
       setSyncStatus({ kind: "syncing", label });
-
       const remainingDeletes: string[] = [];
       let hadSyncError = false;
-
       for (const conversationId of pendingDeletes) {
         try {
           await removeChatConversation(conversationId);
@@ -122,9 +95,7 @@ export default function ChatbotPage() {
           remainingDeletes.push(conversationId);
         }
       }
-
       savePendingDeletes(remainingDeletes);
-
       for (const conversation of conversationsToSync) {
         try {
           await upsertChatConversation(conversation);
@@ -132,7 +103,6 @@ export default function ChatbotPage() {
           hadSyncError = true;
         }
       }
-
       setSyncStatus(
         hadSyncError
           ? { kind: "local", label: "Offline (Local only)" }
@@ -142,20 +112,16 @@ export default function ChatbotPage() {
     []
   );
 
-  /* Load from localStorage on mount, then reconcile with backend */
   useEffect(() => {
     const pendingDeletes = loadPendingDeletes();
     const localConversations = loadConversations().filter(
       (conversation) => !pendingDeletes.includes(conversation.id)
     );
-
     applyConversationState(localConversations);
     if (localConversations.length > 0 || pendingDeletes.length > 0) {
       setSyncStatus({ kind: "local", label: "Syncing cached history…" });
     }
-
     let cancelled = false;
-
     const hydrateFromBackend = async () => {
       try {
         setSyncStatus({ kind: "syncing", label: "Syncing history…" });
@@ -163,7 +129,6 @@ export default function ChatbotPage() {
           (conversation) => !pendingDeletes.includes(conversation.id)
         );
         if (cancelled) return;
-
         const mergedConversations = mergeConversations(remoteConversations, localConversations);
         applyConversationState(mergedConversations);
         await syncStoredHistory(mergedConversations);
@@ -173,22 +138,13 @@ export default function ChatbotPage() {
         }
       }
     };
-
     void hydrateFromBackend();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [applyConversationState, syncStoredHistory]);
 
   useEffect(() => {
-    const handleOnline = () => {
-      void syncStoredHistory(conversations, "Back online — syncing…");
-    };
-    const handleOffline = () => {
-      setSyncStatus({ kind: "local", label: "Offline (Local only)" });
-    };
-
+    const handleOnline = () => { void syncStoredHistory(conversations, "Back online — syncing…"); };
+    const handleOffline = () => { setSyncStatus({ kind: "local", label: "Offline (Local only)" }); };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     return () => {
@@ -197,7 +153,6 @@ export default function ChatbotPage() {
     };
   }, [conversations, syncStoredHistory]);
 
-  /* Persist whenever conversations change */
   useEffect(() => {
     if (conversations.length > 0) {
       const result = saveConversations(conversations);
@@ -217,13 +172,11 @@ export default function ChatbotPage() {
   );
   const messages = useMemo(() => activeConv?.messages ?? [], [activeConv]);
 
-  /* Auto-scroll */
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
   useEffect(scrollToBottom, [messages, status, scrollToBottom]);
 
-  /* Conversation mutators */
   const updateActiveMessages = useCallback(
     (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
       setConversations((convs) =>
@@ -246,7 +199,6 @@ export default function ChatbotPage() {
     [activeId]
   );
 
-  /* New / switch / delete chat */
   const startNewChat = useCallback(() => {
     if (status.kind !== "idle") return;
     const fresh = createConversation();
@@ -260,32 +212,23 @@ export default function ChatbotPage() {
   const confirmEscalate = useCallback(async (msgIndex: number, assigneeName?: string) => {
     const aiMsg = messages[msgIndex];
     if (!aiMsg || aiMsg.role !== "assistant") return;
-    
     let query = "No query explicitly found for this response.";
     for (let i = msgIndex - 1; i >= 0; i--) {
-       if (messages[i].role === "user") {
-           query = messages[i].content;
-           break;
-       }
+      if (messages[i].role === "user") { query = messages[i].content; break; }
     }
     const summary = messages.slice(0, msgIndex + 1).map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n").slice(-2500);
-
     try {
       setEscalatingMsgId(null);
       const res = await fetch("/api/escalate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({ query: query, summary: summary, assignee_name: assigneeName }),
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ query, summary, assignee_name: assigneeName }),
       });
       if (!res.ok) {
         const err = await res.json();
-    showToast(`Escalation failed: ${err.error || "Unknown error"}`, "error");
+        showToast(`Escalation failed: ${err.error || "Unknown error"}`, "error");
       } else {
-      showToast("Conversation escalated to Slack successfully!", "success");
-        // Refresh employees to bump issue counts
+        showToast("Conversation escalated to Slack successfully!", "success");
         fetch("/api/employees", { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
           .then(r => r.json())
           .then(d => { if (d.employees) setEmployees(d.employees); })
@@ -320,109 +263,68 @@ export default function ChatbotPage() {
         return filtered;
       });
       void removeChatConversation(id)
-        .then(() => {
-          clearPendingDelete(id);
-          setSyncStatus({ kind: "synced", label: "Synced" });
-        })
-        .catch(() => {
-          setSyncStatus({ kind: "local", label: "Offline (Delete pending)" });
-        });
+        .then(() => { clearPendingDelete(id); setSyncStatus({ kind: "synced", label: "Synced" }); })
+        .catch(() => { setSyncStatus({ kind: "local", label: "Offline (Delete pending)" }); });
     },
     [activeId]
   );
 
-  /* ─── Send message & consume SSE stream ─── */
   const sendMessage = useCallback(async () => {
     const userMsg = input.trim();
     if (!userMsg || status.kind !== "idle" || !activeId || !activeConv) return;
-
     const now = Date.now();
     const assistantTimestamp = now + 1;
     const conversationTitle = messages.length === 0 ? deriveTitle(userMsg) : activeConv.title;
     const createdAt = activeConv.createdAt || now;
-    const userMessage: ChatMessage = {
-      role: "user",
-      content: userMsg,
-      timestamp: now,
-    };
+    const userMessage: ChatMessage = { role: "user", content: userMsg, timestamp: now };
     let assistantContent = "";
     let assistantIntent: string | null = null;
     let shouldPersistAssistant = false;
     let streamParseErrorShown = false;
     setInput("");
     setCompletedNodes([]);
-
     if (messages.length === 0) setActiveTitle(conversationTitle);
-
-    updateActiveMessages((prev) => [
-      ...prev,
-      userMessage,
-      { role: "assistant", content: "", timestamp: assistantTimestamp },
-    ]);
+    updateActiveMessages((prev) => [...prev, userMessage, { role: "assistant", content: "", timestamp: assistantTimestamp }]);
     setSyncStatus({ kind: "syncing", label: "Saving chat…" });
-    void appendChatMessage(activeId, conversationTitle, userMessage, {
-      createdAt,
-      updatedAt: now,
-    })
-      .then(() => {
-        setSyncStatus({ kind: "synced", label: "Synced" });
-      })
-      .catch(() => {
-        setSyncStatus({ kind: "local", label: "Offline (Local only)" });
-      });
-
+    void appendChatMessage(activeId, conversationTitle, userMessage, { createdAt, updatedAt: now })
+      .then(() => { setSyncStatus({ kind: "synced", label: "Synced" }); })
+      .catch(() => { setSyncStatus({ kind: "local", label: "Offline (Local only)" }); });
     setStatus({ kind: "connecting" });
     streamWatchdogFiredRef.current = false;
     lastStreamActivityRef.current = Date.now();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-
     try {
-      const params = new URLSearchParams({
-        "input-query": userMsg,
-        "thread-id": activeId,
-      });
-
+      const params = new URLSearchParams({ "input-query": userMsg, "thread-id": activeId });
       const res = await fetch(`/api/chat?${params.toString()}`, {
         method: "POST",
         signal: ctrl.signal,
-        headers: {
-          Accept: "text/event-stream",
-          ...getAuthHeaders(),
-        },
+        headers: { Accept: "text/event-stream", ...getAuthHeaders() },
       });
-
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => "Unknown error");
         throw new Error(`HTTP ${res.status}: ${errText}`);
       }
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split("\n\n");
         buffer = parts.pop() ?? "";
-
         for (const part of parts) {
           for (const line of part.split("\n")) {
             if (!line.startsWith("data: ")) continue;
             const jsonStr = line.slice(6);
             if (!jsonStr) continue;
-
             try {
               const evt = JSON.parse(jsonStr);
               lastStreamActivityRef.current = Date.now();
               switch (evt.type) {
-                case "chain_start":
-                  break;
-                case "chain_step_complete":
-                  break;
+                case "chain_start": break;
+                case "chain_step_complete": break;
                 case "node_status": {
                   const nodeName = (evt.node as string) || "";
                   const msg = (evt.message as string) || "";
@@ -445,16 +347,10 @@ export default function ChatbotPage() {
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: last.content + evt.content,
-                      };
-                    }
+                    if (last?.role === "assistant") updated[updated.length - 1] = { ...last, content: last.content + evt.content };
                     return updated;
                   });
                   break;
-
                 case "clarification":
                   assistantContent = evt.clarification;
                   assistantIntent = evt.intent_str ?? null;
@@ -462,32 +358,22 @@ export default function ChatbotPage() {
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: evt.clarification,
-                        intent: evt.intent_str,
-                      };
-                    }
+                    if (last?.role === "assistant") updated[updated.length - 1] = { ...last, content: evt.clarification, intent: evt.intent_str };
                     return updated;
                   });
                   setStatus({ kind: "clarification", text: evt.clarification });
                   break;
-
                 case "final":
                   assistantIntent = evt.intent_str ?? null;
                   shouldPersistAssistant = assistantContent.trim().length > 0;
                   updateActiveMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
-                    if (last?.role === "assistant") {
-                      updated[updated.length - 1] = { ...last, intent: evt.intent_str };
-                    }
+                    if (last?.role === "assistant") updated[updated.length - 1] = { ...last, intent: evt.intent_str };
                     return updated;
                   });
                   setStatus({ kind: "idle" });
                   break;
-
                 case "error":
                   shouldPersistAssistant = false;
                   updateActiveMessages((prev) => {
@@ -496,10 +382,7 @@ export default function ChatbotPage() {
                     if (last?.role === "assistant") {
                       const nextContent = last.content || `⚠ Error: ${evt.error}`;
                       assistantContent = nextContent;
-                      updated[updated.length - 1] = {
-                        ...last,
-                        content: nextContent,
-                      };
+                      updated[updated.length - 1] = { ...last, content: nextContent };
                     }
                     return updated;
                   });
@@ -507,58 +390,33 @@ export default function ChatbotPage() {
                   break;
               }
             } catch (error) {
-  if (process.env.NODE_ENV === "development") {
-    console.warn("[Chatbot SSE] Failed to parse SSE chunk", {
-      chunk: jsonStr,
-      error,
-    });
-  }
-
-  if (!streamParseErrorShown) {
-    streamParseErrorShown = true;
-
-    updateActiveMessages((prev) => {
-      const updated = [...prev];
-      const last = updated[updated.length - 1];
-
-      if (last?.role === "assistant") {
-        updated[updated.length - 1] = {
-          ...last,
-          content:
-            last.content ||
-            "Stream error: Unable to process part of the response. Please try again.",
-        };
-      }
-
-      return updated;
-    });
-  }
-}
+              if (process.env.NODE_ENV === "development") {
+                console.warn("[Chatbot SSE] Failed to parse SSE chunk", { chunk: jsonStr, error });
+              }
+              if (!streamParseErrorShown) {
+                streamParseErrorShown = true;
+                updateActiveMessages((prev) => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last?.role === "assistant") {
+                    updated[updated.length - 1] = { ...last, content: last.content || "Stream error: Unable to process part of the response. Please try again." };
+                  }
+                  return updated;
+                });
+              }
+            }
           }
         }
       }
-
       if (shouldPersistAssistant && assistantContent.trim()) {
         setSyncStatus({ kind: "syncing", label: "Syncing reply…" });
         await upsertChatConversation({
-          id: activeId,
-          title: conversationTitle,
-          createdAt,
+          id: activeId, title: conversationTitle, createdAt,
           updatedAt: Math.max(assistantTimestamp, Date.now()),
-          messages: [
-            ...messages,
-            userMessage,
-            {
-              role: "assistant",
-              content: assistantContent,
-              intent: assistantIntent,
-              timestamp: assistantTimestamp,
-            },
-          ],
+          messages: [...messages, userMessage, { role: "assistant", content: assistantContent, intent: assistantIntent, timestamp: assistantTimestamp }],
         });
         setSyncStatus({ kind: "synced", label: "Synced" });
       }
-
       setStatus((cur) => (cur.kind === "idle" ? cur : { kind: "idle" }));
     } catch (err: unknown) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
@@ -567,10 +425,7 @@ export default function ChatbotPage() {
           const updated = [...prev];
           const last = updated[updated.length - 1];
           if (last?.role === "assistant") {
-            updated[updated.length - 1] = {
-              ...last,
-              content: last.content || `Error: Could not reach the AI agent. ${errMsg}`,
-            };
+            updated[updated.length - 1] = { ...last, content: last.content || `Error: Could not reach the AI agent. ${errMsg}` };
             assistantContent = updated[updated.length - 1].content;
           }
           return updated;
@@ -590,7 +445,6 @@ export default function ChatbotPage() {
 
   const isBusy = status.kind !== "idle";
 
-  /* Stale-stream UX: no SSE progress → warn at 10s / 15s, abort + error at 30s */
   useEffect(() => {
     if (!isBusy) return;
     const tick = () => {
@@ -602,12 +456,7 @@ export default function ChatbotPage() {
           const updated = [...prev];
           const last = updated[updated.length - 1];
           if (last?.role === "assistant") {
-            updated[updated.length - 1] = {
-              ...last,
-              content:
-                last.content ||
-                "❌ Request timed out. Please try again or rephrase your question.",
-            };
+            updated[updated.length - 1] = { ...last, content: last.content || "❌ Request timed out. Please try again or rephrase your question." };
           }
           return updated;
         });
@@ -617,21 +466,13 @@ export default function ChatbotPage() {
       if (idle > 15_000) {
         setStatus((cur) =>
           cur.kind === "streaming" || cur.kind === "connecting"
-            ? {
-                kind: "streaming",
-                label: "⚠️ This is taking longer than usual. Still working…",
-                node: cur.kind === "streaming" ? cur.node : undefined,
-              }
+            ? { kind: "streaming", label: "⚠️ This is taking longer than usual. Still working…", node: cur.kind === "streaming" ? cur.node : undefined }
             : cur
         );
       } else if (idle > 10_000) {
         setStatus((cur) =>
           cur.kind === "streaming" || cur.kind === "connecting"
-            ? {
-                kind: "streaming",
-                label: "⚠️ Taking longer than expected…",
-                node: cur.kind === "streaming" ? cur.node : undefined,
-              }
+            ? { kind: "streaming", label: "⚠️ Taking longer than expected…", node: cur.kind === "streaming" ? cur.node : undefined }
             : cur
         );
       }
@@ -649,16 +490,6 @@ export default function ChatbotPage() {
     }
   }, [status]);
 
-  const relativeTime = (ts: number) => {
-    const diff = Date.now() - ts;
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
-  };
-
   return (
     <div className="app-layout">
       <Sidebar />
@@ -666,43 +497,17 @@ export default function ChatbotPage() {
         <Topbar onSearch={() => { }} />
         <div className="content-wrapper" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 69px)", padding: 0 }}>
           {storageWarning && (
-            <div style={{
-              background: "#fee2e2",
-              borderBottom: "1px solid #fca5a5",
-              color: "#991b1b",
-              padding: "10px 16px",
-              fontSize: "13px",
-              fontWeight: 500,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center"
-            }}>
+            <div style={{ background: "#fee2e2", borderBottom: "1px solid #fca5a5", color: "#991b1b", padding: "10px 16px", fontSize: "13px", fontWeight: 500, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>⚠️ {storageWarning}</span>
-              <button
-                onClick={() => setStorageWarning(null)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#991b1b",
-                  fontWeight: "bold",
-                  fontSize: "14px",
-                  cursor: "pointer",
-                  padding: "2px 6px"
-                }}
-              >
-                ✕
-              </button>
+              <button onClick={() => setStorageWarning(null)} style={{ background: "transparent", border: "none", color: "#991b1b", fontWeight: "bold", fontSize: "14px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
             </div>
           )}
-
-          {/* ── Chat Header ── */}
           <div className="chat-header">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h2 className="chat-header-title">
                 <ChatbotIcon size={20} color="var(--accent-blue)" /> AI Business Agent
               </h2>
               <div style={{ display: "flex", gap: 8 }}>
-
                 <button className="chat-header-btn" onClick={() => setHistoryOpen(!historyOpen)} title="Chat history">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   History
@@ -716,54 +521,17 @@ export default function ChatbotPage() {
             <p className="chat-header-subtitle">
               Ask questions about your business data, financials, employees, and more.
               {process.env.NEXT_PUBLIC_SLACK_APP_URL ? (
-                <>
-                  {" "}
-                  <a
-                    href={process.env.NEXT_PUBLIC_SLACK_APP_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="chat-slack-link"
-                  >
-                    Open in Slack
-                  </a>
-                </>
+                <> {" "}<a href={process.env.NEXT_PUBLIC_SLACK_APP_URL} target="_blank" rel="noopener noreferrer" className="chat-slack-link">Open in Slack</a></>
               ) : null}
             </p>
             <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: syncStatus.kind === "local" ? "#b45309" : "#475569",
-                  background: syncStatus.kind === "local" ? "rgba(245, 158, 11, 0.12)" : "rgba(148, 163, 184, 0.12)",
-                  borderRadius: "999px",
-                  padding: "4px 10px",
-                }}
-              >
-                <span
-                  style={{
-                    width: "8px",
-                    height: "8px",
-                    borderRadius: "999px",
-                    background:
-                      syncStatus.kind === "synced"
-                        ? "#16a34a"
-                        : syncStatus.kind === "syncing" || syncStatus.kind === "loading"
-                          ? "#2563eb"
-                          : "#f59e0b",
-                  }}
-                />
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: syncStatus.kind === "local" ? "#b45309" : "#475569", background: syncStatus.kind === "local" ? "rgba(245, 158, 11, 0.12)" : "rgba(148, 163, 184, 0.12)", borderRadius: "999px", padding: "4px 10px" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "999px", background: syncStatus.kind === "synced" ? "#16a34a" : syncStatus.kind === "syncing" || syncStatus.kind === "loading" ? "#2563eb" : "#f59e0b" }} />
                 {syncStatus.label}
               </span>
             </div>
           </div>
-
           <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
-
-            {/* ── History Panel ── */}
             {historyOpen && (
               <div className="chat-history-panel">
                 <div className="chat-history-header">
@@ -783,8 +551,6 @@ export default function ChatbotPage() {
                 </div>
               </div>
             )}
-
-            {/* ── Messages ── */}
             <div className="chat-messages" style={{ flex: 1 }}>
               {messages.length === 0 && (
                 <div className="chat-empty">
@@ -798,7 +564,6 @@ export default function ChatbotPage() {
                   </div>
                 </div>
               )}
-
               {messages.map((msg, i) => (
                 <div key={i} className={`chat-bubble-row ${msg.role === "user" ? "user" : "assistant"}`}>
                   {msg.role === "assistant" && (
@@ -826,9 +591,7 @@ export default function ChatbotPage() {
                                   <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "12px", color: "var(--text-main)" }}>Assign Issue To:</div>
                                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "8px", maxHeight: "180px", overflowY: "auto", paddingRight: "4px" }}>
                                     {employees.map(emp => (
-                                      <button 
-                                        key={emp.login} 
-                                        onClick={() => confirmEscalate(i, emp.login)}
+                                      <button key={emp.login} onClick={() => confirmEscalate(i, emp.login)}
                                         style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "6px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "10px", cursor: "pointer", transition: "all 0.2s" }}
                                         onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-orange, #f97316)"; e.currentTarget.style.background = "rgba(249,115,22,0.02)"; }}
                                         onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.background = "#f9fafb"; }}
@@ -848,36 +611,17 @@ export default function ChatbotPage() {
                                     ))}
                                   </div>
                                   <div style={{ marginTop: "12px", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                                    <button
-                                      onClick={() => confirmEscalate(i, undefined)}
-                                      style={{ fontSize: "11px", padding: "6px 12px", cursor: "pointer", background: "var(--accent-blue)", color: "white", border: "none", borderRadius: "6px", fontWeight: 500 }}
-                                    >
+                                    <button onClick={() => confirmEscalate(i, undefined)} style={{ fontSize: "11px", padding: "6px 12px", cursor: "pointer", background: "var(--accent-blue)", color: "white", border: "none", borderRadius: "6px", fontWeight: 500 }}>
                                       Slack Auto-Assignment
                                     </button>
-                                    <button
-                                      onClick={() => setEscalatingMsgId(null)}
-                                      style={{ fontSize: "11px", padding: "6px 12px", cursor: "pointer", background: "#f1f5f9", color: "#475569", border: "none", borderRadius: "6px", fontWeight: 500 }}
-                                    >
+                                    <button onClick={() => setEscalatingMsgId(null)} style={{ fontSize: "11px", padding: "6px 12px", cursor: "pointer", background: "#f1f5f9", color: "#475569", border: "none", borderRadius: "6px", fontWeight: 500 }}>
                                       Cancel
                                     </button>
                                   </div>
                                 </div>
                               ) : (
-                                <button 
-                                  onClick={() => setEscalatingMsgId(i)}
-                                  className="chat-btn"
-                                  style={{
-                                    fontSize: "12px",
-                                    padding: "4px 8px",
-                                    borderRadius: "4px",
-                                    backgroundColor: "transparent",
-                                    border: "1px solid var(--accent-orange, #f97316)",
-                                    color: "var(--accent-orange, #f97316)",
-                                    cursor: "pointer",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "4px"
-                                  }}
+                                <button onClick={() => setEscalatingMsgId(i)} className="chat-btn"
+                                  style={{ fontSize: "12px", padding: "4px 8px", borderRadius: "4px", backgroundColor: "transparent", border: "1px solid var(--accent-orange, #f97316)", color: "var(--accent-orange, #f97316)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                                   title="Escalate this issue to a human via Slack"
                                 >
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
@@ -898,8 +642,6 @@ export default function ChatbotPage() {
                   {msg.role === "user" && <div className="chat-avatar user-avatar">U</div>}
                 </div>
               ))}
-
-              {/* ── Agent Flow Pipeline ── */}
               {isBusy && completedNodes.length > 0 && (
                 <div className="agent-flow-bar">
                   <div className="agent-flow-label">Agent Flow</div>
@@ -924,8 +666,6 @@ export default function ChatbotPage() {
                   </div>
                 </div>
               )}
-
-              {/* Status pill */}
               {statusLabel && (
                 <div className="chat-status-bar">
                   <div className="chat-status-pill">
@@ -933,12 +673,9 @@ export default function ChatbotPage() {
                   </div>
                 </div>
               )}
-
               <div ref={messagesEndRef} />
             </div>
           </div>
-
-          {/* ── Input Area ── */}
           <div className="chat-input-area">
             <input id="chat-input" type="text" placeholder="Type your message…" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} disabled={isBusy} className="chat-input" />
             {isBusy ? (
@@ -947,54 +684,15 @@ export default function ChatbotPage() {
               <button id="chat-send-btn" onClick={sendMessage} disabled={!input.trim()} className="chat-btn send-btn">Send</button>
             )}
           </div>
-          {/* ── Escalation Toast ── */}
-      {toast && (
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          tabIndex={-1}
-          style={{
-            position: "fixed",
-            bottom: "24px",
-            right: "24px",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "10px",
-            maxWidth: "360px",
-            padding: "14px 16px",
-            borderRadius: "10px",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-            background: toast.type === "success" ? "#f0fdf4" : "#fef2f2",
-            border: `1px solid ${toast.type === "success" ? "#86efac" : "#fca5a5"}`,
-            color: toast.type === "success" ? "#166534" : "#991b1b",
-          }}
-        >
-          <span aria-hidden="true" style={{ fontSize: "18px" }}>
-            {toast.type === "success" ? "✅" : "❌"}
-          </span>
-          <p style={{ flex: 1, margin: 0, fontSize: "13px", fontWeight: 500 }}>
-            {toast.message}
-          </p>
-          <button
-            onClick={() => setToast(null)}
-            aria-label="Dismiss notification"
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "18px",
-              lineHeight: 1,
-              color: "inherit",
-              opacity: 0.6,
-              padding: "0 2px",
-            }}
-          >
-            ×
-          </button>
-        </div>
-      )}
+          {toast && (
+            <div role="status" aria-live="polite" aria-atomic="true" tabIndex={-1}
+              style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, display: "flex", alignItems: "flex-start", gap: "10px", maxWidth: "360px", padding: "14px 16px", borderRadius: "10px", boxShadow: "0 4px 16px rgba(0,0,0,0.12)", background: toast.type === "success" ? "#f0fdf4" : "#fef2f2", border: `1px solid ${toast.type === "success" ? "#86efac" : "#fca5a5"}`, color: toast.type === "success" ? "#166534" : "#991b1b" }}
+            >
+              <span aria-hidden="true" style={{ fontSize: "18px" }}>{toast.type === "success" ? "✅" : "❌"}</span>
+              <p style={{ flex: 1, margin: 0, fontSize: "13px", fontWeight: 500 }}>{toast.message}</p>
+              <button onClick={() => setToast(null)} aria-label="Dismiss notification" style={{ background: "none", border: "none", cursor: "pointer", fontSize: "18px", lineHeight: 1, color: "inherit", opacity: 0.6, padding: "0 2px" }}>×</button>
+            </div>
+          )}
         </div>
       </div>
     </div>
