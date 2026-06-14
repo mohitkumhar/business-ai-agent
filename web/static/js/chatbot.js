@@ -517,7 +517,11 @@
             ? new Date(timestamp + "Z").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
             : new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-        bubble.innerHTML = `
+        const intentHtml = `
+    <div class="dynamic-intents"></div>
+    <div class="agent-status" style="display:none;"></div>
+`;
+            bubble.innerHTML = `
     <div class="message-avatar">${avatar}</div>
     <div class="message-body">
         ${intentHtml}
