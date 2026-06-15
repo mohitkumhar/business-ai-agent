@@ -9,6 +9,7 @@ import Topbar from "@/components/Topbar";
 import { BarChartIcon, CameraIcon, ReceiptIcon } from "@/components/Icons";
 import { AGENT_API_BASE } from "@/lib/publicUrls";
 import { dispatchDashboardRefresh } from "@/lib/dashboardRefresh";
+import { getToken } from "@/lib/api";
 
 function getUserEmail(): string | null {
   if (typeof window === "undefined") return null;
@@ -54,7 +55,7 @@ export default function ImportPage() {
 
   const postSpreadsheet = async (file: File, source: string) => {
     const email = getUserEmail() || "demo@profitpilot.ai";
-    const token = localStorage.getItem("profit_pilot_token");
+    const token = getToken();
     const headers = token ? { "Authorization": `Bearer ${token}` } : {};
     setUploading(true);
     setFlash(null);
@@ -86,7 +87,7 @@ export default function ImportPage() {
 
   const postNotebook = async (file: File) => {
     const email = getUserEmail() || "demo@profitpilot.ai";
-    const token = localStorage.getItem("profit_pilot_token");
+    const token = getToken();
     const headers = token ? { "Authorization": `Bearer ${token}` } : ({} as HeadersInit);
     setUploading(true);
     setFlash(null);
@@ -117,7 +118,7 @@ export default function ImportPage() {
 
   const handleConfirmNotebook = async () => {
     if (!previewData || !previewHash) return;
-    const token = localStorage.getItem("profit_pilot_token");
+    const token = getToken();
     setUploading(true);
     try {
       const res = await fetch(`${AGENT_API_BASE}/api/v1/import/confirm-notebook`, {

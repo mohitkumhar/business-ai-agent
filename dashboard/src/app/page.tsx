@@ -26,8 +26,7 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    // Auth bypass for demo
-    // localStorage.setItem("profit_pilot_token", "demo-token");
+    // Auth token is managed by AuthContext (in-memory) — no localStorage usage
   }, []);
 
   return (
