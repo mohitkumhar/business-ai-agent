@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SearchIcon, HelpCircleIcon, BellIcon, SunIcon, MoonIcon, MenuIcon } from "./Icons";
+import { SearchIcon, HelpCircleIcon, BellIcon, MenuIcon } from "./Icons";
+import ThemeToggle from "./ThemeToggle";
 import { LANDING_PAGE_URL } from "@/lib/publicUrls";
 import { syncUserEmailFromUrl, syncUserNameFromApi } from "@/lib/syncDashboardUser";
-import { useTheme } from "@/context/ThemeContext";
 
 interface TopbarProps {
   onSearch: (query: string) => void;
@@ -49,9 +49,6 @@ export default function Topbar({ onSearch, title = "Overview", onMenuClick }: To
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
-  // Theme context from kushal-dev
-  const { theme, toggleTheme } = useTheme();
-
   const refreshUserState = useCallback(() => {
     setDisplayName(readStoredName());
     setUserEmail(readStoredEmail());
@@ -118,14 +115,8 @@ export default function Topbar({ onSearch, title = "Overview", onMenuClick }: To
       </div>
       
       <div className="topbar-right">
-        {/* Theme Toggle Button (Added from kushal-dev) */}
-        <button 
-          className="topbar-icon-btn" 
-          onClick={toggleTheme}
-          title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
-        >
-          {theme === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
-        </button>
+        {/* Theme Toggle Button */}
+        <ThemeToggle />
 
         <button className="topbar-icon-btn" title="Help">
           <HelpCircleIcon size={16} />

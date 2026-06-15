@@ -18,11 +18,11 @@ export default function SettingsPage() {
           </div>
           
           <div className="table-card mt-6 p-8 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
               <SettingsIcon size={32} color="var(--text-muted)" />
             </div>
             <h3 className="text-xl font-bold mb-2">Settings under construction</h3>
-            <p className="text-slate-500">We&apos;re working on making this page available soon!</p>
+            <p className="text-slate-500 dark:text-slate-400">We&apos;re working on making this page available soon!</p>
           </div>
         </div>
       </div>
