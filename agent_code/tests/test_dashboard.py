@@ -109,3 +109,18 @@ def test_dashboard_export_csv_resolves_business_from_email(client, app_module, m
     ]
     assert calls[0][1] == ("owner@example.com",)
     assert calls[1][1][0] == "business-email"
+
+def test_forecast_returns_flat_trend_for_constant_history(client, app_module, auth_headers, monkeypatch):
+    from datetime import date
+    constant_rows = [
+        {"transaction_date": date(2026, 1, i + 1), "amount": 100.0}
+        for i in range(10)
+    ]
+    monkeypatch.setattr(app_module, "execute_read_query_params", lambda *args, **kwargs: constant_rows)
+
+    response = client.get("/api/dashboard/forecast", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["trend_direction"] == "flat"
+    assert payload["trend_percent"] == 0
