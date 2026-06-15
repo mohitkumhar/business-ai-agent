@@ -14,7 +14,7 @@
 
 ```
 Browser
-  ├── Landing (Vite / TanStack Start :5173)
+  ├── Landing (Vite / TanStack Start :3003 dev / :5173 Docker)
   │       POST /api/v1/onboarding ──────────────────────► Agent Flask (:5000) ──► PostgreSQL (:5432)
   │       Google OAuth (client-side) → userinfo API (Google)
   │       FloatingChatbot: local FAQ rules only (no backend)
@@ -46,7 +46,7 @@ Browser
 |---------|------|----------|-------------|------------|
 | db | PostgreSQL 16 | 5432 | 5432:5432 | N/A (image) |
 | pgadmin | pgAdmin 4 | 5050 | 5050:80 | N/A (image) |
-| landing-page | Node / Vite / TanStack Start | 5173 | 5173:5173 | `landing-page` npm dev → `src/server.ts` |
+| landing-page | Node / Vite / TanStack Start | 3003 | 5173:5173 | `landing-page` npm dev → `src/server.ts` |
 | backend | Python 3.11 / Flask | 5000 | 5000:5000 | `agent_code/app.py` |
 | dashboard | Next.js (standalone) | 3001 | 3001:3000 | `dashboard` → `server.js` after build |
 | loki | Grafana Loki | 3100 | 3100:3100 | N/A |
@@ -280,7 +280,7 @@ Browser
 
 ---
 
-### 5.3 `landing-page/` (TanStack Router + Vite — Port 5173)
+### 5.3 `landing-page/` (TanStack Router + Vite — Port 3003 dev, 5173 Docker)
 
 **Stack:** TanStack Start + Vite + Tailwind; large **Typebot fork** under `src/lib/packages/*` (schemas, env, prisma stubs, UI, icons).
 
@@ -563,7 +563,7 @@ python app.py   # :5001
 # Landing
 cd landing-page
 npm install
-npm run dev -- --host 0.0.0.0 --port 5173
+npm run dev -- --host 0.0.0.0 --port 3003
 
 # Dashboard
 cd dashboard
