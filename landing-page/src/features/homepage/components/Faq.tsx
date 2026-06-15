@@ -19,7 +19,7 @@ const data = [
         bots, 200 chats per month, native integrations, webhooks, custom
         Javascript & CSS, and community support. <br />
         <br /> For more details on our Starter and Pro plans, check out the{" "}
-        <TextLink to="/pricing">Pricing Page</TextLink>.
+        <TextLink to={"/pricing" as any}>Pricing Page</TextLink>.
       </>
     ),
   },

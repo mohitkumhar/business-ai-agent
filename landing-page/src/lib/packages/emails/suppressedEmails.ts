@@ -130,7 +130,7 @@ export const listSuppressedEmails = Effect.fn("listSuppressedEmails")(
       },
       select: { email: true },
     });
-    return suppressed.map((entry) => entry.email);
+    return suppressed.map((entry: any) => entry.email);
   },
 );
 
@@ -181,7 +181,7 @@ export const recordTransientGeneralBounces = Effect.fn(
           .create({ data: createData })
           .pipe(
             Effect.as(true),
-            Effect.catchAll((error) => {
+            Effect.catchAll((error: any) => {
               if (
                 error instanceof PrismaClientKnownRequestError &&
                 error.code === "P2002"

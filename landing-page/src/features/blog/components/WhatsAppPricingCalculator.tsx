@@ -28,9 +28,9 @@ const messageTypes = [
 
 export const WhatsAppPricingCalculator = () => {
   const [selectedCountry, setSelectedCountry] =
-    useState<(typeof countries)[number]["value"]>(null);
+    useState<any>(null);
   const [selectedMessageType, setSelectedMessageType] =
-    useState<(typeof messageTypes)[number]["value"]>(null);
+    useState<any>(null);
   const [totalMessages, setTotalMessages] = useState<number | undefined>(0);
   const numberFieldId = useId();
 

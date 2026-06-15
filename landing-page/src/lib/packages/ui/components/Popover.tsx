@@ -57,7 +57,7 @@ const Trigger = React.forwardRef<
     {children}
   </PopoverPrimitive.Trigger>
 ));
-Trigger.displayName = PopoverPrimitive.Trigger.displayName;
+Trigger.displayName = "Trigger";
 
 const TriggerButton = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Trigger>,
@@ -72,7 +72,7 @@ const TriggerButton = React.forwardRef<
     {children}
   </PopoverPrimitive.Trigger>
 ));
-TriggerButton.displayName = PopoverPrimitive.Trigger.displayName;
+TriggerButton.displayName = "TriggerButton";
 
 const Popup = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Popup>,

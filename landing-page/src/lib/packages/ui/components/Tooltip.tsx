@@ -59,7 +59,7 @@ const TriggerButton = React.forwardRef<
     {children}
   </TooltipPrimitive.Trigger>
 ));
-TriggerButton.displayName = TooltipPrimitive.Trigger.displayName;
+TriggerButton.displayName = "TriggerButton";
 
 const Popup = ({
   className,

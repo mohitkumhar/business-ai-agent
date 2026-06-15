@@ -29,13 +29,13 @@ export const ServerRoute = createServerFileRoute("/sitemap.xml").methods({
       { loc: `${currentBaseUrl}/templates`, lastmod: templatesIndexLastmod },
     ] satisfies SitemapUrlEntry[];
 
-    const templateEntries: SitemapUrlEntry[] = templates.map((template) => ({
+    const templateEntries: SitemapUrlEntry[] = templates.map((template: any) => ({
       loc: `${currentBaseUrl}/templates/${template.slug}`,
       lastmod: template.updatedAt,
     }));
 
     const contentEntries: SitemapUrlEntry[] = Array.from(
-      new Set(allPosts.map((p) => p._meta.path)),
+      new Set(allPosts.map((p: any) => p._meta.path)),
     )
       .filter(
         (p) => typeof p === "string" && p.length > 0 && !p.includes("blog"),
@@ -43,7 +43,7 @@ export const ServerRoute = createServerFileRoute("/sitemap.xml").methods({
       .map(transformPathToSitemapUrlEntry);
 
     const blogContentEntries: SitemapUrlEntry[] = Array.from(
-      new Set(allPosts.map((p) => p._meta.path)),
+      new Set(allPosts.map((p: any) => p._meta.path)),
     )
       .filter(
         (p) => typeof p === "string" && p.length > 0 && p.includes("blog"),
@@ -70,13 +70,13 @@ export const ServerRoute = createServerFileRoute("/sitemap.xml").methods({
 });
 
 const templatesIndexLastmod = templates.reduce(
-  (latest, template) =>
+  (latest: any, template: any) =>
     template.updatedAt > latest ? template.updatedAt : latest,
   "2026-01-05",
 );
 
-const transformPathToSitemapUrlEntry = (path: string) => {
-  const post = allPosts.find((p) => p._meta.path === path);
+const transformPathToSitemapUrlEntry = (path: any) => {
+  const post = allPosts.find((p: any) => p._meta.path === path);
   const lastmod = post?.updatedAt
     ? new Date(post.updatedAt).toISOString().split("T")[0]
     : post?.postedAt

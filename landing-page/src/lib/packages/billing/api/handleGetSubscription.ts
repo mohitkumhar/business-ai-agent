@@ -46,7 +46,7 @@ export const handleGetSubscription = async ({
       subscription: null,
     };
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-    apiVersion: "2024-09-30.acacia",
+    apiVersion: "2025-02-24.acacia",
   });
   const subscriptions = await stripe.subscriptions.list({
     customer: workspace.stripeId,

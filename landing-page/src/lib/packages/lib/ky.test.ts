@@ -1,13 +1,14 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
+import type { Mock } from "bun:test";
 import { rebuildFetchWithoutChunkedEncoding } from "./ky";
 
 describe("rebuildFetchWithoutChunkedEncoding", () => {
   let originalFetch: typeof globalThis.fetch;
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: Mock<typeof globalThis.fetch>;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    mockFetch = mock(() => Promise.resolve(new Response("ok")));
+    mockFetch = mock((..._args: Parameters<typeof globalThis.fetch>) => Promise.resolve(new Response("ok"))) as Mock<typeof globalThis.fetch>;
     globalThis.fetch = mockFetch;
   });
 
@@ -42,21 +43,22 @@ describe("rebuildFetchWithoutChunkedEncoding", () => {
     const [url, init] = mockFetch.mock.calls[0];
     
     expect(url).toBe("https://example.com/");
-    expect(init.method).toBe("POST");
-    expect(init.mode).toBe("cors");
+    expect(init).toBeDefined();
+    expect(init!.method).toBe("POST");
+    expect(init!.mode).toBe("cors");
     
     // Check headers
-    expect(init.headers).toBeInstanceOf(Headers);
-    expect(init.headers.get("x-custom")).toBe("1");
-    expect(init.headers.get("x-override")).toBe("2");
+    expect(init!.headers).toBeInstanceOf(Headers);
+    expect((init!.headers as Headers).get("x-custom")).toBe("1");
+    expect((init!.headers as Headers).get("x-override")).toBe("2");
     
     // Check body
-    expect(init.body).toBeInstanceOf(ArrayBuffer);
-    const bodyString = new TextDecoder().decode(init.body);
+    expect(init!.body).toBeInstanceOf(ArrayBuffer);
+    const bodyString = new TextDecoder().decode(init!.body as ArrayBuffer);
     expect(bodyString).toBe("test body");
     
     // Check duplex
-    expect(init.duplex).toBe("half");
+    expect((init as any).duplex).toBe("half");
   });
 
   it("should throw if Request body is already consumed", async () => {
@@ -83,9 +85,10 @@ describe("rebuildFetchWithoutChunkedEncoding", () => {
     const [url, init] = mockFetch.mock.calls[0];
     
     expect(url).toBe("https://example.com/");
-    expect(init.method).toBe("GET");
-    expect(init.body).toBeUndefined();
-    expect(init.duplex).toBeUndefined();
+    expect(init).toBeDefined();
+    expect(init!.method).toBe("GET");
+    expect(init!.body).toBeUndefined();
+    expect((init as any).duplex).toBeUndefined();
   });
   
   it("should prefer init properties over Request properties", async () => {
@@ -104,9 +107,10 @@ describe("rebuildFetchWithoutChunkedEncoding", () => {
     expect(mockFetch).toHaveBeenCalled();
     const [url, init] = mockFetch.mock.calls[0];
     
-    expect(init.method).toBe("POST");
-    expect(init.mode).toBe("no-cors");
-    expect(init.body).toBe("init body");
-    expect(init.duplex).toBe("full");
+    expect(init).toBeDefined();
+    expect(init!.method).toBe("POST");
+    expect(init!.mode).toBe("no-cors");
+    expect(init!.body).toBe("init body");
+    expect((init as any).duplex).toBe("full");
   });
 });

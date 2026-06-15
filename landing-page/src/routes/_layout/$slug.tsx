@@ -7,7 +7,7 @@ import { createMetaTags } from "@/lib/createMetaTags";
 
 export const Route = createFileRoute("/_layout/$slug")({
   loader: async ({ params }) => {
-    const post = allPosts.find((post) => post._meta.path.endsWith(params.slug));
+    const post = allPosts.find((post: any) => post._meta.path.endsWith(params.slug));
 
     if (!post) {
       throw redirect({

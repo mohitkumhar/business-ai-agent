@@ -1,4 +1,5 @@
 import { CtaButtonLink } from "@/components/link";
+// @ts-ignore
 import { enterpriseLeadTypebotUrl } from "@/constants";
 import {
   PerkListItem,

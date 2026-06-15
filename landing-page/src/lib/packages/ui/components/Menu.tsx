@@ -19,7 +19,7 @@ const Trigger = React.forwardRef<
     {children}
   </MenuPrimitive.Trigger>
 ));
-Trigger.displayName = MenuPrimitive.Trigger.displayName;
+Trigger.displayName = "Trigger";
 
 const TriggerButton = React.forwardRef<
   React.ElementRef<typeof MenuPrimitive.Trigger>,
@@ -34,7 +34,7 @@ const TriggerButton = React.forwardRef<
     {children}
   </MenuPrimitive.Trigger>
 ));
-TriggerButton.displayName = MenuPrimitive.Trigger.displayName;
+TriggerButton.displayName = "TriggerButton";
 
 const Popup = ({
   children,
@@ -95,7 +95,7 @@ const SubmenuTrigger = React.forwardRef<
 >(({ children, className, ...props }, ref) => (
   <MenuPrimitive.SubmenuTrigger {...props} className={className} ref={ref} />
 ));
-SubmenuTrigger.displayName = MenuPrimitive.SubmenuTrigger.displayName;
+SubmenuTrigger.displayName = "SubmenuTrigger";
 
 export const Menu = {
   Root,

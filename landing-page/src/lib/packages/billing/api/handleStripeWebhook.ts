@@ -37,7 +37,7 @@ export const handleStripeWebhook = async ({
       message: "STRIPE_SECRET_KEY is missing",
     });
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-    apiVersion: "2024-09-30.acacia",
+    apiVersion: "2025-02-24.acacia",
   });
 
   const event = stripe.webhooks.constructEvent(
@@ -81,7 +81,7 @@ export const handleStripeWebhook = async ({
         });
 
         await trackEvents(
-          workspace.members.map((m) => ({
+          workspace.members.map((m: any) => ({
             name: "Subscription updated",
             workspaceId,
             userId: m.userId,
@@ -160,7 +160,7 @@ export const handleStripeWebhook = async ({
         previous?.cancel_at_period_end === false
       )
         await trackEvents(
-          existingWorkspace.members.map((m) => ({
+          existingWorkspace.members.map((m: any) => ({
             name: "Subscription scheduled for cancellation",
             workspaceId: existingWorkspace.id,
             userId: m.userId,
@@ -172,7 +172,7 @@ export const handleStripeWebhook = async ({
         );
       if (previous?.cancel_at_period_end && !subscription.cancel_at_period_end)
         await trackEvents(
-          existingWorkspace.members.map((m) => ({
+          existingWorkspace.members.map((m: any) => ({
             name: "Subscription cancellation removed",
             workspaceId: existingWorkspace.id,
             userId: m.userId,
@@ -198,7 +198,7 @@ export const handleStripeWebhook = async ({
         });
 
         await trackEvents(
-          existingWorkspace.members.map((m) => ({
+          existingWorkspace.members.map((m: any) => ({
             name: "Workspace past due",
             workspaceId: existingWorkspace.id,
             userId: m.userId,
@@ -226,7 +226,7 @@ export const handleStripeWebhook = async ({
         });
 
         await trackEvents(
-          existingWorkspace.members.flatMap((m) => [
+          existingWorkspace.members.flatMap((m: any) => [
             {
               name: "Workspace unpaid",
               workspaceId: existingWorkspace.id,
@@ -268,7 +268,7 @@ export const handleStripeWebhook = async ({
         });
 
         await trackEvents(
-          existingWorkspace.members.map((m) => ({
+          existingWorkspace.members.map((m: any) => ({
             name: "Workspace past due status removed",
             workspaceId: existingWorkspace.id,
             userId: m.userId,
@@ -335,7 +335,7 @@ export const handleStripeWebhook = async ({
       });
 
       await trackEvents(
-        workspace.members.map((m) => ({
+        workspace.members.map((m: any) => ({
           name: "Subscription updated",
           workspaceId: workspace.id,
           userId: m.userId,

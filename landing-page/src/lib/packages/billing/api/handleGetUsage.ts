@@ -55,7 +55,7 @@ export const handleGetUsage = async ({
 
     const totalChatsUsed = await prisma.result.count({
       where: {
-        typebotId: { in: workspace.typebots.map((typebot) => typebot.id) },
+        typebotId: { in: workspace.typebots.map((typebot: any) => typebot.id) },
         hasStarted: true,
         createdAt: {
           gte: firstDayOfMonth,
@@ -72,7 +72,7 @@ export const handleGetUsage = async ({
   }
 
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-    apiVersion: "2024-09-30.acacia",
+    apiVersion: "2025-02-24.acacia",
   });
 
   const subscriptions = await stripe.subscriptions.list({
@@ -91,7 +91,7 @@ export const handleGetUsage = async ({
 
   const totalChatsUsed = await prisma.result.count({
     where: {
-      typebotId: { in: workspace.typebots.map((typebot) => typebot.id) },
+      typebotId: { in: workspace.typebots.map((typebot: any) => typebot.id) },
       hasStarted: true,
       createdAt: {
         gte: new Date(currentSubscription.current_period_start * 1000),

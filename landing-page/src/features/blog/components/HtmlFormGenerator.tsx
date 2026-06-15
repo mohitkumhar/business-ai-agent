@@ -462,7 +462,7 @@ const PropertiesPanel = ({
           </span>
           <Select.Root
             items={WIDTH_OPTIONS}
-            onValueChange={(value) => onUpdate({ width: value })}
+            onValueChange={(value) => onUpdate({ width: value as any })}
           >
             <Select.Trigger />
             <Select.Popup>

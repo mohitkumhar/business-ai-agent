@@ -8,7 +8,7 @@ export const isReadWorkspaceFobidden = (
   user: Pick<Prisma.User, "email" | "id">,
 ) => {
   if (
-    env.ADMIN_EMAIL?.some((email) => email === user.email) ||
+    env.ADMIN_EMAIL?.some((email: string) => email === user.email) ||
     workspace.members.find((member) => member.userId === user.id)
   )
     return false;
