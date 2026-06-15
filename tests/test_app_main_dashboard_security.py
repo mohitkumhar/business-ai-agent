@@ -185,7 +185,6 @@ def test_app_main_health_scores_invalid_request_id_is_sanitized(monkeypatch):
     assert payload["request_id"] != "bad/request-id"
 
 
-
 def test_app_main_employees_invalid_json_returns_safe_error(monkeypatch):
     os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret")
 
@@ -221,3 +220,4 @@ def test_app_main_employees_invalid_json_returns_safe_error(monkeypatch):
         "code": "employees_unavailable",
         "request_id": "req-employees-test",
     }
+

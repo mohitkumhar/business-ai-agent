@@ -25,6 +25,9 @@ TELEGRAM_TEXT_UPDATE = {
 # The old hardcoded seed UUID that must never be used as a fallback.
 SEED_UUID = "550e8400-e29b-41d4-a716-446655440000"
 
+# Shared secret used across all tests so the webhook secret gate passes.
+TEST_WEBHOOK_SECRET = "test-telegram-webhook-secret"
+
 
 # ---------------------------------------------------------------------------
 # Core regression test: no business ID → _run_agent_to_text must NOT be called
@@ -38,6 +41,7 @@ def test_telegram_webhook_does_not_call_agent_when_no_business_id(
 
     # Ensure DEFAULT_BUSINESS_ID is empty (unconfigured).
     monkeypatch.setattr(agent_app_module, "DEFAULT_BUSINESS_ID", "")
+    monkeypatch.setattr(agent_app_module, "TELEGRAM_WEBHOOK_SECRET", TEST_WEBHOOK_SECRET)
 
     agent_called = False
 
@@ -52,6 +56,7 @@ def test_telegram_webhook_does_not_call_agent_when_no_business_id(
     response = agent_client.post(
         "/api/v1/telegram/webhook",
         json=TELEGRAM_TEXT_UPDATE,
+        headers={"X-Telegram-Bot-Api-Secret-Token": TEST_WEBHOOK_SECRET},
     )
 
     assert response.status_code == 200
@@ -69,6 +74,7 @@ def test_telegram_webhook_no_hardcoded_uuid_fallback(
     missing.  The agent must not be called with any business_id."""
 
     monkeypatch.setattr(agent_app_module, "DEFAULT_BUSINESS_ID", "")
+    monkeypatch.setattr(agent_app_module, "TELEGRAM_WEBHOOK_SECRET", TEST_WEBHOOK_SECRET)
 
     captured_business_ids: list[str] = []
 
@@ -79,7 +85,11 @@ def test_telegram_webhook_no_hardcoded_uuid_fallback(
     monkeypatch.setattr(agent_app_module, "_run_agent_to_text", _spy_run_agent_to_text)
     monkeypatch.setattr(agent_app_module, "_send_telegram_text", lambda *a, **kw: None)
 
-    agent_client.post("/api/v1/telegram/webhook", json=TELEGRAM_TEXT_UPDATE)
+    agent_client.post(
+        "/api/v1/telegram/webhook",
+        json=TELEGRAM_TEXT_UPDATE,
+        headers={"X-Telegram-Bot-Api-Secret-Token": TEST_WEBHOOK_SECRET},
+    )
 
     assert captured_business_ids == [], (
         f"_run_agent_to_text was called with business_id(s) {captured_business_ids} "
@@ -99,6 +109,7 @@ def test_telegram_webhook_calls_agent_when_business_id_configured(
 
     test_biz_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     monkeypatch.setattr(agent_app_module, "DEFAULT_BUSINESS_ID", test_biz_id)
+    monkeypatch.setattr(agent_app_module, "TELEGRAM_WEBHOOK_SECRET", TEST_WEBHOOK_SECRET)
 
     captured: list[tuple[str, str, str]] = []
 
@@ -112,6 +123,7 @@ def test_telegram_webhook_calls_agent_when_business_id_configured(
     response = agent_client.post(
         "/api/v1/telegram/webhook",
         json=TELEGRAM_TEXT_UPDATE,
+        headers={"X-Telegram-Bot-Api-Secret-Token": TEST_WEBHOOK_SECRET},
     )
 
     assert response.status_code == 200
@@ -132,6 +144,7 @@ def test_telegram_webhook_never_uses_seed_uuid(
     to _run_agent_to_text, regardless of DEFAULT_BUSINESS_ID value."""
 
     monkeypatch.setattr(agent_app_module, "DEFAULT_BUSINESS_ID", "")
+    monkeypatch.setattr(agent_app_module, "TELEGRAM_WEBHOOK_SECRET", TEST_WEBHOOK_SECRET)
 
     captured_business_ids: list[str] = []
 
@@ -142,7 +155,11 @@ def test_telegram_webhook_never_uses_seed_uuid(
     monkeypatch.setattr(agent_app_module, "_run_agent_to_text", _spy_run_agent_to_text)
     monkeypatch.setattr(agent_app_module, "_send_telegram_text", lambda *a, **kw: None)
 
-    agent_client.post("/api/v1/telegram/webhook", json=TELEGRAM_TEXT_UPDATE)
+    agent_client.post(
+        "/api/v1/telegram/webhook",
+        json=TELEGRAM_TEXT_UPDATE,
+        headers={"X-Telegram-Bot-Api-Secret-Token": TEST_WEBHOOK_SECRET},
+    )
 
     assert SEED_UUID not in captured_business_ids, (
         f"The hardcoded seed UUID {SEED_UUID} was used as a business_id fallback. "

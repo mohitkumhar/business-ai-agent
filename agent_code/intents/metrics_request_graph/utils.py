@@ -310,9 +310,8 @@ def analyze_metrics(state: MetricsRequestGraphState):
     except Exception as exc:
         logger.error(f"[metrics] analyze_metrics failed: {exc}", exc_info=True)
         return _fallback_analysis(raw_metrics)
-    
 
-    
+
 # NODE 4 – format_metrics_response
 # =================================
 

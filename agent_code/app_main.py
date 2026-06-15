@@ -527,7 +527,7 @@ def metrics_endpoint():
 def query_agent():
     input_query = request.args.get("input-query", "")
     if input_query:
-        input_query = sanitize_input(input_query)    
+        input_query = sanitize_input(input_query)
     thread_id = request.args.get("thread-id", "")
     business_id = request.args.get("business-id", "") or ""
     if not input_query:
@@ -773,8 +773,8 @@ def get_employees():
                     "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
                 }
             )
-    
-       
+
+
         contributors = res.json()
 
         if not isinstance(contributors, list):

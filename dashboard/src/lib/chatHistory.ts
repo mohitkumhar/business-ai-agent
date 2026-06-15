@@ -140,10 +140,10 @@ export function loadConversations(): ChatConversation[] {
 
 export function saveConversations(conversations: ChatConversation[]): { success: boolean; prunedCount: number } {
   if (typeof window === "undefined") return { success: true, prunedCount: 0 };
-  
+
   const currentList = [...conversations];
   let prunedCount = 0;
-  
+
   while (currentList.length > 0) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(currentList));

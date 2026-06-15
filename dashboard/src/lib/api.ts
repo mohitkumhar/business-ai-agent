@@ -172,7 +172,7 @@ export const api = {
 ): Promise<RevenueVsExpense> =>
   safeFetchJson<RevenueVsExpense>(
     `/api/dashboard/revenue-vs-expense?period=${period}`,
-    { headers: getHeaders() }   
+    { headers: getHeaders() }
   ),
 
   getSalesTarget: async (
