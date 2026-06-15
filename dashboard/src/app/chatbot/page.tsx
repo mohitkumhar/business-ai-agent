@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import { ChatbotIcon } from "@/components/Icons";
+import { useTheme } from "@/context/ThemeContext";
 import {
   appendChatMessage,
   getAuthHeaders,
@@ -48,6 +49,7 @@ type SyncStatus =
 
 /* ─── Component ─── */
 export default function ChatbotPage() {
+  const { theme } = useTheme();
   const [input, setInput] = useState("");
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -667,9 +669,9 @@ export default function ChatbotPage() {
         <div className="content-wrapper" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 69px)", padding: 0 }}>
           {storageWarning && (
             <div style={{
-              background: "#fee2e2",
-              borderBottom: "1px solid #fca5a5",
-              color: "#991b1b",
+              background: theme === "dark" ? "rgba(239, 68, 68, 0.2)" : "#fee2e2",
+              borderBottom: `1px solid ${theme === "dark" ? "rgba(239, 68, 68, 0.4)" : "#fca5a5"}`,
+              color: theme === "dark" ? "#fecaca" : "#991b1b",
               padding: "10px 16px",
               fontSize: "13px",
               fontWeight: 500,
@@ -683,7 +685,7 @@ export default function ChatbotPage() {
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "#991b1b",
+                  color: theme === "dark" ? "#fecaca" : "#991b1b",
                   fontWeight: "bold",
                   fontSize: "14px",
                   cursor: "pointer",
@@ -737,8 +739,12 @@ export default function ChatbotPage() {
                   gap: "6px",
                   fontSize: "12px",
                   fontWeight: 600,
-                  color: syncStatus.kind === "local" ? "#b45309" : "#475569",
-                  background: syncStatus.kind === "local" ? "rgba(245, 158, 11, 0.12)" : "rgba(148, 163, 184, 0.12)",
+                  color: syncStatus.kind === "local" 
+                    ? (theme === "dark" ? "#fbbf24" : "#b45309") 
+                    : (theme === "dark" ? "#a1a1aa" : "#475569"),
+                  background: syncStatus.kind === "local" 
+                    ? (theme === "dark" ? "rgba(245, 158, 11, 0.2)" : "rgba(245, 158, 11, 0.12)") 
+                    : (theme === "dark" ? "rgba(148, 163, 184, 0.2)" : "rgba(148, 163, 184, 0.12)"),
                   borderRadius: "999px",
                   padding: "4px 10px",
                 }}
@@ -820,28 +826,52 @@ export default function ChatbotPage() {
                             }}
                           />
                           {!msg.content.startsWith("⚠ Error:") && !isBusy && (
-                            <div style={{ marginTop: "12px", borderTop: "1px solid rgba(0,0,0,0.05)", paddingTop: "8px" }}>
+                            <div style={{ marginTop: "12px", borderTop: `1px solid ${theme === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)"}`, paddingTop: "8px" }}>
                               {escalatingMsgId === i ? (
-                                <div style={{ padding: "12px", background: "white", border: "1px solid rgba(0,0,0,0.08)", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-                                  <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "12px", color: "var(--text-main)" }}>Assign Issue To:</div>
+                                <div style={{ 
+                                  padding: "12px", 
+                                  background: theme === "dark" ? "var(--bg-card)" : "white", 
+                                  border: `1px solid ${theme === "dark" ? "var(--border-color)" : "rgba(0,0,0,0.08)"}`, 
+                                  borderRadius: "8px", 
+                                  boxShadow: theme === "dark" ? "0 4px 12px rgba(0,0,0,0.5)" : "0 2px 8px rgba(0,0,0,0.04)" 
+                                }}>
+                                  <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "12px", color: "var(--text-primary)" }}>Assign Issue To:</div>
                                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "8px", maxHeight: "180px", overflowY: "auto", paddingRight: "4px" }}>
                                     {employees.map(emp => (
                                       <button 
                                         key={emp.login} 
                                         onClick={() => confirmEscalate(i, emp.login)}
-                                        style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "6px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "10px", cursor: "pointer", transition: "all 0.2s" }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-orange, #f97316)"; e.currentTarget.style.background = "rgba(249,115,22,0.02)"; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.background = "#f9fafb"; }}
+                                        style={{ 
+                                          display: "flex", 
+                                          flexDirection: "column", 
+                                          alignItems: "center", 
+                                          justifyContent: "center", 
+                                          gap: "6px", 
+                                          background: theme === "dark" ? "rgba(255,255,255,0.03)" : "#f9fafb", 
+                                          border: `1px solid ${theme === "dark" ? "var(--border-color)" : "#e5e7eb"}`, 
+                                          borderRadius: "8px", 
+                                          padding: "10px", 
+                                          cursor: "pointer", 
+                                          transition: "all 0.2s" 
+                                        }}
+                                        onMouseEnter={(e) => { 
+                                          e.currentTarget.style.borderColor = "var(--accent-orange, #f97316)"; 
+                                          e.currentTarget.style.background = theme === "dark" ? "rgba(249,115,22,0.1)" : "rgba(249,115,22,0.02)"; 
+                                        }}
+                                        onMouseLeave={(e) => { 
+                                          e.currentTarget.style.borderColor = theme === "dark" ? "var(--border-color)" : "#e5e7eb"; 
+                                          e.currentTarget.style.background = theme === "dark" ? "rgba(255,255,255,0.03)" : "#f9fafb"; 
+                                        }}
                                       >
                                         {emp.avatar_url ? (
                                           <img src={emp.avatar_url} alt={emp.login} style={{ width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover" }} />
                                         ) : (
-                                          <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#ddd", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#666" }}>
+                                          <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: theme === "dark" ? "#333" : "#ddd", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: theme === "dark" ? "#aaa" : "#666" }}>
                                             {emp.login.charAt(0).toUpperCase()}
                                           </div>
                                         )}
-                                        <b style={{ color: "var(--text-main)", fontSize: "12px", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emp.login}</b>
-                                        <span style={{ background: "rgba(249,115,22,0.1)", color: "var(--accent-orange, #f97316)", padding: "2px 6px", borderRadius: "10px", fontSize: "10px", fontWeight: 600 }}>
+                                        <b style={{ color: "var(--text-primary)", fontSize: "12px", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emp.login}</b>
+                                        <span style={{ background: "rgba(249,115,22,0.15)", color: "var(--accent-orange, #f97316)", padding: "2px 6px", borderRadius: "10px", fontSize: "10px", fontWeight: 600 }}>
                                           {emp.assigned_issues} issues
                                         </span>
                                       </button>
@@ -856,7 +886,16 @@ export default function ChatbotPage() {
                                     </button>
                                     <button
                                       onClick={() => setEscalatingMsgId(null)}
-                                      style={{ fontSize: "11px", padding: "6px 12px", cursor: "pointer", background: "#f1f5f9", color: "#475569", border: "none", borderRadius: "6px", fontWeight: 500 }}
+                                      style={{ 
+                                        fontSize: "11px", 
+                                        padding: "6px 12px", 
+                                        cursor: "pointer", 
+                                        background: theme === "dark" ? "#27272a" : "#f1f5f9", 
+                                        color: theme === "dark" ? "#a1a1aa" : "#475569", 
+                                        border: "none", 
+                                        borderRadius: "6px", 
+                                        fontWeight: 500 
+                                      }}
                                     >
                                       Cancel
                                     </button>
@@ -965,10 +1004,16 @@ export default function ChatbotPage() {
             maxWidth: "360px",
             padding: "14px 16px",
             borderRadius: "10px",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-            background: toast.type === "success" ? "#f0fdf4" : "#fef2f2",
-            border: `1px solid ${toast.type === "success" ? "#86efac" : "#fca5a5"}`,
-            color: toast.type === "success" ? "#166534" : "#991b1b",
+            boxShadow: theme === "dark" ? "0 8px 32px rgba(0,0,0,0.5)" : "0 4px 16px rgba(0,0,0,0.12)",
+            background: toast.type === "success" 
+              ? (theme === "dark" ? "#064e3b" : "#f0fdf4") 
+              : (theme === "dark" ? "#7f1d1d" : "#fef2f2"),
+            border: `1px solid ${toast.type === "success" 
+              ? (theme === "dark" ? "#065f46" : "#86efac") 
+              : (theme === "dark" ? "#991b1b" : "#fca5a5")}`,
+            color: toast.type === "success" 
+              ? (theme === "dark" ? "#d1fae5" : "#166534") 
+              : (theme === "dark" ? "#fee2e2" : "#991b1b"),
           }}
         >
           <span aria-hidden="true" style={{ fontSize: "18px" }}>

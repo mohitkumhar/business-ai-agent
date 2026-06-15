@@ -4,6 +4,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { DashboardSummary, Alert } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
   DollarIcon,
@@ -101,6 +102,9 @@ export default function KPICards() {
     return () => window.removeEventListener("keydown", onKey);
   }, [alertsOpen]);
 
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   const cards = data
     ? [
       {
@@ -110,7 +114,7 @@ export default function KPICards() {
         positive: !loading && (data?.revenue_change ?? 0) >= 0,
         icon: <DollarIcon size={18} />,
         accentColor: "#3B82F6",
-        iconBg: "rgba(59, 130, 246, 0.1)",
+        iconBg: isDark ? "rgba(59, 130, 246, 0.15)" : "rgba(59, 130, 246, 0.1)",
         iconColor: "#3B82F6",
       },
       {
@@ -120,7 +124,7 @@ export default function KPICards() {
         positive: !loading && (data?.expenses_change ?? 0) < 0,
         icon: <ReceiptIcon size={18} />,
         accentColor: "#EF4444",
-        iconBg: "rgba(239, 68, 68, 0.1)",
+        iconBg: isDark ? "rgba(239, 68, 68, 0.15)" : "rgba(239, 68, 68, 0.1)",
         iconColor: "#EF4444",
       },
       {
@@ -129,9 +133,9 @@ export default function KPICards() {
         change: loading ? "0%" : `${(data?.net_profit_change || 0)}%`,
         positive: !loading && (data?.net_profit_change ?? 0) >= 0,
         icon: <TrendingUpIcon size={18} />,
-        iconBg: "#F0FDF4",
-        iconColor: "#16A34A",
-        accentColor: "#16A34A",
+        iconBg: isDark ? "rgba(16, 185, 129, 0.15)" : "#F0FDF4",
+        iconColor: "#10B981",
+        accentColor: "#10B981",
       },
       {
         label: "Transactions",
@@ -139,9 +143,9 @@ export default function KPICards() {
         change: loading ? "0%" : `${(data?.transactions_change || 0)}%`,
         positive: !loading && (data?.transactions_change ?? 0) >= 0,
         icon: <ArrowsRepeatIcon size={18} />,
-        iconBg: "#FFFBEB",
-        iconColor: "#D97706",
-        accentColor: "#D97706",
+        iconBg: isDark ? "rgba(245, 158, 11, 0.15)" : "#FFFBEB",
+        iconColor: "#F59E0B",
+        accentColor: "#F59E0B",
       },
       {
         label: "Active Alerts",
@@ -149,9 +153,9 @@ export default function KPICards() {
         change: "",
         positive: false,
         icon: <AlertTriangleIcon size={18} />,
-        iconBg: "#FEF2F2",
-        iconColor: "#DC2626",
-        accentColor: "#DC2626",
+        iconBg: isDark ? "rgba(239, 68, 68, 0.15)" : "#FEF2F2",
+        iconColor: "#EF4444",
+        accentColor: "#EF4444",
       },
     ]
     : [];
@@ -242,8 +246,10 @@ export default function KPICards() {
               <div
                 style={{
                   ...styles.badge,
-                  background: (data?.active_alerts ?? 0) > 0 ? "#FEF2F2" : "#F0FDF4",
-                  color: (data?.active_alerts ?? 0) > 0 ? "#DC2626" : "#16A34A",
+                  background: (data?.active_alerts ?? 0) > 0 
+                    ? (isDark ? "rgba(239, 68, 68, 0.15)" : "#FEF2F2") 
+                    : (isDark ? "rgba(16, 185, 129, 0.15)" : "#F0FDF4"),
+                  color: (data?.active_alerts ?? 0) > 0 ? "#EF4444" : "#10B981",
                 }}
               >
                 <span style={{ fontSize: 11, fontWeight: 600 }}>
@@ -255,8 +261,10 @@ export default function KPICards() {
               <div
                 style={{
                   ...styles.badge,
-                  background: card.positive ? "#F0FDF4" : "#FEF2F2",
-                  color: card.positive ? "#16A34A" : "#DC2626",
+                  background: card.positive 
+                    ? (isDark ? "rgba(16, 185, 129, 0.15)" : "#F0FDF4") 
+                    : (isDark ? "rgba(239, 68, 68, 0.15)" : "#FEF2F2"),
+                  color: card.positive ? "#10B981" : "#EF4444",
                 }}
               >
                 <span style={{ fontSize: 12 }}>{card.positive ? "↑" : "↓"}</span>

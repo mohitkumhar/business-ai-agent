@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import { api, BusinessInfo } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
+import { useTheme } from "@/context/ThemeContext";
 import type { DashboardPeriod } from "@/lib/dashboardPeriod";
 import { ExportIcon } from "./Icons";
 
 export default function WelcomeBanner() {
   const { period, setPeriod, dataVersion } = useDashboardPeriod();
+  const { theme } = useTheme();
   const [business, setBusiness] = useState<BusinessInfo | null>(null);
   const [exporting, setExporting] = useState(false);
   const now = new Date();
@@ -77,7 +79,7 @@ export default function WelcomeBanner() {
           disabled={exporting}
           aria-busy={exporting}
         >
-          <ExportIcon size={14} /> {exporting ? "Exporting…" : "Export"}
+          <ExportIcon size={14} color={theme === "dark" ? "#A1A1AA" : "currentColor"} /> {exporting ? "Exporting…" : "Export"}
         </button>
       </div>
     </div>
