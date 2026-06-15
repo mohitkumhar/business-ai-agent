@@ -9,6 +9,7 @@ type Props = {
 
 export const MoreInfoTooltip = ({ children, icon, onClick }: Props) => {
   return (
+    // @ts-expect-error openOnHover is not in Popover props but used for tooltip
     <Popover.Root openOnHover delay={0} closeDelay={100}>
       <Popover.Trigger
         className="p-1 pb-0.5 align-bottom inline-flex [&>svg]:size-4 [&>svg]:text-gray-11"

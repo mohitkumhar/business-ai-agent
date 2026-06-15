@@ -55,7 +55,7 @@ const useCases = [
   },
 ] as const;
 
-let interval: NodeJS.Timer;
+let interval: any;
 
 export const UseCases = ({ className }: { className?: string }) => {
   const [isAutoProgressEnabled, setIsAutoProgressEnabled] = useState(true);

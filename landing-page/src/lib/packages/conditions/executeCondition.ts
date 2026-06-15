@@ -220,17 +220,17 @@ const compare = (
   if (!a || typeof a === "string") {
     if (!b || typeof b === "string") return compareStrings(a, b);
     return type === "every"
-      ? b.every((b) => compareStrings(a, b))
-      : b.some((b) => compareStrings(a, b));
+      ? b.every((b: any) => compareStrings(a, b))
+      : b.some((b: any) => compareStrings(a, b));
   }
   if (!b || typeof b === "string") {
     return type === "every"
-      ? a.every((a) => compareStrings(a, b))
-      : a.some((a) => compareStrings(a, b));
+      ? a.every((a: any) => compareStrings(a, b))
+      : a.some((a: any) => compareStrings(a, b));
   }
   if (type === "every")
-    return a.every((a) => b.every((b) => compareStrings(a, b)));
-  return a.some((a) => b.some((b) => compareStrings(a, b)));
+    return a.every((a: any) => b.every((b: any) => compareStrings(a, b)));
+  return a.some((a: any) => b.some((b: any) => compareStrings(a, b)));
 };
 
 const parseDateOrNumberOrStringLength = (value: string): number => {

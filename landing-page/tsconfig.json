@@ -39,8 +39,14 @@
       "@typebot.io/emails/*": [
         "./src/lib/packages/emails/*"
       ],
+      "@typebot.io/emails": [
+        "./src/lib/packages/emails/index.ts"
+      ],
       "@typebot.io/env/*": [
         "./src/lib/packages/env/*"
+      ],
+      "@typebot.io/env": [
+        "./src/lib/packages/env/index.ts"
       ],
       "@typebot.io/lib/*": [
         "./src/lib/packages/lib/*"
@@ -62,6 +68,9 @@
       ],
       "@typebot.io/templates/*": [
         "./src/lib/packages/templates/*"
+      ],
+      "@typebot.io/templates": [
+        "./src/lib/packages/templates/index.ts"
       ],
       "@typebot.io/ui/*": [
         "./src/lib/packages/ui/*"

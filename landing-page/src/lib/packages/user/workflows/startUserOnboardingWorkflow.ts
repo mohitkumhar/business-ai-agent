@@ -22,7 +22,7 @@ export const StartUserOnboardingWorkflow = Workflow.make({
 
 export const StartUserOnboardingWorkflowLayer =
   StartUserOnboardingWorkflow.toLayer(
-    Effect.fn(function* (payload) {
+    Effect.fn((function* (payload: any) {
       yield* Effect.annotateLogsScoped({
         userId: payload.userId,
         email: payload.email,
@@ -84,13 +84,13 @@ export const StartUserOnboardingWorkflowLayer =
         error: Schema.Union(NodemailerError),
         execute: Effect.gen(function* () {
           const emailClient = yield* NodemailerClient;
-          const html = yield* Effect.tryPromise({
+          const html = (yield* Effect.tryPromise({
             try: () =>
               renderUserOnboardingEmail({
                 unsubscribeUrl: unsubscribeUrls?.pageUrl ?? undefined,
               }),
             catch: (error) => new NodemailerError({ cause: error }),
-          });
+          })) as string;
           const headers = unsubscribeUrls
             ? {
                 "List-Unsubscribe": `<${unsubscribeUrls.apiUrl}>`,
@@ -114,7 +114,7 @@ export const StartUserOnboardingWorkflowLayer =
           ),
         ),
       );
-    }),
+    }) as any),
   );
 
 const buildUnsubscribeUrls = (email: string) => {

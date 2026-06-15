@@ -28,7 +28,7 @@ export const CookieConsentBot = ({ isOpen, onSubmit, openDelay }: Props) => {
       onEnd={() => {
         close({ id: "cookie-consent" });
       }}
-      onAnswer={({ message }) => {
+      onNewMessage={({ message }: any) => {
         onSubmit(parseConsentBotAnswer(message));
       }}
     />

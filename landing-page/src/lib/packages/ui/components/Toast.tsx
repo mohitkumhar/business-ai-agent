@@ -164,8 +164,7 @@ const ToastIcon = ({
 
 export const ToastProvider = ToastPrimitive.Provider;
 
-export type AddToastOptions =
-  ToastPrimitive.useToastManager.AddOptions<ToastData>;
+export type AddToastOptions = any;
 
 export type ToastType = "error" | "success" | "info";
 

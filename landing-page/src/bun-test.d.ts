@@ -16,6 +16,7 @@ declare module "bun:test" {
     toHaveBeenCalled: () => void;
     toHaveBeenCalledWith: (...args: unknown[]) => void;
     toHaveBeenCalledTimes: (times: number) => void;
+    toBeGreaterThan: (expected: number) => void;
   };
 
   export const beforeEach: (callback: TestCallback) => void;
@@ -23,7 +24,10 @@ declare module "bun:test" {
   export const beforeAll: (callback: TestCallback) => void;
   export const afterAll: (callback: TestCallback) => void;
   export const describe: (name: string, callback: TestCallback) => void;
-  export const expect: (actual: unknown) => Matchers;
+  export const expect: ((actual: unknown) => Matchers) & {
+    arrayContaining: (expected: any[]) => any;
+    objectContaining: (expected: any) => any;
+  };
   export const it: (name: string, callback: TestCallback) => void;
   export const test: (name: string, callback: TestCallback) => void;
   export interface Mock<T extends (...args: any[]) => any = (...args: any[]) => any> {

@@ -294,7 +294,7 @@ const Desktop = React.forwardRef<
             size="sm"
             className="font-normal"
             href={"href" in link ? link.href : undefined}
-            to={"to" in link ? link.to : undefined}
+            to={"to" in link ? (link.to as any) : undefined}
             activeProps={{
               className: "font-medium",
             }}
