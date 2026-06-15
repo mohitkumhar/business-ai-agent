@@ -18,6 +18,7 @@ import EmployeeStatistics from "@/components/EmployeeStatistics";
 import RecentTransactions from "@/components/RecentTransactions";
 import ForecastChart from "@/components/ForecastChart";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import OnboardingTour from "@/components/OnboardingTour";
 
 import { useEffect } from "react";
 
@@ -33,6 +34,7 @@ export default function DashboardPage() {
   return (
     <DashboardPeriodProvider>
       <div className="app-layout">
+        <OnboardingTour />
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div className="main-area">
           <Topbar
