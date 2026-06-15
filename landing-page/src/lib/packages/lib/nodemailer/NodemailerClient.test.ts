@@ -2,8 +2,10 @@ import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { Effect, Layer, ConfigProvider, Exit, Cause } from "effect";
 import { NodemailerClientLayer, NodemailerClient, NodemailerError } from "./NodemailerClient";
 
-const mockSendMail = mock();
-const mockCreateTransport = mock((options, defaults) => {
+import type { Mock } from "bun:test";
+
+const mockSendMail = mock((..._args: any[]) => Promise.resolve());
+const mockCreateTransport = mock((options: any, defaults: any) => {
   return {
     sendMail: mockSendMail,
   };
@@ -123,7 +125,7 @@ describe("NodemailerClientLayer", () => {
           expect(expectedError._tag).toBe("@typebot/NodemailerError");
           expect(expectedError.cause).toBe(error);
         } else {
-          expect().fail("Expected a Fail cause");
+          throw new Error("Expected a Fail cause");
         }
       }
     });
@@ -145,7 +147,7 @@ describe("NodemailerClientLayer", () => {
           expect(expectedError._tag).toBe("@typebot/NodemailerError");
           expect(expectedError.cause).toBe(error);
         } else {
-          expect().fail("Expected a Fail cause");
+          throw new Error("Expected a Fail cause");
         }
       }
     });
