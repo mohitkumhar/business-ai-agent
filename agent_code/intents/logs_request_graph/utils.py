@@ -20,9 +20,10 @@ from llm.base_llm import base_llm
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from logger.logger import logger
 from intents.logs_request_graph.graph_state import LogsRequestGraphState
-from intents.logs_request_graph.structures import (
-    LogsQueryParseOutput,
-    LogsAnalysisOutput,
+from schemas.responses import (
+    LogsQueryParseSchema,
+    LogsAnalysisSchema,
+    AgentResponseSchema,
 )
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 
@@ -33,8 +34,9 @@ LOKI_URL = os.getenv("LOKI_URL", "http://loki:3100")
 LOKI_REQUEST_TIMEOUT = (5, 20)  # connect timeout, read timeout
 
 # LLMs with structured output
-logs_query_parse_llm = base_llm.with_structured_output(LogsQueryParseOutput)
-logs_analysis_llm = base_llm.with_structured_output(LogsAnalysisOutput)
+logs_query_parse_llm = base_llm.with_structured_output(LogsQueryParseSchema)
+logs_analysis_llm = base_llm.with_structured_output(LogsAnalysisSchema)
+logs_structured_answer_llm = base_llm.with_structured_output(AgentResponseSchema)
 
 
 # ── NODE 1 – parse_logs_query ──────────────────────────────────────────
@@ -357,18 +359,28 @@ Format a clear, user-friendly response following these rules:
 - Use markdown formatting for readability.
 - Do NOT expose internal LogQL queries or system implementation details.
 - If no logs were found, say so clearly and suggest next steps.
-
-Respond ONLY with the formatted answer — no preamble."""
+"""
 
     try:
-        logger.info("[logs] Formatting log analysis response...")
-        llm_response = base_llm.invoke(prompt, config=config)
-        formatted = llm_response.content
-        logger.info("[logs] Formatted response generated.")
+        logger.info("[logs] Formatting log analysis response (structured)...")
+        result = logs_structured_answer_llm.invoke(prompt, config=config)
+        
+        parts = [
+            f"**Query**: {result.query_understood}",
+            f"\n{result.summary}"
+        ]
+        if result.recommendations:
+            parts.append("\n**Recommended Actions**:")
+            for r in result.recommendations:
+                parts.append(f"- {r}")
+        
+        formatted = "\n".join(parts)
+        logger.info("[logs] Formatted structured response generated.")
     except Exception:
         formatted = analysis.get("summary", "Log analysis complete.")
 
     return {
         "formatted_response": formatted,
+        "structured_response": result.model_dump_json() if 'result' in locals() else None,
         "messages": [{"role": "assistant", "content": formatted}],
     }

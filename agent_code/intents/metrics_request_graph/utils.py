@@ -17,9 +17,10 @@ from llm.base_llm import base_llm
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 from logger.logger import logger
 from intents.metrics_request_graph.graph_state import MetricsRequestGraphState
-from intents.metrics_request_graph.structures import (
-    MetricsQueryParseOutput,
-    MetricsAnalysisOutput,
+from schemas.responses import (
+    MetricsQueryParseSchema,
+    MetricsAnalysisSchema,
+    AgentResponseSchema,
 )
 from api_errors import SAFE_INTERNAL_ERROR_MESSAGE
 
@@ -29,8 +30,9 @@ load_dotenv()
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
 
 # LLMs with structured output
-metrics_query_parse_llm = base_llm.with_structured_output(MetricsQueryParseOutput)
-metrics_analysis_llm = base_llm.with_structured_output(MetricsAnalysisOutput)
+metrics_query_parse_llm = base_llm.with_structured_output(MetricsQueryParseSchema)
+metrics_analysis_llm = base_llm.with_structured_output(MetricsAnalysisSchema)
+metrics_structured_answer_llm = base_llm.with_structured_output(AgentResponseSchema)
 
 
 # ── Available metrics reference (fed to the LLM for better query generation) ──
@@ -356,18 +358,28 @@ Format a clear, user-friendly response following these rules:
 - Use markdown formatting for readability.
 - Do NOT expose raw JSON, PromQL, or internal system details.
 - If no data was found, say so clearly.
-
-Respond ONLY with the formatted answer — no preamble."""
+"""
 
     try:
-        logger.info("[metrics] Formatting metrics analysis response...")
-        llm_response = base_llm.invoke(prompt, config=config)
-        formatted = llm_response.content
-        logger.info("[metrics] Formatted response generated.")
+        logger.info("[metrics] Formatting metrics analysis response (structured)...")
+        result = metrics_structured_answer_llm.invoke(prompt, config=config)
+        
+        parts = [
+            f"**Query**: {result.query_understood}",
+            f"\n{result.summary}"
+        ]
+        if result.recommendations:
+            parts.append("\n**Recommended Actions**:")
+            for r in result.recommendations:
+                parts.append(f"- {r}")
+
+        formatted = "\n".join(parts)
+        logger.info("[metrics] Formatted structured response generated.")
     except Exception:
         formatted = analysis.get("summary", "Metrics analysis complete.")
 
     return {
         "formatted_response": formatted,
+        "structured_response": result.model_dump_json() if 'result' in locals() else None,
         "messages": [{"role": "assistant", "content": formatted}],
     }

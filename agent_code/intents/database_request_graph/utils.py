@@ -1,10 +1,10 @@
 import re
-from intents.database_request_graph.structures import (
-    DateRangeOutput,
-    EntityExtractionOutput,
-    SQLGenerationOutput,
-    SQLValidationOutput,
-    BusinessInsightOutput,
+from schemas.responses import (
+    DateRangeSchema,
+    EntityExtractionSchema,
+    SQLGenerationSchema,
+    SQLValidationSchema,
+    DataInsightSchema,
 )
 from langgraph.types import interrupt
 from datetime import date
@@ -50,11 +50,11 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
 
 # Defining LLM
 # =================================
-date_range_llm = base_llm.with_structured_output(DateRangeOutput)
-entity_llm = base_llm.with_structured_output(EntityExtractionOutput)
-sql_gen_llm = base_llm.with_structured_output(SQLGenerationOutput)
-sql_val_llm = base_llm.with_structured_output(SQLValidationOutput)
-insight_llm = base_llm.with_structured_output(BusinessInsightOutput)
+date_range_llm = base_llm.with_structured_output(DateRangeSchema)
+entity_llm = base_llm.with_structured_output(EntityExtractionSchema)
+sql_gen_llm = base_llm.with_structured_output(SQLGenerationSchema)
+sql_val_llm = base_llm.with_structured_output(SQLValidationSchema)
+insight_llm = base_llm.with_structured_output(DataInsightSchema)
 
 
 

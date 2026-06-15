@@ -7,7 +7,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from langgraph.graph.message import add_messages
 import psycopg
-from intents.general_information_graph.structures import WebSearchStructure
+from schemas.responses import WebSearchSchema, AgentResponseSchema
 from dotenv import load_dotenv
 import os
 from llm.base_llm import base_llm
@@ -43,7 +43,8 @@ def create_postgres_memory():
 
 
 general_information_web_search_llm = base_llm
-general_information_web_search_require_llm = general_information_web_search_llm.with_structured_output(WebSearchStructure)
+general_information_web_search_require_llm = general_information_web_search_llm.with_structured_output(WebSearchSchema)
+general_information_structured_answer_llm = general_information_web_search_llm.with_structured_output(AgentResponseSchema)
 
 
 def is_web_search_required(state: GeneralInformationGraphState):
@@ -75,10 +76,10 @@ def is_web_search_required(state: GeneralInformationGraphState):
     """
     
     logger.info(f"Prompt for web search requirement:\n{prompt}")
-    response = general_information_web_search_require_llm.invoke(prompt).model_dump()
-    logger.info(f"Web search requirement response: {response}")
+    response = general_information_web_search_require_llm.invoke(prompt)
+    is_required = response.is_web_search_required
 
-    if response["is_web_search_required"] == "yes":
+    if is_required == "yes":
         return {"route": "required"}
     return {"route": "not_required"}
 
@@ -135,12 +136,31 @@ def answer_user_query(state: GeneralInformationGraphState, config: RunnableConfi
 
     Provide only the final answer.
     """
-    logger.info(f"Prompt for answering user query:\n{prompt}")
-    response = general_information_web_search_llm.invoke(prompt, config=config)
-    logger.info(f"Generated response: {response.content}")
+    logger.info(f"Prompt for answering user query (structured):\n{prompt}")
+    result = general_information_structured_answer_llm.invoke(prompt, config=config)
+    
+    # Format a markdown string from the structured result
+    parts = [
+        f"**Question**: {result.query_understood}",
+        f"\n{result.summary}"
+    ]
+    if result.recommendations:
+        parts.append("\n**Recommendations**:")
+        for r in result.recommendations:
+            parts.append(f"- {r}")
+    
+    if result.follow_up_questions:
+        parts.append("\n**Follow-ups**:")
+        for f in result.follow_up_questions:
+            parts.append(f"- {f}")
+            
+    formatted_md = "\n".join(parts)
+    
+    logger.info(f"Generated structured response: {result.summary}")
     return {
-        "user_query_output": response.content,
-        "messages": [{"role": "assistant", "content": response.content}]
+        "user_query_output": formatted_md,
+        "structured_response": result.model_dump_json(),
+        "messages": [{"role": "assistant", "content": formatted_md}]
     }
 
 web_search_tool = DuckDuckGoSearchRun()
