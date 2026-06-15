@@ -64,7 +64,38 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
             }
         ],
         "generationConfig": {
-            "response_mime_type": "application/json"
+            "responseMimeType": "application/json",
+            "responseSchema": {
+                "type": "ARRAY",
+                "description": "List of extracted transactions",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "date": {
+                            "type": "STRING",
+                            "description": "Date in YYYY-MM-DD format. If only day/month is mentioned, use the current year (2026)."
+                        },
+                        "type": {
+                            "type": "STRING",
+                            "enum": ["Revenue", "Expense"],
+                            "description": "The transaction type: 'Revenue' for sales/income or 'Expense' for costs/payments."
+                        },
+                        "category": {
+                            "type": "STRING",
+                            "description": "Short category of the transaction."
+                        },
+                        "amount": {
+                            "type": "NUMBER",
+                            "description": "Numerical value of the transaction."
+                        },
+                        "description": {
+                            "type": "STRING",
+                            "description": "Brief description of the transaction."
+                        }
+                    },
+                    "required": ["date", "type", "category", "amount", "description"]
+                }
+            }
         }
     }
 
@@ -88,7 +119,7 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
             
             # Requirement #3: Safe JSON parsing with specific error types
             try:
-                # Remove markdown code fences if LLM accidentally included them
+                # Remove markdown code fences if present (should not be when using responseSchema, but keep for safety)
                 if "```" in text_result:
                     cleaned = text_result.split("```")[1]
                     if cleaned.startswith("json"): cleaned = cleaned[4:]
