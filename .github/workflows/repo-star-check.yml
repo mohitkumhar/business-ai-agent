@@ -48,8 +48,8 @@ jobs:
           actor = os.environ.get("GITHUB_ACTOR_NAME", "")
 
           if not target:
-              print("No GitHub user was provided to check.")
-              sys.exit(1)
+              print("No GitHub user was provided to check. Skipping star check.")
+              sys.exit(0)
 
           if event_name == "watch" and watch_action == "started" and target.lower() == actor.lower():
               print(f"{target} just starred {repo}.")
@@ -71,10 +71,15 @@ jobs:
                   check=False,
               )
               if result.returncode != 0:
-                  print(result.stderr)
-                  sys.exit(result.returncode)
+                  print(f"API call failed with {result.returncode}: {result.stderr}")
+                  print("Skipping star check due to API error.")
+                  sys.exit(0)
 
-              stargazers = json.loads(result.stdout)
+              try:
+                  stargazers = json.loads(result.stdout)
+              except Exception as e:
+                  print(f"Failed to parse stargazers: {e}")
+                  sys.exit(0)
               if any((user.get("login") or "").lower() == target.lower() for user in stargazers):
                   print(f"{target} has starred {repo}.")
                   sys.exit(0)
@@ -83,6 +88,7 @@ jobs:
                   break
               page += 1
 
-          print(f"{target} has not starred {repo}.")
-          sys.exit(1)
+          print(f"NOTICE: {target} has not starred {repo} yet.")
+          print("While starring is encouraged to support the project, it is not a hard blocker for merging.")
+          sys.exit(0)
           PY
