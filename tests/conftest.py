@@ -194,3 +194,28 @@ for module_name, workflow_name in workflow_modules.items():
         module = types.ModuleType(module_name)
         setattr(module, workflow_name, _NoopWorkflow())
         sys.modules[module_name] = module
+
+# ── stubs for slack_sdk and query_execution ─────────────
+if "slack_sdk" not in sys.modules:
+    _slack_sdk = types.ModuleType("slack_sdk")
+    _slack_sdk_errors = types.ModuleType("slack_sdk.errors")
+
+    class _SlackApiError(Exception):
+        def __init__(self, message="", response=None):
+            super().__init__(message)
+            self.response = response if response is not None else {}
+
+    class _WebClient:
+        def __init__(self, token="", **kwargs):
+            self.token = token
+
+    _slack_sdk.WebClient = _WebClient
+    _slack_sdk_errors.SlackApiError = _SlackApiError
+    _slack_sdk.errors = _slack_sdk_errors
+    sys.modules["slack_sdk"] = _slack_sdk
+    sys.modules["slack_sdk.errors"] = _slack_sdk_errors
+
+if "query_execution" not in sys.modules:
+    _qe = types.ModuleType("query_execution")
+    _qe.stream_agent_sse_lines = lambda *a, **kw: iter([])
+    sys.modules["query_execution"] = _qe
