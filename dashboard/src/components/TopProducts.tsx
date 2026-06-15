@@ -85,7 +85,7 @@ export default function TopProducts() {
   }, [data]);
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" data-widget-id="top-products">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <PackageIcon size={18} color="var(--accent-blue)" />

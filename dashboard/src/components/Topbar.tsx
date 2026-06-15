@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SearchIcon, HelpCircleIcon, BellIcon, SunIcon, MoonIcon, MenuIcon } from "./Icons";
+import ExportPDFButton from "./ExportPDFButton";
 import { LANDING_PAGE_URL } from "@/lib/publicUrls";
 import { syncUserEmailFromUrl, syncUserNameFromApi } from "@/lib/syncDashboardUser";
 import { useTheme } from "@/context/ThemeContext";
@@ -118,6 +119,9 @@ export default function Topbar({ onSearch, title = "Overview", onMenuClick }: To
       </div>
       
       <div className="topbar-right">
+        {/* PDF Export Button */}
+        <ExportPDFButton />
+
         {/* Theme Toggle Button (Added from kushal-dev) */}
         <button 
           className="topbar-icon-btn" 

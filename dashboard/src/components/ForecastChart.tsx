@@ -54,7 +54,7 @@ export default function ForecastChart() {
 
   if (loading) {
     return (
-      <div className="chart-card">
+      <div className="chart-card" data-widget-id="revenue-forecast">
         <h3 className="chart-title">Revenue Forecast — Next 30 Days</h3>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, width: "100%" }}>
           <LoadingSpinner label="Predicting business trends…" />
@@ -65,7 +65,7 @@ export default function ForecastChart() {
 
   if (error || !data) {
     return (
-      <div className="chart-card">
+      <div className="chart-card" data-widget-id="revenue-forecast">
         <h3 className="chart-title">Revenue Forecast — Next 30 Days</h3>
         <div
           role="status"
@@ -90,7 +90,7 @@ export default function ForecastChart() {
 
   if (!hasForecastData) {
     return (
-      <div className="chart-card">
+      <div className="chart-card" data-widget-id="revenue-forecast">
         <div style={{ marginBottom: "12px" }}>
           <h3 className="chart-title" style={{ marginBottom: "4px" }}>Revenue Forecast — Next 30 Days</h3>
           <p style={{ fontSize: "14px", color: "var(--text-muted)" }}>AI-powered projections based on recent revenue history</p>
@@ -139,7 +139,7 @@ export default function ForecastChart() {
   const trendTextColor = trend === "up" ? "#166534" : trend === "down" ? "#991B1B" : "#374151";
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" data-widget-id="revenue-forecast">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
         <div>
           <h3 className="chart-title" style={{ marginBottom: "4px" }}>Revenue Forecast — Next 30 Days</h3>

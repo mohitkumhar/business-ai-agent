@@ -172,7 +172,7 @@ export default function KPICards() {
   }
 
   return (
-    <div style={styles.grid}>
+    <div style={styles.grid} data-widget-id="kpi-cards">
       {cards.map((card) => {
         const clickable = card.label === "Active Alerts";
         const cardContent = (

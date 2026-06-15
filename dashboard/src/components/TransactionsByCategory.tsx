@@ -81,7 +81,7 @@ export default function TransactionsByCategory() {
   }, [data, theme]);
 
   return (
-    <div className="chart-card" key={dataVersion}>
+    <div className="chart-card" key={dataVersion} data-widget-id="transactions-by-category">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <PieChartIcon size={18} color="var(--accent-green)" />
