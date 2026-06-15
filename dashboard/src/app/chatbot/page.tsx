@@ -59,7 +59,7 @@ export default function ChatbotPage() {
 
   const [employees, setEmployees] = useState<{login: string, avatar_url?: string, assigned_issues: number}[]>([]);
   const [escalatingMsgId, setEscalatingMsgId] = useState<number | null>(null);
-  
+
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const showToast = useCallback((message: string, type: "success" | "error") => {

@@ -86,6 +86,16 @@ def _load_api_errors_with_fake_flask(request_id="req-123"):
     fake_flask = types.ModuleType("flask")
     fake_flask.g = types.SimpleNamespace(request_id=request_id)
     fake_flask.jsonify = lambda payload: FakeResponse(payload)
+
+    class FakeHeaders:
+        def get(self, key, default=None):
+            if key == "X-Request-Id" and request_id == "req-123":
+                return None  # Let the test use g.request_id as candidate
+            return None
+
+    fake_flask.request = types.SimpleNamespace(headers=FakeHeaders())
+    fake_flask.has_request_context = lambda: True
+
     sys.modules["flask"] = fake_flask
     sys.modules.pop("agent_code.api_errors", None)
     try:

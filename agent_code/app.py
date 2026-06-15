@@ -4,7 +4,7 @@ import csv
 import hmac
 import io
 import math
-from flask import Flask, request, jsonify, Response, stream_with_context, g
+from flask import Flask, request, jsonify, Response, stream_with_context, g, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -1100,14 +1100,12 @@ def telegram_webhook():
             _send_telegram_text(chat_id, reply)
             return jsonify({"ok": True})
 
-        # --- FIX: Remove static default business ID ---
         if not DEFAULT_BUSINESS_ID:
-            logger.error("Telegram webhook: DEFAULT_BUSINESS_ID environment variable is not set.")
-            _send_telegram_text(chat_id, "Service temporarily unavailable. Please try again later.")
+            logger.error("Telegram webhook rejected: DEFAULT_BUSINESS_ID is not configured.")
+            _send_telegram_text(chat_id, "Sorry, this bot is not configured yet. Please contact the administrator.")
             return jsonify({"ok": True})
 
-        business_id = DEFAULT_BUSINESS_ID
-        answer = _run_agent_to_text(text, f"tg-{chat_id}", business_id)
+        answer = _run_agent_to_text(text, f"tg-{chat_id}", DEFAULT_BUSINESS_ID)
         _send_telegram_text(chat_id, answer)
         return jsonify({"ok": True})
     except Exception as e:
@@ -1800,6 +1798,10 @@ def api_alerts_by_severity():
     except Exception as exc:
         return internal_error_response(exc)
 
+def _request_id() -> str:
+    header_candidate = request.headers.get("X-Request-Id") if has_request_context() else None
+    return get_request_id(getattr(g, "request_id", None), header_candidate)
+
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
 @token_required
 def api_health_scores():
@@ -1840,7 +1842,22 @@ def api_health_scores():
             ],
         })
     except Exception as exc:
-        return internal_error_response(exc)
+        request_id = _request_id()
+        logger.error(
+            "Health scores API failed request_id=%s: %s",
+            request_id,
+            exc,
+            exc_info=True,
+        )
+        resp = jsonify(
+            {
+                "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                "code": "health_scores_unavailable",
+                "request_id": request_id,
+            }
+        )
+        resp.headers["X-Request-ID"] = request_id
+        return resp, 500
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
 @token_required

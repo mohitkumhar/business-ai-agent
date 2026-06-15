@@ -149,6 +149,48 @@ def test_health_scores_scoped_to_token_business(client, recorded_queries):
     assert params[0] == BUSINESS_A
 
 
+def test_health_scores_error_response_is_client_safe(client, monkeypatch):
+    def fail_db_query(*args, **kwargs):
+        raise RuntimeError("database credentials leaked in raw exception")
+
+    monkeypatch.setattr(app_module, "execute_read_query_params", fail_db_query)
+
+    resp = client.get(
+        "/api/dashboard/health-scores",
+        headers={**_auth(BUSINESS_A), "X-Request-Id": "req-health-scores-test-app"},
+    )
+    assert resp.status_code == 500
+    assert resp.get_json() == {
+        "error": app_module.SAFE_INTERNAL_ERROR_MESSAGE,
+        "code": "health_scores_unavailable",
+        "request_id": "req-health-scores-test-app",
+    }
+    assert resp.headers["X-Request-ID"] == "req-health-scores-test-app"
+    assert "database credentials" not in resp.get_data(as_text=True)
+
+
+def test_health_scores_error_invalid_request_id_is_sanitized(client, monkeypatch):
+    """An invalid X-Request-Id must be replaced with a generated UUID,
+    and the JSON body request_id must match the X-Request-ID response header."""
+    import re
+
+    def fail_db_query(*args, **kwargs):
+        raise RuntimeError("db error")
+
+    monkeypatch.setattr(app_module, "execute_read_query_params", fail_db_query)
+
+    resp = client.get(
+        "/api/dashboard/health-scores",
+        headers={**_auth(BUSINESS_A), "X-Request-Id": "bad/request-id"},
+    )
+    payload = resp.get_json()
+
+    assert resp.status_code == 500
+    assert payload["request_id"] == resp.headers["X-Request-ID"]
+    assert re.fullmatch(r"[0-9a-f]{32}", payload["request_id"])
+    assert payload["request_id"] != "bad/request-id"
+
+
 # ---------------------------------------------------------------------------
 # /api/dashboard/sales-trend  (issue #220)
 # ---------------------------------------------------------------------------
