@@ -25,6 +25,21 @@ from logger.logger import logger
 from request_ids import get_request_id
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
+
+import sqlite3
+import uuid
+import numpy as np
+from dateutil.relativedelta import relativedelta
+from langchain_openai import ChatOpenAI
+from nodes import intent_detection, format_response
+from intents.general_information_graph.subgraph import general_information_graph_workflow
+from intents.database_request_graph.subgraph import database_request_graph_workflow
+from intents.logs_request_graph.subgraph import logs_request_graph_workflow
+from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
+from langgraph.types import Command
+from transaction_import import parse_csv_bytes, parse_xlsx_bytes
+from ocr_processor import extract_transactions_from_image
+
 import html
 import re
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -32,6 +47,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 CORS(app)
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -1221,43 +1237,10 @@ def get_business_info():
     finally:
         conn.close()
 
-if __name__ == "__main__":
-    _initialize_whatsapp_tables_safe()
-    logger.info("Starting Flask development server.")
-    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
-from flask import Flask, request, jsonify, Response, stream_with_context, g
-from flask_cors import CORS
-import os
-import sqlite3
-import time
-import json
-import uuid
-import numpy as np
-from datetime import datetime, timedelta, date
-from dateutil.relativedelta import relativedelta
-from dotenv import load_dotenv
 
-# Database & AI Imports
-from db_config import get_db_connection, execute_read_query_params
-from transaction_import import parse_csv_bytes, parse_xlsx_bytes
-from ocr_processor import extract_transactions_from_image
-from langchain_openai import ChatOpenAI
 
-# Chatbot/LangGraph Imports
-from nodes import intent_detection, format_response
-from intents.general_information_graph.subgraph import general_information_graph_workflow
-from intents.database_request_graph.subgraph import database_request_graph_workflow
-from intents.logs_request_graph.subgraph import logs_request_graph_workflow
-from intents.metrics_request_graph.subgraph import metrics_request_graph_workflow
-from langgraph.types import Command
 
-from logger.logger import logger
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
-
-load_dotenv()
-
-# Use the existing app object defined at the top of the file
-app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
+# --- Chat History & Dashboard Extensions ---
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -1459,8 +1442,9 @@ def api_chat_send():
     # Wrap iter_query_sse in SSE Response
     return Response(stream_with_context(iter_query_sse(msg, conv_id)), mimetype="text/event-stream")
 
-# Start Server
 _init_chat_db()
+_initialize_whatsapp_tables_safe()
+
 if __name__ == "__main__":
     logger.info("Starting Flask development server.")
     app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
