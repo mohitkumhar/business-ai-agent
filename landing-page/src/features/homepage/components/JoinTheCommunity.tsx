@@ -27,37 +27,37 @@ const stats = [
 const avatars = [
   {
     src: abhaySrc,
-    alt: "Community member 1 avatar",
+    alt: "Community member profile photo",
     position: "top-1 left-36",
   },
   {
     src: laszloSrc,
-    alt: "Community member 2 avatar",
+    alt: "Community member profile photo",
     position: "top-32 left-4 delay-500",
   },
   {
     src: joshuaSrc,
-    alt: "Community member 3 avatar",
+    alt: "Community member profile photo",
     position: "bottom-8 left-24 delay-300",
   },
   {
     src: lucasSrc,
-    alt: "Community member 4 avatar",
+    alt: "Community member profile photo",
     position: "-bottom-7 -left-7 delay-700",
   },
   {
     src: kurniaSrc,
-    alt: "Community member 5 avatar",
+    alt: "Community member profile photo",
     position: "top-1 right-36 delay-1000",
   },
   {
     src: nicolaiSrc,
-    alt: "Community member 6 avatar",
+    alt: "Community member profile photo",
     position: "top-28 right-4 delay-500",
   },
   {
     src: barrettaSrc,
-    alt: "Community member 7 avatar",
+    alt: "Community member profile photo",
     position: "bottom-12 right-32 delay-300",
   },
 ];
