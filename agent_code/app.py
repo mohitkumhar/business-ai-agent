@@ -1013,12 +1013,14 @@ def onboarding():
     """
     Creates a new business and associated user account during onboarding.
 
-    Expects a JSON request containing business and user information.
-    Validates required fields, generates a unique business identifier,
-    and stores the business and user records in the database.
+    Expects a JSON request containing business and user information,
+    including the business name and email address. Validates required
+    fields, generates a unique business identifier, and stores the
+    business and user records in the database.
 
     Returns:
-        Response: JSON response indicating success or failure.
+        Response: JSON response indicating success or failure of the
+        onboarding operation.
 
     Raises:
         Exception: Any unexpected database or application error is
@@ -1027,9 +1029,12 @@ def onboarding():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
-    if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
+
+    if not business_name or not email:
+        return jsonify({"error": "Missing fields"}), 400
     
     conn = get_db_connection()
     try:
@@ -1046,16 +1051,32 @@ def onboarding():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
-    """Verify WhatsApp webhook requests using the configured verify token.
+    """
+    Verify incoming WhatsApp webhook subscription requests.
 
-    Returns the challenge string when the supplied verification token matches
-    the configured WhatsApp verify token. Returns a 403 response when the
-    token validation fails.
+    This endpoint handles the GET verification challenge sent by
+    WhatsApp during webhook setup. It validates the provided
+    verification token against the configured
+    ``WHATSAPP_VERIFY_TOKEN``.
+
+    Returns:
+        tuple | str:
+            - The WhatsApp challenge response with a success status
+              when the verification token is valid.
+            - ("failed", 403) when the verification token does not
+              match the configured value.
+
+    Side Effects:
+        Reads query parameters from the incoming HTTP request.
+
+    Failure Modes:
+        Returns HTTP 403 if the supplied verification token is
+        missing or invalid.
     """
     if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
         return request.args.get("hub.challenge"), 200
     return "failed", 403
-
+    
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
     raw_body = request.get_data(cache=True)
@@ -1172,12 +1193,12 @@ def import_notebook():
         Exception: Any unexpected processing error is logged and
         returned as an internal error response.
     """
-
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
 
     file = request.files["file"]
     bid = get_current_business_id()
+
     try:
         content = file.read()
         filename = file.filename
