@@ -1500,6 +1500,34 @@ def api_financial_overview():
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
 @token_required
 def api_revenue_vs_expense():
+    """
+    Retrieve revenue and expense totals grouped by category.
+
+    This endpoint returns categorized revenue and expense data for
+    the authenticated business within a specified reporting period.
+    The results can be used to visualize and compare revenue and
+    expense distributions across categories.
+
+    Query Parameters:
+        period (str, optional):
+            Reporting period used for filtering transactions.
+            Defaults to "this_month".
+
+    Returns:
+        flask.Response:
+            A JSON response containing:
+            - labels: Category names.
+            - revenue: Revenue totals for each category.
+            - expenses: Expense totals for each category.
+
+    Side Effects:
+        - Executes database queries against the daily_transactions table.
+        - Uses the authenticated user's business ID to filter records.
+
+    Raises:
+        Exceptions raised during database access or processing
+        are handled and returned via internal_error_response().
+    """
     bid = get_current_business_id()
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
