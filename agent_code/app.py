@@ -1875,6 +1875,32 @@ def api_top_products():
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
 @token_required
 def api_employee_stats():
+    """
+    GET /api/dashboard/employee-stats
+
+    Returns employee count and average salary grouped by status
+    for the authenticated business.
+
+    Auth:
+        Requires valid JWT via @token_required decorator.
+        Business ID extracted from token via get_current_business_id().
+
+    Side Effects:
+        None. Performs a read-only query on the employees table.
+
+    Returns:
+        200 JSON {
+            "labels":     list[str]   - distinct status values (e.g. ["active", "inactive"])
+            "counts":     list[int]   - employee count per status, same order as labels
+            "avg_salary": list[float] - avg salary per status, rounded to 2dp; 0.0 if no salary data
+        }
+        200 (empty): returns empty lists when business has no employees.
+
+    Raises:
+        Exception: Any database or processing error is caught and
+        returned via internal_error_response().
+    """
+
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params("SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary FROM employees WHERE business_id = %s GROUP BY status", (bid,))
