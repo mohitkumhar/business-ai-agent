@@ -319,6 +319,128 @@
         }).join("")}</div>`;
     }
 
+    // ── Copy to Clipboard & Toast Feedback Helpers (#516) ──────────
+    function showToast(message, isError = false) {
+        let container = document.getElementById("toast-container");
+        if (!container) {
+            container = document.createElement("div");
+            container.id = "toast-container";
+            document.body.appendChild(container);
+        }
+        const toast = document.createElement("div");
+        toast.className = `toast-message ${isError ? "error" : "success"}`;
+        toast.innerHTML = `
+            <i class="fas ${isError ? "fa-circle-exclamation" : "fa-circle-check"}"></i>
+            <span>${escapeHtml(message)}</span>
+        `;
+        container.appendChild(toast);
+
+        // Trigger reflow for CSS transition
+        toast.offsetHeight;
+        toast.classList.add("visible");
+
+        setTimeout(() => {
+            toast.classList.remove("visible");
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, 2000);
+    }
+
+    function getCopyableText(rawText) {
+        if (!rawText) return "";
+        let parsed = null;
+        if (typeof rawText === "string" && rawText.trimStart().startsWith("{")) {
+            try { parsed = JSON.parse(rawText); } catch (e) { /* not JSON */ }
+        }
+        if (!parsed) {
+            return rawText;
+        }
+
+        // Parse JSON card data and return a clean, human-readable plain text block
+        const lines = [];
+        if (parsed.query_understood) {
+            lines.push(`Query Understood: ${parsed.query_understood}`);
+        }
+
+        const summary = parsed.summary || (parsed.result && parsed.result.summary) || "";
+        if (summary) {
+            lines.push(`Summary: ${summary}`);
+        }
+
+        const recs = Array.isArray(parsed.recommendations)
+            ? parsed.recommendations
+            : (parsed.result && Array.isArray(parsed.result.recommendations) ? parsed.result.recommendations : []);
+        if (recs && recs.length > 0) {
+            lines.push("Recommendations:");
+            recs.forEach((rec) => {
+                lines.push(`- ${rec}`);
+            });
+        }
+
+        const riskRaw = (parsed.risk_level || (parsed.result && parsed.result.risk_level) || "").toString().toLowerCase().trim();
+        if (riskRaw && (riskRaw === "low" || riskRaw === "medium" || riskRaw === "high")) {
+            lines.push(`Risk Level: ${riskRaw.toUpperCase()}`);
+        }
+
+        return lines.join("\n\n");
+    }
+
+    async function copyToClipboard(text, btn) {
+        if (!text) return;
+
+        let success = false;
+
+        // 1. Attempt using Clipboard API
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(text);
+                success = true;
+            } catch (err) {
+                console.warn("Clipboard API failed, falling back", err);
+            }
+        }
+
+        // 2. Fallback using execCommand
+        if (!success) {
+            try {
+                const textarea = document.createElement("textarea");
+                textarea.value = text;
+                textarea.style.position = "fixed";
+                textarea.style.top = "-9999px";
+                textarea.style.left = "-9999px";
+                document.body.appendChild(textarea);
+                textarea.select();
+                textarea.setSelectionRange(0, 99999);
+                success = document.execCommand("copy");
+                document.body.removeChild(textarea);
+            } catch (err) {
+                console.error("Clipboard fallback failed", err);
+            }
+        }
+
+        if (success) {
+            showToast("Copied to clipboard");
+            if (btn) {
+                const icon = btn.querySelector("i");
+                const textSpan = btn.querySelector(".btn-copy-text");
+                if (icon && textSpan) {
+                    btn.classList.add("copied");
+                    icon.className = "fas fa-check";
+                    textSpan.textContent = "Copied!";
+
+                    setTimeout(() => {
+                        btn.classList.remove("copied");
+                        icon.className = "far fa-copy";
+                        textSpan.textContent = "Copy";
+                    }, 2000);
+                }
+            }
+        } else {
+            showToast("Copy failed, please try again", true);
+        }
+    }
+
     // ── DOM Helpers ────────────────────────────────────────────────
     const RISK_CONFIG = {
         low:    { bg: "#d1fae5", text: "#065f46", border: "#6ee7b7", emoji: "🟢" },
@@ -517,13 +639,23 @@
             ? new Date(timestamp + "Z").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
             : new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
+        const isAssistant = role === "assistant";
+        const copyBtnHtml = isAssistant ? `
+            <button class="btn-copy-response" title="Copy response to clipboard">
+                <i class="far fa-copy"></i> <span class="btn-copy-text">Copy</span>
+            </button>
+        ` : "";
+
         bubble.innerHTML = `
             <div class="message-avatar">${avatar}</div>
             <div class="message-body">
                 <div class="dynamic-intents"></div>
                 <div class="agent-status" style="font-size:0.8em;color:#888;font-style:italic;margin-bottom:5px;"></div>
                 <div class="message-content"></div>
-                <div class="message-time">${timeStr}</div>
+                <div class="message-footer">
+                    ${copyBtnHtml}
+                    <div class="message-time">${timeStr}</div>
+                </div>
             </div>
         `;
         chatMessages.appendChild(bubble);
@@ -533,6 +665,9 @@
                 const contentDiv = bubble.querySelector(".message-content");
                 contentDiv.innerHTML = "";
                 renderMessageContent(contentDiv, text);
+                if (isAssistant) {
+                    bubble.dataset.rawContent = text;
+                }
                 scrollToBottom();
             },
             updateIntents: (intentStr) => {
@@ -560,20 +695,39 @@
             ? new Date(timestamp + "Z").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
             : new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-        const intentHtml = (role === "assistant") ? buildIntentBadges(intentStr) : "";
+        const isAssistant = role === "assistant";
+        const intentHtml = isAssistant ? buildIntentBadges(intentStr) : "";
+
+        let bodyHtml = "";
+        if (isAssistant) {
+            bodyHtml = `
+                ${intentHtml}
+                <div class="message-content"></div>
+                <div class="message-footer">
+                    <button class="btn-copy-response" title="Copy response to clipboard">
+                        <i class="far fa-copy"></i> <span class="btn-copy-text">Copy</span>
+                    </button>
+                    <div class="message-time">${timeStr}</div>
+                </div>
+            `;
+        } else {
+            bodyHtml = `
+                <div class="message-content"></div>
+                <div class="message-time">${timeStr}</div>
+            `;
+        }
 
         bubble.innerHTML = `
             <div class="message-avatar">${avatar}</div>
             <div class="message-body">
-                ${intentHtml}
-                <div class="message-content"></div>
-                <div class="message-time">${timeStr}</div>
+                ${bodyHtml}
             </div>
         `;
 
         const contentDiv = bubble.querySelector(".message-content");
-        if (role === "assistant") {
+        if (isAssistant) {
             renderMessageContent(contentDiv, content);
+            bubble.dataset.rawContent = content;
         } else {
             contentDiv.textContent = content;
         }
@@ -664,6 +818,16 @@
             chatSidebar.classList.toggle("open");
         });
     }
+
+    chatMessages.addEventListener("click", (e) => {
+        const btn = e.target.closest(".btn-copy-response");
+        if (btn) {
+            const bubble = btn.closest(".message-bubble");
+            const rawText = bubble ? bubble.dataset.rawContent : "";
+            const copyableText = getCopyableText(rawText);
+            copyToClipboard(copyableText, btn);
+        }
+    });
 
     // ── Global: suggestion chip handler ────────────────────────────
     window.sendSuggestion = function (chipEl) {
