@@ -34,7 +34,7 @@
     "@typebot.io/react": "^0.9.19",
     "class-variance-authority": "^0.7.1",
     "cookie": "^1.0.2",
-    "effect": "^3.19.16",
+    "effect": "^3.21.2",
     "input-otp": "^1.4.2",
     "ioredis": "^5.4.1",
     "ky": "^1.2.4",
