@@ -391,8 +391,8 @@ export default function ChatbotPage() {
             break;
           }
           case "status": {
-            const nodeName = evt.node || "";
-            const statusLabel = evt.status || "";
+            const nodeName = (evt.node as string) || "";
+            const statusLabel = (evt.status as string) || "";
             if (statusLabel) {
               setStatus({ kind: "streaming", label: statusLabel, node: nodeName });
             }
