@@ -30,6 +30,7 @@
 - [Project Structure](#-project-structure)
 - [Known Issues](#-known-issues--open-for-contribution)
 - [Contact](#-contact)
+- [Contributors](#-contributors)
 
 ---
 
@@ -653,3 +654,13 @@ Made with ❤️ for **GirlScript Summer of Code 2025**
 <img src="https://img.shields.io/github/forks/mohitkumhar/business-ai-agent?style=social" alt="Forks"/>
 
 </div>
+
+--
+
+## 👥 Contributors
+
+Thanks to all the amazing contributors who have helped make this project better!
+
+[![Contributors](https://contrib.rocks/image?repo=mohitkumhar/business-ai-agent)](https://github.com/mohitkumhar/business-ai-agent/graphs/contributors)
+
+*Made with [contrib.rocks](https://contrib.rocks)*
