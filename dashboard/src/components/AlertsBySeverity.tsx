@@ -5,6 +5,7 @@ import { api, AlertsBySeverity as AlertsData } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { AlertTriangleIcon } from "./Icons";
+import { LoadingSpinner } from "./LoadingStates";
 
 Chart.register(...registerables);
 
@@ -84,7 +85,11 @@ export default function AlertsBySeverity() {
         </div>
       </div>
       <div className="chart-body">
-        {loading ? <div className="loading-spinner">Loading...</div> : <canvas ref={chartRef}></canvas>}
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 260, width: "100%" }}>
+            <LoadingSpinner label="Loading alerts…" />
+          </div>
+        ) : <canvas ref={chartRef}></canvas>}
       </div>
     </div>
   );

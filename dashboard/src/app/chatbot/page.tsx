@@ -5,6 +5,7 @@ import Topbar from "@/components/Topbar";
 import { ChatbotIcon } from "@/components/Icons";
 import {
   appendChatMessage,
+  getAuthHeaders,
   listChatConversations,
   removeChatConversation,
   upsertChatConversation,
@@ -273,7 +274,10 @@ export default function ChatbotPage() {
       setEscalatingMsgId(null);
       const res = await fetch("/api/escalate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({ query: query, summary: summary, assignee_name: assigneeName }),
       });
       if (!res.ok) {
@@ -290,7 +294,7 @@ export default function ChatbotPage() {
     } catch {
       showToast("Error escalating conversation.", "error");
     }
-  }, [messages]);
+  }, [messages, showToast]);
 
   const switchChat = useCallback(
     (id: string) => {
@@ -344,7 +348,7 @@ export default function ChatbotPage() {
     let assistantContent = "";
     let assistantIntent: string | null = null;
     let shouldPersistAssistant = false;
-
+    let streamParseErrorShown = false;
     setInput("");
     setCompletedNodes([]);
 
@@ -379,13 +383,12 @@ export default function ChatbotPage() {
         "thread-id": activeId,
       });
 
-      const token = typeof window !== "undefined" ? localStorage.getItem("profit_pilot_token") : null;
       const res = await fetch(`/api/chat?${params.toString()}`, {
         method: "POST",
         signal: ctrl.signal,
         headers: {
           Accept: "text/event-stream",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
       });
 
@@ -503,7 +506,34 @@ export default function ChatbotPage() {
                   setStatus({ kind: "idle" });
                   break;
               }
-            } catch { /* skip malformed */ }
+            } catch (error) {
+  if (process.env.NODE_ENV === "development") {
+    console.warn("[Chatbot SSE] Failed to parse SSE chunk", {
+      chunk: jsonStr,
+      error,
+    });
+  }
+
+  if (!streamParseErrorShown) {
+    streamParseErrorShown = true;
+
+    updateActiveMessages((prev) => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+
+      if (last?.role === "assistant") {
+        updated[updated.length - 1] = {
+          ...last,
+          content:
+            last.content ||
+            "Stream error: Unable to process part of the response. Please try again.",
+        };
+      }
+
+      return updated;
+    });
+  }
+}
           }
         }
       }

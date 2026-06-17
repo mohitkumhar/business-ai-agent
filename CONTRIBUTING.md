@@ -31,6 +31,14 @@ git remote add upstream https://github.com/mohitkumhar/business-ai-agent.git
 # Copy environment template (create .env if needed)
 cp .env.example .env  # or create from environment variables section
 
+# Replace placeholder database/admin credentials before starting Compose
+POSTGRES_PASSWORD_VALUE="$(openssl rand -hex 24)"
+PGADMIN_PASSWORD_VALUE="$(openssl rand -hex 24)"
+perl -0pi -e "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VALUE}|" .env
+perl -0pi -e "s|DATABASE_URL=.*|DATABASE_URL=postgresql://profitpilot_dev:${POSTGRES_PASSWORD_VALUE}\@db:5432/test_db|" .env
+perl -0pi -e "s|PGADMIN_DEFAULT_EMAIL=.*|PGADMIN_DEFAULT_EMAIL=you\@example.com|" .env
+perl -0pi -e "s|PGADMIN_DEFAULT_PASSWORD=.*|PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD_VALUE}|" .env
+
 # Start services with Docker (recommended)
 docker-compose up -d
 
@@ -47,9 +55,12 @@ cd ../agent_code && pip install -r requirements.txt
 ### Environment Variables
 Create a `.env` file in the root directory with:
 ```
-POSTGRES_USER=admin
-POSTGRES_PASSWORD=root
+POSTGRES_USER=profitpilot_dev
+POSTGRES_PASSWORD=<generated-postgres-password>
 POSTGRES_DB=test_db
+DATABASE_URL=postgresql://profitpilot_dev:<generated-postgres-password>@db:5432/test_db
+PGADMIN_DEFAULT_EMAIL=you@example.com
+PGADMIN_DEFAULT_PASSWORD=<generated-pgadmin-password>
 LLM_API_KEY=your_key_here
 SLACK_BOT_TOKEN=your_token_here
 ```
@@ -79,7 +90,7 @@ docker-compose up -d
 - **Backend API**: http://localhost:5000
 - **Dashboard**: http://localhost:3000
 - **Landing Page**: http://localhost:5173
-- **Database UI (PgAdmin)**: http://localhost:5050
+- **Database UI (PgAdmin)**: http://localhost:5050 using the credentials from `.env`
 
 ### Without Docker
 
