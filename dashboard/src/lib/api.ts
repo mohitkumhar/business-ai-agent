@@ -124,6 +124,15 @@ export function getAuthHeaders() {
   return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
 }
 
+export function setToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  if (token) {
+    localStorage.setItem("profit_pilot_token", token);
+  } else {
+    localStorage.removeItem("profit_pilot_token");
+  }
+}
+
 async function readJsonOrThrow<T>(
   input: RequestInfo | URL,
   init?: RequestInit
