@@ -1558,6 +1558,16 @@ def api_sales_trend():
 @app.route("/api/dashboard/recent-transactions", methods=["GET", "OPTIONS"])
 @token_required
 def api_recent_transactions():
+    """Retrieve recent transactions for the current business with optional filtering.
+
+    Query Parameters:
+      limit (int, optional): Number of transactions to return. Defaults to 20.
+      search (str, optional): Search term to filter description or category.
+      category (str, optional): Filter transactions by category.
+
+    Returns:
+      JSON response with transactions list containing transaction_id, transaction_date, type, category, amount, and description.
+    """
     bid = get_current_business_id()
     limit = request.args.get("limit", 20, type=int)
     search = request.args.get("search", "").strip()
