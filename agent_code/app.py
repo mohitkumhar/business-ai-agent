@@ -1558,6 +1558,27 @@ def api_sales_trend():
 @app.route("/api/dashboard/recent-transactions", methods=["GET", "OPTIONS"])
 @token_required
 def api_recent_transactions():
+    """
+    Retrieve recent transactions for the current business with optional filtering.
+
+    Query Parameters:
+        limit (int): Maximum number of transactions to return (default: 20)
+        search (str): Optional search string to filter by description or category
+        category (str): Optional category to filter transactions
+
+    Returns:
+        JSON response containing:
+            - transactions (list): List of transaction records with fields:
+                - transaction_id (int): Unique transaction identifier
+                - transaction_date (str): Date in YYYY-MM-DD format
+                - type (str): Transaction type (Revenue/Expense)
+                - category (str): Transaction category
+                - amount (float): Transaction amount
+                - description (str): Transaction description
+
+    Raises:
+        Exception: Database errors are caught and returned via internal_error_response
+    """
     bid = get_current_business_id()
     limit = request.args.get("limit", 20, type=int)
     search = request.args.get("search", "").strip()
