@@ -263,7 +263,7 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://graph.facebook.com/v21.0/{media_id}",
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=(5, 30),
+        timeout=30,
     )
     meta.raise_for_status()
     meta_json = meta.json()
@@ -274,7 +274,7 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     blob = requests.get(
         media_url,
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=(5, 60),
+        timeout=60,
     )
     blob.raise_for_status()
     return blob.content, mime_type
@@ -302,7 +302,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
         params={"file_id": file_id},
-        timeout=(5, 30),
+        timeout=30,
     )
     meta.raise_for_status()
     info = meta.json().get("result") or {}
@@ -310,7 +310,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     if not file_path:
         raise ValueError("Telegram getFile missing file_path.")
     url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
-    blob = requests.get(url, timeout=(5, 60))
+    blob = requests.get(url, timeout=60)
     blob.raise_for_status()
     return blob.content, "image/jpeg"
 
@@ -484,7 +484,7 @@ def _send_whatsapp_text(to_number: str, text: str):
             "Content-Type": "application/json",
         },
         json=body,
-        timeout=(5, 30),
+        timeout=30,
     ).raise_for_status()
 
 
@@ -496,21 +496,10 @@ def _send_telegram_text(chat_id: int, text: str):
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": chat_id, "text": text[:4096]},
-            timeout=(5, 30),
+            timeout=30,
         ).raise_for_status()
-
-    except requests.Timeout:
-        logger.error(
-            "Telegram API request timed out",
-            exc_info=True,
-        )
-
-    except requests.RequestException as exc:
-        logger.error(
-            "Failed to send Telegram message: %s",
-            exc,
-            exc_info=True,
-        )
+    except Exception as exc:
+        logger.error("Failed to send Telegram message: %s", exc, exc_info=True)
 
 
 @app.route("/")
@@ -583,7 +572,7 @@ def billing_analyze_all():
             "analysis": "The top expense category is 'Office Supplies' with $4,500..."
         }
     """
-    data = request.get_json(silent=True)
+    data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     question = (data.get("question") or "Analyze all business billing data").strip()
@@ -611,7 +600,7 @@ def whatsapp_events():
     if not _verify_whatsapp_signature(raw_body, request.headers.get("X-Hub-Signature-256")):
         return jsonify({"error": "Invalid WhatsApp signature"}), 403
 
-    data = request.get_json(silent=True)
+    data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
@@ -674,7 +663,7 @@ def telegram_webhook():
     ):
         return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
 
-    data = request.get_json(silent=True)
+    data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
@@ -759,7 +748,7 @@ def increment_assigned_count(username: str):
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
     try:
-        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=(5, 20))
+        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
         counts = get_assigned_counts()
         if res.status_code != 200:
             logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
@@ -776,12 +765,6 @@ def get_employees():
     
        
         contributors = res.json()
-
-        if not isinstance(contributors, list):
-            raise ValueError(
-                f"Unexpected contributors payload type: {type(contributors).__name__}"
-            )
-
         return jsonify(
             {
                 "employees": [
@@ -794,25 +777,7 @@ def get_employees():
                 ]
             }
         )
-    except requests.Timeout as exc:
-        request_id = get_request_id(getattr(g, "request_id", None))
-        logger.error(
-            "GitHub contributors API timed out request_id=%s repo=%s",
-            request_id,
-            repo,
-            exc_info=True,
-        )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "employees_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
-        )
-    except requests.RequestException as exc:
+    except Exception as exc:
         request_id = get_request_id(getattr(g, "request_id", None))
         logger.error(
             "Employees API failed request_id=%s repo=%s: %s",
@@ -832,25 +797,6 @@ def get_employees():
             500,
         )
 
-    except Exception as exc:
-        request_id = get_request_id(getattr(g, "request_id", None))
-        logger.error(
-            "Failed to process GitHub contributors response request_id=%s repo=%s: %s",
-            request_id,
-            repo,
-            exc,
-            exc_info=True,
-        )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "employees_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
-        )
 
 @app.route("/api/v1/escalate", methods=["POST"])
 @token_required
@@ -1390,16 +1336,6 @@ def api_forecast():
         """, (bid, cutoff))
         
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
-        
-        if not hist:
-            return jsonify({
-                "historical": [], 
-                "forecast": [], 
-                "trend_direction": "flat", 
-                "trend_percent": 0,
-                "insight": "No revenue data available for forecasting yet."
-            })
-        
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])

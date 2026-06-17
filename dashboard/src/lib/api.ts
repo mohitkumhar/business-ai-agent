@@ -92,11 +92,48 @@ function getHeaders() {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   } as HeadersInit;
 }
+
+async function refreshToken(): Promise<string> {
+  const res = await fetch(`${AGENT_API_BASE}/api/auth/refresh`, {
+    method: "POST",
+  });
+  if (res.ok) {
+    const data = await res.json();
+    if (typeof window !== "undefined") {
+      localStorage.setItem("profit_pilot_token", data.token);
+      localStorage.setItem("profit_pilot_user", JSON.stringify(data.user));
+    }
+    return data.token;
+  }
+  throw new Error("Refresh failed");
+}
+
 async function safeFetchJson<T>(
   url: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(url, options);
+  let res = await fetch(url, options);
+
+  // Silent refresh on 401
+  if (res.status === 401 && !url.includes("/api/auth/refresh")) {
+    try {
+      const newToken = await refreshToken();
+      // Retry with new token
+      res = await fetch(url, {
+        ...options,
+        headers: {
+          ...options?.headers,
+          Authorization: `Bearer ${newToken}`,
+        },
+      });
+    } catch {
+      // If refresh fails, redirect to login
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("profit_pilot_token");
+        window.location.href = "/login";
+      }
+    }
+  }
 
   if (!res.ok) {
     const contentType = res.headers.get("content-type") || "";
@@ -146,18 +183,10 @@ export const api = {
   getSummary: async (
   period: string
 ): Promise<DashboardSummary> => {
-  const res = await fetch(
+  return safeFetchJson<DashboardSummary>(
     `/api/dashboard/summary-sql?period=${period}`,
     { headers: getHeaders() }
   );
-
- if (!res.ok) {
-  const text = await res.text();
-  throw new Error(
-    `Summary API failed (${res.status}): ${text}`
-  );
-}
-  return res.json();
 },
   getFinancialOverview: async (
     period?: string
@@ -193,17 +222,15 @@ export const api = {
 },
 
 getForecast: async (period: string): Promise<Forecast> => {
-  const res = await fetch(
-    `/api/dashboard/forecast?period=${period}`,
-    { headers: getHeaders() }
-  );
-
-  if (!res.ok) {
+  try {
+    return await safeFetchJson<Forecast>(
+      `/api/dashboard/forecast?period=${period}`,
+      { headers: getHeaders() }
+    );
+  } catch (error) {
     const { mockForecast } = await import("./mockData");
     return mockForecast;
   }
-
-  return res.json();
 },
 
 getRecentTransactions: async (params: {
@@ -219,28 +246,17 @@ getRecentTransactions: async (params: {
   if (params.limit) query.set("limit", params.limit.toString());
   if (params.period) query.set("period", params.period);
 
-  const res = await fetch(
-  `/api/dashboard/recent-transactions?${query.toString()}`,
-  { headers: getHeaders() }
-);
-
-if (!res.ok) {
-  const text = await res.text();
-  throw new Error(
-    `Recent transactions API failed (${res.status}): ${text}`
+  return safeFetchJson<Transaction[]>(
+    `/api/dashboard/recent-transactions?${query.toString()}`,
+    { headers: getHeaders() }
   );
-}
-
-return res.json();
 },
 
 getAlertsList: async (period?: string) => {
-  const res = await fetch(
+  return safeFetchJson<Alert[]>(
     `/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`,
     { headers: getHeaders() }
   );
-
-  return res.json();
 },
 
 getBusinessInfo: async (): Promise<BusinessInfo> => {

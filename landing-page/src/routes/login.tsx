@@ -28,6 +28,7 @@ function LoginPage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [businessName, setBusinessName] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -86,7 +87,7 @@ function LoginPage() {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
       const payload =
         mode === "login"
-          ? { email, password }
+          ? { email, password, remember_me: rememberMe }
           : { email, password, name: fullName, business_name: businessName, phone };
       const res = await fetch(`${agentApiBaseUrl}${endpoint}`, {
         method: "POST",
@@ -232,6 +233,24 @@ function LoginPage() {
                 className="w-full px-6 py-4 bg-white/[0.04] border border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#FF5A25]/50 text-white placeholder-white/20 transition-all focus:bg-white/[0.08]"
               />
             </div>
+
+            {mode === "login" && (
+              <div className="flex items-center gap-2 ml-2">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 bg-white/[0.04] border border-white/10 rounded focus:ring-[#FF5A25]/50 text-[#FF5A25]"
+                />
+                <label
+                  htmlFor="remember-me"
+                  className="text-[11px] font-bold uppercase tracking-widest text-white/40 cursor-pointer select-none"
+                >
+                  Remember me
+                </label>
+              </div>
+            )}
 
             <button
               type="submit"

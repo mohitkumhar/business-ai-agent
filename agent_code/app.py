@@ -43,8 +43,7 @@ from logger.logger import logger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from query_execution import stream_agent_sse_lines
 from auth import AuthError, decode_jwt_identity, require_jwt_secret
-from api_errors import internal_error_response, SAFE_INTERNAL_ERROR_MESSAGE
-from request_ids import get_request_id
+from api_errors import internal_error_response
 from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH, verify_password
 from swagger_docs import register_swagger_docs
 
@@ -102,8 +101,6 @@ def token_required(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
-        if request.method == "OPTIONS":
-            return jsonify({}), 200
         try:
             identity = decode_jwt_identity(
                 request.headers.get("Authorization"),
@@ -131,122 +128,6 @@ def get_current_business_id():
               unauthenticated call).
     """
     return getattr(g, "business_id", None)
-
-
-ASSIGNMENTS_FILE = "assigned_issues.json"
-
-
-def get_assigned_counts():
-    if not os.path.exists(ASSIGNMENTS_FILE):
-        return {}
-    try:
-        with open(ASSIGNMENTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def increment_assigned_count(username: str):
-    counts = get_assigned_counts()
-    counts[username] = counts.get(username, 0) + 1
-    with open(ASSIGNMENTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(counts, f)
-
-
-@app.before_request
-def _attach_request_id():
-    g.request_id = get_request_id(request.headers.get("X-Request-ID"))
-
-
-@app.route("/api/v1/employees", methods=["GET"])
-def get_employees():
-    repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
-    try:
-        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
-        counts = get_assigned_counts()
-        if res.status_code != 200:
-            logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
-            return jsonify(
-                {
-                    "employees": [
-                        {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
-                        {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
-                    ],
-                    "degraded": True,
-                    "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
-                }
-            )
-        contributors = res.json()
-        return jsonify(
-            {
-                "employees": [
-                    {
-                        "login": c.get("login", "Unknown"),
-                        "avatar_url": c.get("avatar_url", ""),
-                        "assigned_issues": counts.get(c.get("login", "Unknown"), 0),
-                    }
-                    for c in contributors
-                ]
-            }
-        )
-    except Exception as exc:
-        request_id = get_request_id(getattr(g, "request_id", None))
-        logger.error(
-            "Employees API failed request_id=%s repo=%s: %s",
-            request_id,
-            repo,
-            exc,
-            exc_info=True,
-        )
-        return (
-            jsonify(
-                {
-                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
-                    "code": "employees_unavailable",
-                    "request_id": request_id,
-                }
-            ),
-            500,
-        )
-
-
-@app.route("/api/v1/escalate", methods=["POST"])
-@token_required
-def escalate_to_slack():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid or missing JSON payload"}), 400
-    try:
-        query = data.get("query", "No specific query")
-        summary = data.get("summary", "No summary provided")
-        from slack_integration.slack_handler import SlackDelivery
-        from slack_integration.smart_assigner import pick_assignee_slack_id
-
-        delivery = SlackDelivery()
-        if not delivery.configured():
-            return jsonify({"error": "Slack is not configured"}), 500
-        ch = delivery.demo_channel_id
-        if not ch:
-            return jsonify({"error": "No Slack channel configured"}), 500
-
-        assignee_id = data.get("assignee_name") or pick_assignee_slack_id(user_query=query, summary=summary)
-        blocks = [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": "Web User Escalation", "emoji": True},
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Query:*\n>{query[:500]}\n\n*Context:*\n```{summary[:2000]}```"},
-            },
-        ]
-        if assignee_id:
-            increment_assigned_count(str(assignee_id))
-        delivery.client.chat_postMessage(channel=ch, text="Web Chatbot Escalation", blocks=blocks)
-        return jsonify({"status": "ok"}), 200
-    except Exception as exc:
-        return internal_error_response(exc)
-
 
 @app.route("/api/auth/signup", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
@@ -351,6 +232,7 @@ def auth_login():
 
     email = data.get("email", "").lower().strip()
     password = data.get("password")
+    remember_me = data.get("remember_me", False)
 
     if not all([email, password]):
         return jsonify({"message": "Email and password required"}), 400
@@ -364,17 +246,119 @@ def auth_login():
         if not user or not verify_password(password, user.get("password_hash")):
             return jsonify({"message": "Invalid email or password"}), 401
 
+        # Adjust access token expiry based on remember_me
+        access_token_expiry = timedelta(days=30) if remember_me else timedelta(hours=24)
+        
         token = jwt.encode({
             "user_id": user["user_id"],
             "business_id": user["business_id"],
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.utcnow() + access_token_expiry
         }, app.config["SECRET_KEY"], algorithm="HS256")
 
-        return jsonify({"token": token, "business_id": user["business_id"], "user": {"name": user["name"], "email": email}}), 200
+        response_data = {
+            "token": token,
+            "business_id": user["business_id"],
+            "user": {"name": user["name"], "email": email}
+        }
+        res = jsonify(response_data)
+
+        if remember_me:
+            # Issue a 30-day refresh token
+            refresh_token = str(uuid.uuid4())
+            refresh_token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+            expires_at = datetime.utcnow() + timedelta(days=30)
+
+            cur.execute(
+                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+                (user["user_id"], refresh_token_hash, expires_at)
+            )
+            conn.commit()
+
+            res.set_cookie(
+                "refresh_token",
+                refresh_token,
+                httponly=True,
+                secure=True,  # Set to False if not using HTTPS in dev
+                samesite="Strict",
+                expires=expires_at
+            )
+
+        return res, 200
     except Exception as e:
         return internal_error_response(e, field="message")
     finally:
         conn.close()
+
+@app.route("/api/auth/refresh", methods=["POST"])
+@limiter.limit(AUTH_RATE_LIMIT)
+def auth_refresh():
+    """
+    Issue a new access token using a valid refresh token from an HTTP-only cookie.
+    Implements token rotation by revoking the old refresh token and issuing a new one.
+    """
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        return jsonify({"message": "Refresh token required"}), 401
+
+    refresh_token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+    
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Validate refresh token and get user details
+        cur.execute("""
+            SELECT rt.id, rt.user_id, u.business_id, u.name, u.email 
+            FROM refresh_tokens rt
+            JOIN users u ON rt.user_id = u.user_id
+            WHERE rt.token_hash = %s AND rt.revoked = FALSE AND rt.expires_at > NOW()
+        """, (refresh_token_hash,))
+        record = cur.fetchone()
+
+        if not record:
+            return jsonify({"message": "Invalid or expired refresh token"}), 401
+
+        # Token Rotation: Revoke old token
+        cur.execute("UPDATE refresh_tokens SET revoked = TRUE WHERE id = %s", (record["id"],))
+        
+        # Issue new refresh token
+        new_refresh_token = str(uuid.uuid4())
+        new_refresh_token_hash = hashlib.sha256(new_refresh_token.encode()).hexdigest()
+        new_expires_at = datetime.utcnow() + timedelta(days=30)
+        
+        cur.execute(
+            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+            (record["user_id"], new_refresh_token_hash, new_expires_at)
+        )
+        conn.commit()
+
+        # Issue new access token (30 days since we are in a persisted session)
+        new_access_token = jwt.encode({
+            "user_id": record["user_id"],
+            "business_id": record["business_id"],
+            "exp": datetime.utcnow() + timedelta(days=30)
+        }, app.config["SECRET_KEY"], algorithm="HS256")
+
+        res = jsonify({
+            "token": new_access_token,
+            "business_id": record["business_id"],
+            "user": {"name": record["name"], "email": record["email"]}
+        })
+        
+        res.set_cookie(
+            "refresh_token",
+            new_refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            expires=new_expires_at
+        )
+        return res, 200
+    except Exception as e:
+        return internal_error_response(e, field="message")
+    finally:
+        conn.close()
+
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 
 # --- Configurations ---
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
@@ -864,25 +848,11 @@ def _send_telegram_text(chat_id: int, text: str) -> None:
         logger.warning("Telegram send skipped; TELEGRAM_BOT_TOKEN is not configured.")
         return
 
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text[:4096]},
-            timeout=(5, 30),
-        ).raise_for_status()
-
-    except requests.Timeout:
-        logger.error(
-            "Telegram API request timed out",
-            exc_info=True,
-        )
-
-    except requests.RequestException as exc:
-        logger.error(
-            "Failed to send Telegram message: %s",
-            exc,
-            exc_info=True,
-        )
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        json={"chat_id": chat_id, "text": text[:4096]},
+        timeout=30,
+    ).raise_for_status()
 
 # --- Helper Functions (From Kushal-Dev) ---
 def get_period_dates(period):
@@ -1622,34 +1592,6 @@ def api_export_dashboard_csv():
 @app.route("/api/dashboard/summary-sql", methods=["GET", "OPTIONS"])
 @token_required
 def api_dashboard_summary():
-    """
-    Retrieve dashboard summary metrics for the authenticated business.
-
-    This endpoint generates aggregated dashboard statistics for a
-    specified reporting period. The business context is determined
-    from the authenticated user, and the reporting period is derived
-    from the request query parameters.
-
-    Query Parameters:
-        period (str, optional):
-            Reporting period used to calculate summary metrics.
-            Defaults to "this_month".
-
-    Returns:
-        flask.Response:
-            A JSON response containing aggregated dashboard summary
-            data for the selected reporting period.
-
-    Side Effects:
-        - Retrieves the authenticated user's business ID.
-        - Calculates date ranges based on the selected period.
-        - Executes database queries to generate summary metrics.
-
-    Raises:
-        Exceptions raised during date calculation, database access,
-        or data aggregation are handled and returned by the API's
-        error handling mechanism.
-    """
     bid = get_current_business_id()
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
@@ -1702,34 +1644,6 @@ def api_dashboard_summary():
 @app.route("/api/dashboard/alerts-list", methods=["GET"])
 @token_required
 def api_alerts_list():
-    """
-    Retrieve recent alerts for the authenticated business.
-
-    This endpoint returns up to 50 alerts associated with the
-    authenticated business, ordered by creation time in descending
-    order. Alert timestamps are formatted before being returned
-    in the response.
-
-    Returns:
-        flask.Response:
-            A JSON response containing:
-            - alerts: List of alert objects with:
-                - alert_id
-                - message
-                - severity
-                - status
-                - created_at
-
-    Side Effects:
-        - Executes a database query against the alerts table.
-        - Formats alert timestamps for API responses.
-        - Uses the authenticated user's business ID to filter results.
-
-    Raises:
-        Exceptions raised during database access or response
-        processing are handled and returned via
-        internal_error_response().
-    """
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params("SELECT alert_id, message, severity, status, created_at FROM alerts WHERE business_id = %s ORDER BY created_at DESC LIMIT 50", (bid,))
