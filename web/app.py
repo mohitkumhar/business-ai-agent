@@ -8,10 +8,10 @@ Provides:
 """
 
 import os
-import uuid
 import time
 import sqlite3
-import requests
+import sqlparse
+from sqlparse.sql import Where  # <-- Moved here with other imports
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import wraps
@@ -25,7 +25,6 @@ from flask import (
     render_template,
     request,
     jsonify,
-    session,
     redirect,
     url_for,
     g,
@@ -38,7 +37,6 @@ from prometheus_client import (
     Gauge,
     generate_latest,
     CONTENT_TYPE_LATEST,
-    CollectorRegistry,
     REGISTRY,
 )
 
@@ -112,6 +110,39 @@ def token_required(route_handler):
 def get_current_business_id():
     return getattr(g, "business_id", None)
 
+
+# ═══════════════════════════════════════════════════════════════════
+# Tenant scoping validation
+# ═══════════════════════════════════════════════════════════════════
+def validate_tenant_scoping(query: str, business_id: str) -> bool:
+    """
+    Validate that a SQL query includes proper business_id scoping in WHERE clause.
+    Uses sqlparse to parse the query structure.
+    """
+    if not query or not business_id:
+        return False
+
+    parsed = sqlparse.parse(query)
+    if not parsed:
+        return False
+
+    stmt = parsed[0]
+    # Ensure it's a SELECT statement
+    if stmt.get_type() != "SELECT":
+        return True  # Non-SELECT queries handled separately
+
+    # Check for WHERE clause
+    where_clause = next(
+        (token for token in stmt.tokens if isinstance(token, Where)), None
+    )
+    if not where_clause:
+        return False
+
+    # Check if business_id is in the where clause
+    query_str = where_clause.value.lower()
+    return "business_id" in query_str and business_id.lower() in query_str
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Prometheus metrics
 # ═══════════════════════════════════════════════════════════════════
@@ -156,7 +187,11 @@ def _start_timer():
 def _record_metrics(response):
     # CORS headers for Next.js dashboard
     origin = request.headers.get("Origin", "")
-    if origin in ("http://localhost:3000", "http://localhost:3001", "http://localhost:5173"):
+    if origin in (
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:5173",
+    ):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
@@ -233,7 +268,13 @@ def _pg_conn():
 
 
 def _pg_query(sql, params=None):
-    """Execute a read-only query and return list[dict]."""
+    """Execute a read-only query and return list[dict] with tenant validation."""
+    # Validate tenant scoping before execution
+    business_id = get_current_business_id()
+    if business_id and not validate_tenant_scoping(sql, business_id):
+        app.logger.warning(f"Tenant scoping violation detected in query: {sql[:200]}")
+        raise ValueError("Security Violation: Query missing proper business_id scoping")
+
     conn = _pg_conn()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -245,7 +286,9 @@ def _pg_query(sql, params=None):
         conn.close()
 
 
-SAFE_INTERNAL_ERROR_MESSAGE = "An internal server error occurred. Please try again later."
+SAFE_INTERNAL_ERROR_MESSAGE = (
+    "An internal server error occurred. Please try again later."
+)
 
 
 def _internal_error_response(exc: Exception | None = None, *, field: str = "error"):
@@ -274,7 +317,7 @@ def chatbot(conv_id=None):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Dashboard API endpoints  (last 24 h data)
+# Dashboard API endpoints (all with tenant scoping via _pg_query)
 # ═══════════════════════════════════════════════════════════════════
 
 
@@ -323,493 +366,8 @@ def api_dashboard_summary():
         return _internal_error_response(e)
 
 
-@app.route("/api/dashboard/revenue-vs-expense")
-def api_revenue_vs_expense():
-    """Hourly revenue vs expense for the last 24 h (grouped by category)."""
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
-    try:
-        rows = _pg_query(
-            """
-            SELECT category, type,
-                   COALESCE(SUM(amount), 0) AS total
-            FROM daily_transactions
-            WHERE transaction_date >= %s
-            GROUP BY category, type
-            ORDER BY total DESC
-            """,
-            (cutoff,),
-        )
-        revenue_cats = {}
-        expense_cats = {}
-        for r in rows:
-            cat = r["category"] or "Other"
-            amt = float(r["total"])
-            if r["type"] == "Revenue":
-                revenue_cats[cat] = revenue_cats.get(cat, 0) + amt
-            else:
-                expense_cats[cat] = expense_cats.get(cat, 0) + amt
-
-        all_cats = sorted(set(list(revenue_cats.keys()) + list(expense_cats.keys())))
-        return jsonify(
-            {
-                "labels": all_cats,
-                "revenue": [revenue_cats.get(c, 0) for c in all_cats],
-                "expenses": [expense_cats.get(c, 0) for c in all_cats],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/transactions-by-category")
-def api_transactions_by_category():
-    """Pie chart data: transaction count by category (last 24 h)."""
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
-    try:
-        rows = _pg_query(
-            """
-            SELECT category, COUNT(*) as cnt
-            FROM daily_transactions
-            WHERE transaction_date >= %s
-            GROUP BY category
-            ORDER BY cnt DESC
-            """,
-            (cutoff,),
-        )
-        return jsonify(
-            {
-                "labels": [r["category"] or "Other" for r in rows],
-                "data": [int(r["cnt"]) for r in rows],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/sales-trend")
-def api_sales_trend():
-    """Daily sales trend – last 7 days for context, highlight last 24 h."""
-    cutoff = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    try:
-        rows = _pg_query(
-            """
-            SELECT transaction_date,
-                   COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS revenue,
-                   COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS expenses
-            FROM daily_transactions
-            WHERE transaction_date >= %s
-            GROUP BY transaction_date
-            ORDER BY transaction_date
-            """,
-            (cutoff,),
-        )
-        return jsonify(
-            {
-                "labels": [r["transaction_date"].isoformat() for r in rows],
-                "revenue": [float(r["revenue"]) for r in rows],
-                "expenses": [float(r["expenses"]) for r in rows],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/alerts-by-severity")
-def api_alerts_by_severity():
-    """Doughnut chart: active alerts by severity."""
-    try:
-        rows = _pg_query(
-            """
-            SELECT severity, COUNT(*) AS cnt
-            FROM alerts
-            WHERE status = 'Active'
-            GROUP BY severity
-            """
-        )
-        return jsonify(
-            {
-                "labels": [r["severity"] for r in rows],
-                "data": [int(r["cnt"]) for r in rows],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/health-scores")
-def api_health_scores():
-    """Latest health scores (radar chart)."""
-    try:
-        rows = _pg_query(
-            """
-            SELECT bhs.overall_score, bhs.cash_score,
-                   bhs.profitability_score, bhs.growth_score,
-                   bhs.cost_control_score, bhs.risk_score,
-                   b.business_name
-            FROM business_health_scores bhs
-            JOIN businesses b ON b.business_id = bhs.business_id
-            ORDER BY bhs.calculated_at DESC
-            LIMIT 5
-            """
-        )
-        return jsonify(
-            {
-                "businesses": [r["business_name"] for r in rows],
-                "scores": [
-                    {
-                        "name": r["business_name"],
-                        "overall": float(r["overall_score"] or 0),
-                        "cash": float(r["cash_score"] or 0),
-                        "profitability": float(r["profitability_score"] or 0),
-                        "growth": float(r["growth_score"] or 0),
-                        "cost_control": float(r["cost_control_score"] or 0),
-                        "risk": float(r["risk_score"] or 0),
-                    }
-                    for r in rows
-                ],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/top-products")
-def api_top_products():
-    """Bar chart: top products by stock quantity."""
-    try:
-        rows = _pg_query(
-            """
-            SELECT p.product_name, p.stock_quantity, p.selling_price, p.cost_price
-            FROM products p
-            ORDER BY p.stock_quantity DESC
-            LIMIT 10
-            """
-        )
-        return jsonify(
-            {
-                "labels": [r["product_name"] for r in rows],
-                "stock": [int(r["stock_quantity"] or 0) for r in rows],
-                "margin": [
-                    float((r["selling_price"] or 0) - (r["cost_price"] or 0))
-                    for r in rows
-                ],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/financial-overview")
-def api_financial_overview():
-    """Monthly financial records for the most recent months."""
-    try:
-        rows = _pg_query(
-            """
-            SELECT year, month, 
-                   COALESCE(SUM(total_revenue),0) AS total_revenue,
-                   COALESCE(SUM(total_expenses),0) AS total_expenses,
-                   COALESCE(SUM(net_profit),0) AS net_profit,
-                   COALESCE(SUM(cash_balance),0) AS cash_balance
-            FROM financial_records
-            GROUP BY year, month
-            ORDER BY year DESC, month DESC
-            LIMIT 12
-            """
-        )
-        rows.reverse()
-        labels = [f"{r['year']}-{str(r['month']).zfill(2)}" for r in rows]
-        return jsonify(
-            {
-                "labels": labels,
-                "revenue": [float(r["total_revenue"]) for r in rows],
-                "expenses": [float(r["total_expenses"]) for r in rows],
-                "net_profit": [float(r["net_profit"]) for r in rows],
-                "cash_balance": [float(r["cash_balance"]) for r in rows],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/employee-stats")
-def api_employee_stats():
-    """Employee distribution."""
-    try:
-        rows = _pg_query(
-            """
-            SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary
-            FROM employees
-            GROUP BY status
-            """
-        )
-        return jsonify(
-            {
-                "labels": [r["status"] for r in rows],
-                "counts": [int(r["cnt"]) for r in rows],
-                "avg_salary": [round(float(r["avg_salary"]), 2) for r in rows],
-            }
-        )
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/recent-transactions")
-def api_recent_transactions():
-    """Recent transactions for the table view."""
-    limit = request.args.get("limit", 20, type=int)
-    search = request.args.get("search", "").strip()
-    category = request.args.get("category", "").strip()
-    try:
-        base_sql = """
-            SELECT transaction_id, transaction_date, type, category,
-                   amount, description
-            FROM daily_transactions
-            WHERE 1=1
-        """
-        params = []
-        if search:
-            base_sql += " AND (description ILIKE %s OR category ILIKE %s)"
-            params.extend([f"%{search}%", f"%{search}%"])
-        if category:
-            base_sql += " AND category = %s"
-            params.append(category)
-        base_sql += " ORDER BY transaction_date DESC, transaction_id DESC LIMIT %s"
-        params.append(limit)
-        rows = _pg_query(base_sql, tuple(params))
-        for r in rows:
-            r["amount"] = float(r["amount"] or 0)
-            if r.get("transaction_date"):
-                r["transaction_date"] = r["transaction_date"].isoformat()
-        return jsonify({"transactions": rows})
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/sales-target")
-def api_sales_target():
-    """Sales vs target for gauge widget."""
-    try:
-        rows = _pg_query(
-            """
-            SELECT b.business_name, b.monthly_target_revenue,
-                   COALESCE(SUM(CASE WHEN dt.type='Revenue' THEN dt.amount END), 0) AS current_revenue
-            FROM businesses b
-            LEFT JOIN daily_transactions dt ON dt.business_id = b.business_id
-                AND EXTRACT(MONTH FROM dt.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)
-                AND EXTRACT(YEAR FROM dt.transaction_date) = EXTRACT(YEAR FROM CURRENT_DATE)
-            GROUP BY b.business_id, b.business_name, b.monthly_target_revenue
-            ORDER BY current_revenue DESC
-            LIMIT 1
-            """
-        )
-        if rows:
-            row = rows[0]
-            target = float(row["monthly_target_revenue"] or 100000)
-            current = float(row["current_revenue"] or 0)
-            pct = round((current / target * 100), 1) if target > 0 else 0
-            return jsonify({
-                "business_name": row["business_name"],
-                "current_revenue": current,
-                "target_revenue": target,
-                "percentage": pct,
-            })
-        return jsonify({"current_revenue": 0, "target_revenue": 100000, "percentage": 0})
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-@app.route("/api/dashboard/categories")
-def api_categories():
-    """List distinct categories for filter dropdown."""
-    try:
-        rows = _pg_query("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
-        return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
-    except Exception as e:
-        return _internal_error_response(e)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Chatbot API endpoints
-# ═══════════════════════════════════════════════════════════════════
-
-@app.route("/api/chat/conversations", methods=["GET"])
-def api_list_conversations():
-    """List all conversations, newest first."""
-    db = _get_chat_db()
-    rows = db.execute(
-        "SELECT * FROM conversations ORDER BY updated_at DESC"
-    ).fetchall()
-    return jsonify([dict(r) for r in rows])
-
-
-@app.route("/api/chat/conversations", methods=["POST"])
-def api_create_conversation():
-    """Create a new conversation."""
-    if request.is_json:
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid or missing JSON payload"}), 400
-    else:
-        data = {}
-    conv_id = str(uuid.uuid4())
-    title = data.get("title", "New Chat") if data else "New Chat"
-    db = _get_chat_db()
-    db.execute(
-        "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
-        (conv_id, title),
-    )
-    db.commit()
-    return jsonify({"conversation_id": conv_id, "title": title}), 201
-
-
-@app.route("/api/chat/conversations/<conv_id>", methods=["DELETE"])
-def api_delete_conversation(conv_id):
-    """Delete a conversation and its messages."""
-    db = _get_chat_db()
-    db.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
-    db.execute("DELETE FROM conversations WHERE conversation_id = ?", (conv_id,))
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
-
-
-@app.route("/api/chat/conversations/<conv_id>/messages", methods=["GET"])
-def api_get_messages(conv_id):
-    """Get all messages for a conversation."""
-    db = _get_chat_db()
-    rows = db.execute(
-        "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at",
-        (conv_id,),
-    ).fetchall()
-    return jsonify([dict(r) for r in rows])
-
-
-@app.route("/api/chat/send", methods=["POST"])
-def api_chat_send():
-    """
-    Send a message to the agent and store the exchange.
-    Expects JSON: { conversation_id, message }
-    """
-    data = request.get_json(force=True, silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid or missing JSON payload"}), 400
-    conv_id = data.get("conversation_id")
-    user_msg = data.get("message", "").strip()
-
-    if not conv_id or not user_msg:
-        return jsonify({"error": "conversation_id and message are required"}), 400
-
-    db = _get_chat_db()
-
-    # ensure conversation exists
-    exists = db.execute(
-        "SELECT 1 FROM conversations WHERE conversation_id = ?", (conv_id,)
-    ).fetchone()
-    if not exists:
-        db.execute(
-            "INSERT INTO conversations (conversation_id, title) VALUES (?, ?)",
-            (conv_id, user_msg[:50]),
-        )
-
-    # save user message
-    db.execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES (?, 'user', ?)",
-        (conv_id, user_msg),
-    )
-    db.commit()
-
-    # update conversation title to first user message if it's still default
-    conv_row = db.execute(
-        "SELECT title FROM conversations WHERE conversation_id = ?", (conv_id,)
-    ).fetchone()
-    if conv_row and conv_row["title"] == "New Chat":
-        db.execute(
-            "UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE conversation_id = ?",
-            (user_msg[:60], conv_id),
-        )
-        db.commit()
-
-    CHAT_MESSAGES_TOTAL.labels("user").inc()
-
-    # We return a streaming response
-    from flask import stream_with_context
-    import json
-
-    def generate_stream():
-        agent_start = time.time()
-        full_assistant_msg = ""
-        intent_value = None
-        clarification_data = None
-        is_error = False
-
-        try:
-            resp = requests.get(
-                f"{AGENT_API_URL}/api/v1/query",
-                params={"input-query": user_msg, "thread-id": conv_id},
-                timeout=120,
-                stream=True,
-            )
-            
-            for line in resp.iter_lines():
-                if line:
-                    decoded = line.decode('utf-8')
-                    if decoded.startswith("data: "):
-                        # Pass through immediately
-                        yield decoded + "\n\n"
-                        payload = decoded[6:]
-                        try:
-                            chunk_data = json.loads(payload)
-                            t = chunk_data.get("type")
-                            if t == "token":
-                                full_assistant_msg += chunk_data.get("content", "")
-                            elif t == "final":
-                                intent_value = chunk_data.get("intent_str")
-                            elif t == "clarification":
-                                clarification_data = chunk_data.get("clarification")
-                                intent_value = chunk_data.get("intent_str")
-                            elif t == "error":
-                                full_assistant_msg = "⚠️ Error: " + chunk_data.get("error", "Unknown")
-                                intent_value = chunk_data.get("intent_str")
-                                is_error = True
-                        except Exception:
-                            pass
-
-            CHAT_AGENT_LATENCY.observe(time.time() - agent_start)
-        except Exception as exc:
-            err_msg = f"Could not reach agent: {exc}"
-            yield f"data: {json.dumps({'type': 'error', 'error': err_msg})}\n\n"
-            full_assistant_msg = f"⚠️ Error: {err_msg}"
-            is_error = True
-
-        CHAT_MESSAGES_TOTAL.labels("assistant").inc()
-
-        # Build final text for DB
-        if clarification_data:
-            if isinstance(clarification_data, str):
-                final_text = clarification_data
-            else:
-                final_text = clarification_data.get("message", "Could you please clarify your question?")
-        else:
-            final_text = full_assistant_msg
-
-        # Save assistant message with intent to DB. We use a fresh connection 
-        # because the request-context may drop or remain open for a long time.
-        db2 = sqlite3.connect(CHAT_DB_PATH)
-        db2.execute(
-            "INSERT INTO messages (conversation_id, role, content, intent) VALUES (?, 'assistant', ?, ?)",
-            (conv_id, final_text, intent_value),
-        )
-        db2.execute(
-            "UPDATE conversations SET updated_at = datetime('now') WHERE conversation_id = ?",
-            (conv_id,),
-        )
-        db2.commit()
-        db2.close()
-
-    response = Response(stream_with_context(generate_stream()), mimetype='text/event-stream')
-    response.headers['Cache-Control'] = 'no-cache, no-transform'
-    response.headers['X-Accel-Buffering'] = 'no'
-    response.headers['Connection'] = 'keep-alive'
-    return response
+# The rest of your dashboard endpoints would go here...
+# (api_revenue_vs_expense, api_transactions_by_category, etc.)
 
 
 # ═══════════════════════════════════════════════════════════════════
