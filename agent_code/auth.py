@@ -5,11 +5,21 @@ from typing import Any
 
 import jwt
 
+DEFAULT_JWT_SECRET = "super-secret-business-key-2026"
+
 
 @dataclass(frozen=True)
 class AuthError(Exception):
     message: str
     status_code: int = 401
+
+
+def require_jwt_secret(raw_secret: str | None) -> str:
+    if not raw_secret:
+        raise RuntimeError("JWT_SECRET must be set before starting the API")
+    if raw_secret == DEFAULT_JWT_SECRET:
+        raise RuntimeError("JWT_SECRET must not use the documented sample value")
+    return raw_secret
 
 
 def _extract_bearer_token(auth_header: str | None) -> str:

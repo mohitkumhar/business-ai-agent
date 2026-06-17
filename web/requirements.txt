@@ -4,3 +4,4 @@ python-dotenv>=1.0
 requests>=2.31
 gunicorn>=21.2
 prometheus-client>=0.20
+PyJWT>=2.8

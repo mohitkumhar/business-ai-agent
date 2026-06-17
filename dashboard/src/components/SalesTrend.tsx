@@ -1,10 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Chart, registerables } from "chart.js";
 import { api, SalesTrend as SalesTrendData } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAsyncData } from "@/lib/useAsyncData";
 import { LineChartIcon } from "./Icons";
+import { LoadingSpinner } from "./LoadingStates";
 
 Chart.register(...registerables);
 
@@ -14,16 +16,14 @@ export default function SalesTrend() {
   const { theme } = useTheme();
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const [data, setData] = useState<SalesTrendData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.getSalesTrend(period)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [period, dataVersion]);
+  const loadSalesTrend = useCallback(
+    () => api.getSalesTrend(period),
+    [period],
+  );
+  const { data, loading } = useAsyncData<SalesTrendData>(
+    `sales-trend:${period}:${dataVersion}`,
+    loadSalesTrend,
+  );
 
   useEffect(() => {
     if (!data || !chartRef.current) return;
@@ -114,7 +114,11 @@ export default function SalesTrend() {
         </div>
       </div>
       <div className="chart-body">
-        {loading ? <div className="loading-spinner">Loading...</div> : <canvas ref={chartRef}></canvas>}
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 260, width: "100%" }}>
+            <LoadingSpinner label="Loading sales data…" />
+          </div>
+        ) : <canvas ref={chartRef}></canvas>}
       </div>
     </div>
   );

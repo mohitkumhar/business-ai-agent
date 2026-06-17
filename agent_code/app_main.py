@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import base64
-import bcrypt
+import hashlib
+import hmac
 import json
 import os
 import time
 from datetime import datetime, timedelta
+from functools import wraps
 from typing import Any
 
 import requests
@@ -15,44 +17,100 @@ from flask_cors import CORS
 from langchain_core.messages import HumanMessage, SystemMessage
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
+from api_errors import SAFE_INTERNAL_ERROR_MESSAGE, internal_error_response
 from db_config import execute_read_query_params, get_db_connection
-from api_errors import internal_error_response
+from auth_passwords import SOCIAL_LOGIN_PASSWORD_HASH
 from llm.base_llm import base_llm
 from logger.logger import logger
+from request_ids import get_request_id
 from query_execution import stream_agent_sse_lines
-
+from auth import AuthError, decode_jwt_identity, require_jwt_secret
+import html
+import re
+from werkzeug.exceptions import RequestEntityTooLarge
 load_dotenv()
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 CORS(app)
 
-AGENT_REQUEST_COUNT = Counter(
-    "agent_requests_total",
-    "Total requests to the agent API",
-    ["method", "endpoint", "status"],
-)
-AGENT_REQUEST_LATENCY = Histogram(
-    "agent_request_duration_seconds",
-    "Agent API request latency",
-    ["method", "endpoint"],
-    buckets=[0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120],
-)
-AGENT_INTENT_COUNT = Counter(
-    "agent_intent_detections_total",
-    "Total intent detections by type",
-    ["intent"],
-)
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
+
+def sanitize_input(text):
+    if not isinstance(text, str):
+        return text
+    # Strip malicious control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Escape HTML
+    return html.escape(text)
+
+if "agent_requests_total" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_COUNT = REGISTRY._names_to_collectors["agent_requests_total"]
+else:
+    AGENT_REQUEST_COUNT = Counter(
+        "agent_requests_total",
+        "Total requests to the agent API",
+        ["method", "endpoint", "status"],
+    )
+
+if "agent_request_duration_seconds" in REGISTRY._names_to_collectors:
+    AGENT_REQUEST_LATENCY = REGISTRY._names_to_collectors["agent_request_duration_seconds"]
+else:
+    AGENT_REQUEST_LATENCY = Histogram(
+        "agent_request_duration_seconds",
+        "Agent API request latency",
+        ["method", "endpoint"],
+        buckets=[0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120],
+    )
+
+if "agent_intent_detections_total" in REGISTRY._names_to_collectors:
+    AGENT_INTENT_COUNT = REGISTRY._names_to_collectors["agent_intent_detections_total"]
+else:
+    AGENT_INTENT_COUNT = Counter(
+        "agent_intent_detections_total",
+        "Total intent detections by type",
+        ["intent"],
+    )
 
 WHATSAPP_VERIFY_TOKEN = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
 WHATSAPP_ACCESS_TOKEN = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip()
 WHATSAPP_PHONE_NUMBER_ID = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip()
+WHATSAPP_APP_SECRET = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_WEBHOOK_SECRET = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 DEFAULT_BUSINESS_ID = (os.getenv("DEFAULT_BUSINESS_ID") or "").strip()
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+        try:
+            identity = decode_jwt_identity(
+                request.headers.get("Authorization"),
+                app.config["SECRET_KEY"],
+            )
+        except AuthError as exc:
+            return jsonify({"message": exc.message}), exc.status_code
+
+        g.user_id = identity["user_id"]
+        g.business_id = identity["business_id"]
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def get_current_business_id():
+    return getattr(g, "business_id", None)
 
 
 @app.before_request
 def _start_timer():
     g.start_time = time.time()
+    g.request_id = get_request_id(request.headers.get("X-Request-ID"), getattr(g, "request_id", None))
 
 
 @app.after_request
@@ -63,6 +121,7 @@ def _record_metrics(response):
     endpoint = request.endpoint or "unknown"
     AGENT_REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     AGENT_REQUEST_LATENCY.labels(request.method, endpoint).observe(latency)
+    response.headers["X-Request-ID"] = get_request_id(getattr(g, "request_id", None))
     return response
 
 
@@ -122,8 +181,25 @@ def _ensure_whatsapp_tables():
     finally:
         conn.close()
 
+_whatsapp_tables_initialized = False
 
-_ensure_whatsapp_tables()
+def _initialize_whatsapp_tables_safe():
+    global _whatsapp_tables_initialized
+
+    if _whatsapp_tables_initialized:
+        return
+
+    try:
+        _ensure_whatsapp_tables()
+        _whatsapp_tables_initialized = True
+        logger.info("WhatsApp tables initialized successfully.")
+    except Exception as exc:
+        logger.warning(
+            "WhatsApp table initialization failed: %s",
+            exc
+        )
+
+
 try:
     from slack_integration.flask_routes import register_slack_routes
 
@@ -176,7 +252,8 @@ def _run_agent_to_text(query: str, thread_id: str, business_id: str) -> str:
     if text:
         return text
     if fallback_error:
-        return f"Sorry, I hit an error: {fallback_error}"
+        logger.error("Agent execution failed: %s", fallback_error, exc_info=True)
+        return "Sorry, something went wrong while generating the response."
     return "I could not generate a response."
 
 
@@ -186,7 +263,7 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://graph.facebook.com/v21.0/{media_id}",
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=30,
+        timeout=(5, 30),
     )
     meta.raise_for_status()
     meta_json = meta.json()
@@ -197,10 +274,26 @@ def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     blob = requests.get(
         media_url,
         headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-        timeout=60,
+        timeout=(5, 60),
     )
     blob.raise_for_status()
     return blob.content, mime_type
+
+
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not WHATSAPP_APP_SECRET or not signature_header:
+        return False
+
+    scheme, separator, received_signature = signature_header.partition("=")
+    if separator != "=" or scheme != "sha256" or not received_signature:
+        return False
+
+    expected_signature = hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(received_signature, expected_signature)
 
 
 def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
@@ -209,7 +302,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     meta = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
         params={"file_id": file_id},
-        timeout=30,
+        timeout=(5, 30),
     )
     meta.raise_for_status()
     info = meta.json().get("result") or {}
@@ -217,7 +310,7 @@ def _download_telegram_file(file_id: str) -> tuple[bytes, str]:
     if not file_path:
         raise ValueError("Telegram getFile missing file_path.")
     url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
-    blob = requests.get(url, timeout=60)
+    blob = requests.get(url, timeout=(5, 60))
     blob.raise_for_status()
     return blob.content, "image/jpeg"
 
@@ -391,7 +484,7 @@ def _send_whatsapp_text(to_number: str, text: str):
             "Content-Type": "application/json",
         },
         json=body,
-        timeout=30,
+        timeout=(5, 30),
     ).raise_for_status()
 
 
@@ -403,10 +496,21 @@ def _send_telegram_text(chat_id: int, text: str):
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": chat_id, "text": text[:4096]},
-            timeout=30,
+            timeout=(5, 30),
         ).raise_for_status()
-    except Exception as exc:
-        logger.error("Failed to send Telegram message: %s", exc, exc_info=True)
+
+    except requests.Timeout:
+        logger.error(
+            "Telegram API request timed out",
+            exc_info=True,
+        )
+
+    except requests.RequestException as exc:
+        logger.error(
+            "Failed to send Telegram message: %s",
+            exc,
+            exc_info=True,
+        )
 
 
 @app.route("/")
@@ -422,6 +526,8 @@ def metrics_endpoint():
 @app.route("/api/v1/query", methods=["POST", "GET"])
 def query_agent():
     input_query = request.args.get("input-query", "")
+    if input_query:
+        input_query = sanitize_input(input_query)    
     thread_id = request.args.get("thread-id", "")
     business_id = request.args.get("business-id", "") or ""
     if not input_query:
@@ -439,7 +545,47 @@ def query_agent():
 
 @app.route("/api/v1/billing/analyze-all", methods=["POST"])
 def billing_analyze_all():
-    data = request.get_json(force=True) or {}
+    """
+    Analyze all billing data for the business and return an AI-generated summary.
+
+    This endpoint triggers a comprehensive analysis of the business's financial
+    transactions, including revenue, expenses, and recent activity. It uses the
+    LLM to answer a user-provided question or a default analysis prompt.
+
+    Args:
+        The request body should be a JSON object with the following optional fields:
+        - question (str): The specific question or instruction for the analysis.
+          Defaults to "Analyze all business billing data".
+        - business_id (str): The business identifier. If not provided, the function
+          resolves the default business ID from the environment or the first business
+          in the database.
+
+    Returns:
+        JSON response with the following structure:
+        - business_id (str): The business ID used for the analysis.
+        - analysis (str): The LLM-generated analysis text.
+
+    Raises:
+        400: If the request body is invalid or missing JSON.
+        500: If an internal error occurs during database queries or LLM invocation.
+
+    Example:
+        Request:
+        POST /api/v1/billing/analyze-all
+        {
+            "question": "What are the top expense categories this month?",
+            "business_id": "123e4567-e89b-12d3-a456-426614174000"
+        }
+
+        Response:
+        {
+            "business_id": "123e4567-e89b-12d3-a456-426614174000",
+            "analysis": "The top expense category is 'Office Supplies' with $4,500..."
+        }
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     question = (data.get("question") or "Analyze all business billing data").strip()
     business_id = (data.get("business_id") or "").strip() or _resolve_business_id(None)
     try:
@@ -448,7 +594,6 @@ def billing_analyze_all():
     except Exception as exc:
         logger.error("Analyze all failed: %s", exc, exc_info=True)
         return internal_error_response(exc)
-
 
 @app.route("/api/v1/whatsapp/webhook", methods=["GET"])
 def whatsapp_verify():
@@ -462,8 +607,15 @@ def whatsapp_verify():
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
+    raw_body = request.get_data(cache=True)
+    if not _verify_whatsapp_signature(raw_body, request.headers.get("X-Hub-Signature-256")):
+        return jsonify({"error": "Invalid WhatsApp signature"}), 403
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        payload = request.get_json(force=True) or {}
+        payload = data
         entries = payload.get("entry") or []
         for entry in entries:
             for change in entry.get("changes") or []:
@@ -514,8 +666,19 @@ def whatsapp_events():
 
 @app.route("/api/v1/telegram/webhook", methods=["POST"])
 def telegram_webhook():
+    supplied_secret = (
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    ).strip()
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(
+        supplied_secret, TELEGRAM_WEBHOOK_SECRET
+    ):
+        return jsonify({"error": "Invalid Telegram webhook secret token"}), 403
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        update = request.get_json(force=True) or {}
+        update = data
         msg = update.get("message") or update.get("edited_message") or {}
         if not msg:
             return jsonify({"ok": True})
@@ -596,18 +759,29 @@ def increment_assigned_count(username: str):
 def get_employees():
     repo = os.getenv("GITHUB_REPO", "mohitkumhar/intelligent-business-agent")
     try:
-        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=20)
+        res = requests.get(f"https://api.github.com/repos/{repo}/contributors", timeout=(5, 20))
         counts = get_assigned_counts()
         if res.status_code != 200:
+            logger.warning("GitHub contributors API returned %s; using fallback list", res.status_code)
             return jsonify(
                 {
                     "employees": [
                         {"login": "engineer_a", "avatar_url": "", "assigned_issues": counts.get("engineer_a", 0)},
                         {"login": "engineer_b", "avatar_url": "", "assigned_issues": counts.get("engineer_b", 0)},
-                    ]
+                    ],
+                    "degraded": True,
+                    "reason": f"GitHub API unavailable (status {res.status_code}); showing placeholder contributors.",
                 }
             )
+    
+       
         contributors = res.json()
+
+        if not isinstance(contributors, list):
+            raise ValueError(
+                f"Unexpected contributors payload type: {type(contributors).__name__}"
+            )
+
         return jsonify(
             {
                 "employees": [
@@ -620,14 +794,71 @@ def get_employees():
                 ]
             }
         )
-    except Exception as exc:
-        return internal_error_response(exc)
+    except requests.Timeout as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "GitHub contributors API timed out request_id=%s repo=%s",
+            request_id,
+            repo,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
+    except requests.RequestException as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "Employees API failed request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
+    except Exception as exc:
+        request_id = get_request_id(getattr(g, "request_id", None))
+        logger.error(
+            "Failed to process GitHub contributors response request_id=%s repo=%s: %s",
+            request_id,
+            repo,
+            exc,
+            exc_info=True,
+        )
+        return (
+            jsonify(
+                {
+                    "error": SAFE_INTERNAL_ERROR_MESSAGE,
+                    "code": "employees_unavailable",
+                    "request_id": request_id,
+                }
+            ),
+            500,
+        )
 
 @app.route("/api/v1/escalate", methods=["POST"])
+@token_required
 def escalate_to_slack():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     try:
-        data = request.get_json() or {}
         query = data.get("query", "No specific query")
         summary = data.get("summary", "No summary provided")
         from slack_integration.slack_handler import SlackDelivery
@@ -726,18 +957,21 @@ def api_financial_overview():
 
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
+@token_required
 def api_revenue_vs_expense():
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    bid = get_current_business_id()
+    period = request.args.get("period", "this_month")
+    start_date, end_date = get_period_dates(period)
     try:
         rows = execute_read_query_params(
             """
             SELECT category, type, COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (bid, start_date, end_date),
         )
         revenue_cats: dict[str, float] = {}
         expense_cats: dict[str, float] = {}
@@ -874,10 +1108,17 @@ def api_top_products():
 
 
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
+@token_required
 def api_employee_stats():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    business_id = get_current_business_id()
+    if not business_id:
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         rows = execute_read_query_params(
-            "SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary FROM employees GROUP BY status"
+            "SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary FROM employees WHERE business_id = %s GROUP BY status",
+            (business_id,)
         )
         return jsonify(
             {
@@ -980,10 +1221,10 @@ def get_business_info():
     finally:
         conn.close()
 
-
 if __name__ == "__main__":
+    _initialize_whatsapp_tables_safe()
     logger.info("Starting Flask development server.")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")
 from flask import Flask, request, jsonify, Response, stream_with_context, g
 from flask_cors import CORS
 import os
@@ -1015,9 +1256,8 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 
 load_dotenv()
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
-CORS(app)
+# Use the existing app object defined at the top of the file
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
 # Constants & AI Clients
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
@@ -1076,7 +1316,7 @@ def get_latest_business_id():
 # --- Dashboard API Endpoints ---
 
 @app.route("/api/dashboard/summary-sql", methods=["GET"])
-def api_dashboard_summary():
+def api_dashboard_summary_sql():
     period = request.args.get("period", "this_month")
     start_date, end_date = get_period_dates(period)
     bid = get_latest_business_id()
@@ -1089,11 +1329,11 @@ def api_dashboard_summary():
             COUNT(*) AS total_transactions
         FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
     """, (bid, start_date, end_date))
-    
+
     alerts = execute_read_query_params("SELECT COUNT(*) AS active_alerts FROM alerts WHERE business_id = %s AND status = 'Active'", (bid,))
-    
+
     curr = txn[0] if txn else {}
-    
+
     # Parse dates to compute prev period
     dt_start = datetime.strptime(start_date, "%Y-%m-%d").date()
     if period == "this_month":
@@ -1105,28 +1345,28 @@ def api_dashboard_summary():
     else:
         p_start = dt_start - timedelta(days=30)
         p_end = dt_start - timedelta(days=1)
-        
+
     p_start_str = p_start.strftime("%Y-%m-%d")
     p_end_str = p_end.strftime("%Y-%m-%d")
-    
+
     prev_txn = execute_read_query_params("""
-        SELECT 
+        SELECT
             COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS total_revenue,
             COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS total_expenses
         FROM daily_transactions WHERE business_id = %s AND transaction_date BETWEEN %s AND %s
     """, (bid, p_start_str, p_end_str))
-    
+
     prev = prev_txn[0] if prev_txn else {}
-    
+
     def calc_change(curr_val, prev_val):
         if not prev_val: return 100.0 if curr_val else 0.0
         return round(((curr_val - prev_val) / prev_val) * 100.0, 1)
-        
+
     rev = float(curr.get("total_revenue", 0))
     exp = float(curr.get("total_expenses", 0))
     prev_rev = float(prev.get("total_revenue", 0))
     prev_exp = float(prev.get("total_expenses", 0))
-    
+
     return jsonify({
         "total_revenue": rev,
         "total_expenses": exp,
@@ -1150,6 +1390,16 @@ def api_forecast():
         """, (bid, cutoff))
         
         hist = [{"date": r["transaction_date"].strftime("%Y-%m-%d"), "actual": float(r["amount"])} for r in rows]
+        
+        if not hist:
+            return jsonify({
+                "historical": [], 
+                "forecast": [], 
+                "trend_direction": "flat", 
+                "trend_percent": 0,
+                "insight": "No revenue data available for forecasting yet."
+            })
+        
         # Basic prediction logic using numpy
         x = np.arange(len(hist))
         y = np.array([h["actual"] for h in hist])
@@ -1170,7 +1420,9 @@ def api_forecast():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -1181,12 +1433,8 @@ def onboarding():
         bid = str(uuid.uuid4())
         cur.execute("INSERT INTO businesses (business_id, business_name, industry_type, owner_name) VALUES (%s, %s, %s, %s)", 
                    (bid, business_name, data.get("business_category"), data.get("full_name")))
-        oauth_password_hash = bcrypt.hashpw(
-            uuid.uuid4().hex.encode("utf-8"),
-            bcrypt.gensalt(),
-        ).decode("utf-8")
         cur.execute("INSERT INTO users (business_id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
-                   (bid, data.get("full_name"), email, oauth_password_hash))
+                   (bid, data.get("full_name"), email, SOCIAL_LOGIN_PASSWORD_HASH))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
     finally:
@@ -1203,7 +1451,9 @@ def iter_query_sse(input_query, thread_id):
 
 @app.route("/api/chat/send", methods=["POST"])
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
     conv_id = data.get("conversation_id")
     msg = data.get("message")
     # Wrap iter_query_sse in SSE Response
@@ -1212,4 +1462,5 @@ def api_chat_send():
 # Start Server
 _init_chat_db()
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    logger.info("Starting Flask development server.")
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv("FLASK_DEBUG") == "1")

@@ -2,13 +2,15 @@ import { NextRequest } from "next/server";
 
 /**
  * POST /api/chat
- * Server-side SSE proxy to the Flask agent.
+ * Server-side SSE proxy to the Flask agent chat endpoint.
  *
  * Why a route handler instead of a Next.js rewrite?
  *  1. `rewrites()` bakes the destination at BUILD time — in Docker
  *     the env var doesn't exist yet, so it falls back to localhost.
  *  2. Next.js rewrites buffer the response — SSE events are not
  *     streamed to the browser in real-time.
+ *  3. Chat requests need the browser's Authorization header forwarded
+ *     to the backend `/api/chat/send` route.
  *
  * This route reads AGENT_API_URL at **runtime** and pipes the
  * Flask SSE stream byte-for-byte to the client with proper headers.
@@ -17,6 +19,7 @@ export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const inputQuery = searchParams.get("input-query") ?? "";
   const threadId = searchParams.get("thread-id") ?? "";
+  const authorization = req.headers.get("authorization");
 
   if (!inputQuery || !threadId) {
     return new Response(
@@ -25,24 +28,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const agentUrl =
-    process.env.AGENT_API_URL || "http://localhost:5000";
+  if (!authorization) {
+    return new Response(
+      JSON.stringify({ error: "Authorization header is required" }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
 
-  const params = new URLSearchParams({
-    "input-query": inputQuery,
-    "thread-id": threadId,
-  });
+  const agentUrl = process.env.AGENT_API_URL || "http://localhost:5000";
 
   try {
-    const upstream = await fetch(
-      `${agentUrl}/api/v1/query?${params.toString()}`,
-      {
-        method: "POST",
-        headers: { Accept: "text/event-stream" },
-        // @ts-expect-error -- Node 18+ undici supports duplex
-        duplex: "half",
-      }
-    );
+    const upstream = await fetch(`${agentUrl}/api/chat/send`, {
+      method: "POST",
+      headers: {
+        Accept: "text/event-stream",
+        Authorization: authorization,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        conversation_id: threadId,
+        message: inputQuery,
+      }),
+      // @ts-expect-error -- Node 18+ undici supports duplex
+      duplex: "half",
+    });
 
     if (!upstream.ok) {
       const text = await upstream.text();

@@ -4,6 +4,8 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
+from logger.logger import logger
+
 load_dotenv()
 
 DATABASE_URL = os.getenv(
@@ -47,8 +49,9 @@ def get_db_schema() -> str:
             schema_lines.append(f"  {column_name} ({data_type}, {nullable})")
 
         return "\n".join(schema_lines)
-    except Exception as e:
-        return f"Error reading schema: {str(e)}"
+    except Exception:
+        logger.error("Error reading schema", exc_info=True)
+        return "Error reading schema"
 
 
 _FORBIDDEN = [
@@ -64,7 +67,7 @@ _FORBIDDEN = [
 
 def _remove_string_literals(sql: str) -> str:
     """
-    Replaces all string literals (enclosed in single or double quotes) 
+    Replaces all string literals (enclosed in single or double quotes)
     with empty strings to allow safety checks on the raw SQL structure.
     Also handles standard SQL escape characters (doubled quotes) and backslash escapes.
     """
@@ -79,7 +82,7 @@ def _remove_string_literals(sql: str) -> str:
             if not in_single_quote and not in_double_quote:
                 result.append(char)
             continue
-            
+
         if char == '\\':
             escape = True
             if not in_single_quote and not in_double_quote:
@@ -105,18 +108,18 @@ def _assert_read_only_select(sql: str) -> str:
     cleaned = s.lower()
     if not (cleaned.startswith("select") or cleaned.startswith("with")):
         raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
-    
+
     # Remove string literals to perform structural validation without false positives
     structural_sql = _remove_string_literals(s)
     structural_cleaned = structural_sql.lower()
-    
+
     if structural_sql.count(";") > 0:
         raise ValueError("Multiple SQL statements are not allowed.")
-        
+
     for keyword in _FORBIDDEN:
         if keyword in structural_cleaned:
             raise ValueError(f"Forbidden SQL keyword detected: {keyword.strip()}")
-            
+
     return s
 
 
@@ -148,12 +151,15 @@ def execute_read_query(sql: str) -> list[dict]:
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(s)
-        results = cur.fetchall()
-        cur.close()
+        try:
+            cur.execute(s)
+            results = cur.fetchall()
+        finally:
+            cur.close()
         return [dict(row) for row in results]
-    except Exception as e:
-        raise RuntimeError(f"SQL execution error: {str(e)}")
+    except Exception:
+        logger.error("SQL execution error", exc_info=True)
+        raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
 
@@ -167,11 +173,14 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(s, params or ())
-        results = cur.fetchall()
-        cur.close()
+        try:
+            cur.execute(s, params or ())
+            results = cur.fetchall()
+        finally:
+            cur.close()
         return [dict(row) for row in results]
-    except Exception as e:
-        raise RuntimeError(f"SQL execution error: {str(e)}")
+    except Exception:
+        logger.error("SQL execution error", exc_info=True)
+        raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
