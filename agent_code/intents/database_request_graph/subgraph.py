@@ -9,15 +9,24 @@ Flow:
     - resolve_data_range → … → format_response → standardized_response_formatter → END
 """
 
+import os
+import sys
+
+# FIX: Path routing must run BEFORE local internal modules are loaded
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from datetime import date
+from dotenv import load_dotenv
+import psycopg
+from psycopg_pool import ConnectionPool
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
-from psycopg_pool import ConnectionPool
-from dotenv import load_dotenv
-import psycopg
+
 from logger.logger import logger
-import os
-from intents.database_request_graph.graph_state import DatabaseRequestGraphState
+
+# FIX: Unify your State Schemas to prevent type casting validation crashes
+from intents.database_request_graph.subgraph import DatabaseRequestGraphState
 from intents.database_request_graph.utils import (
     resolve_data_range,
     validate_entities,
@@ -40,16 +49,11 @@ from intents.database_request_graph.advisory_nodes import (
     standardized_response_formatter,
 )
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-
 load_dotenv()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://admin:root@localhost:5432/test_db"
 )
-
 
 AVAILABLE_TABLES: list[str] = [
     "alerts",
@@ -69,7 +73,6 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
     "alerts": "Business alerts with severity (Low/Medium/High) and status (Active/Resolved)",
     "business_health_scores": "Overall business health metrics - cash, profitability, growth, cost-control, risk scores",
     "businesses": "Business registration — name, industry, owner, monthly_target_revenue, risk_appetite",
-
     "daily_transactions": "Daily revenue & expense transactions with categories and amounts",
     "decision_outcomes": "Outcomes of past decisions with actual profit impact",
     "decisions": "Business decisions (Marketing/Hiring/Pricing/Expansion) with risk levels and success probability",
@@ -80,6 +83,9 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
     "users": "System users with email, password hash, and role",
 }
 
+# =====================================================================
+# SUBGRAPH CONDITIONAL ROUTING HOOKS
+# =====================================================================
 
 def _route_after_sql_validation(state: DatabaseRequestGraphState) -> str:
     try:
@@ -130,11 +136,14 @@ def _create_postgres_memory():
         logger.error(f"Failed to set up Postgres checkpointer: {e}", exc_info=True)
         raise RuntimeError("Could not set up Postgres checkpointer") from e
 
+# =====================================================================
+# GRAPH WORKFLOW ARCHITECTURE DEFINITION
+# =====================================================================
 
 def generate_graph():
     graph = StateGraph(DatabaseRequestGraphState)
 
-    # wrapped database nodes (step budget)
+    # Register workflow nodes
     graph.add_node("route_entry", route_entry_node)
     graph.add_node("out_of_scope", wrap_node(out_of_scope_node))
     graph.add_node("fetch_financial_context", wrap_node(fetch_financial_context))
@@ -156,6 +165,7 @@ def generate_graph():
         wrap_node(format_response_of_business_insight_generator),
     )
 
+    # Entry mappings
     graph.add_edge(START, "route_entry")
     graph.add_conditional_edges(
         "route_entry",
@@ -170,6 +180,7 @@ def generate_graph():
 
     graph.add_edge("out_of_scope", END)
 
+    # Advisory tracking layer paths
     graph.add_conditional_edges(
         "fetch_financial_context",
         _route_after_fetch,
@@ -184,6 +195,7 @@ def generate_graph():
         },
     )
 
+    # Core Database Request routing layout
     graph.add_conditional_edges(
         "resolve_data_range",
         route_emergency_or("validate_entities"),
@@ -205,6 +217,7 @@ def generate_graph():
         {"emergency_exit": "emergency_exit", "SQL_validation": "SQL_validation"},
     )
 
+    # Self-correcting loop logic for SQL validation execution mapping
     graph.add_conditional_edges(
         "SQL_validation",
         _route_after_sql_validation,
@@ -216,6 +229,7 @@ def generate_graph():
         },
     )
 
+    # Query serialization, logging, and metrics operations
     graph.add_conditional_edges(
         "execute_query",
         route_emergency_or("logging"),
@@ -251,9 +265,11 @@ def generate_graph():
         },
     )
 
+    # Exit execution bounds
     graph.add_edge("standardized_response_formatter", END)
     graph.add_edge("emergency_exit", END)
 
+    # Initialize checkpointer and freeze workflow graph
     memory = _create_postgres_memory()
     workflow = graph.compile(checkpointer=memory)
     return workflow
