@@ -60,7 +60,7 @@ export const ProductPrinciples = () => {
         </div>
         <img
           src={threeDButton}
-          alt="An illustration of a button in 3 dimension with the ProfitPilot logo on it"
+          alt="3D illustration featuring the ProfitPilot logo"
           className="max-w-lg md:block hidden"
         />
       </div>
