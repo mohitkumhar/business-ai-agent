@@ -18,7 +18,7 @@ export const WhyTypebotCta = () => (
     </div>
     <img
       src={imgSrc}
-      alt="Illustration of ProfitPilot's building blocks in 3d"
+      alt=""
       className="rounded-3xl max-w-md hidden md:block"
     />
   </div>
