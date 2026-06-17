@@ -13,6 +13,7 @@ import {
 import { api, Forecast } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { TrendingUpIcon, TrendingDownIcon, MinusIcon } from "./Icons";
+import { LoadingSpinner } from "./LoadingStates";
 
 const formatCurrency = (value: unknown) =>
   `₹${Number(value || 0).toLocaleString("en-IN")}`;
@@ -55,8 +56,8 @@ export default function ForecastChart() {
     return (
       <div className="chart-card">
         <h3 className="chart-title">Revenue Forecast — Next 30 Days</h3>
-        <div className="loading-spinner" style={{ height: "300px" }}>
-          Predicting business trends...
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, width: "100%" }}>
+          <LoadingSpinner label="Predicting business trends…" />
         </div>
       </div>
     );

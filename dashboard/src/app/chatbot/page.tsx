@@ -349,7 +349,6 @@ export default function ChatbotPage() {
     let assistantContent = "";
     let assistantIntent: string | null = null;
     let shouldPersistAssistant = false;
-
     setInput("");
     setCompletedNodes([]);
 
