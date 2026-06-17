@@ -79,7 +79,7 @@ export default function RecentTransactions({ search: globalSearch }: RecentTrans
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
-          <button className="filter-btn-icon">
+          <button className="filter-btn-icon" aria-label="Filter">
             <FilterIcon size={14} /> Filter
           </button>
         </div>
