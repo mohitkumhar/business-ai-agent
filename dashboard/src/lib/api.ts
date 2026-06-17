@@ -124,6 +124,15 @@ export function getAuthHeaders() {
   return token ? ({ Authorization: `Bearer ${token}` } as HeadersInit) : ({} as HeadersInit);
 }
 
+export function setToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  if (token) {
+    localStorage.setItem("profit_pilot_token", token);
+  } else {
+    localStorage.removeItem("profit_pilot_token");
+  }
+}
+
 async function readJsonOrThrow<T>(
   input: RequestInfo | URL,
   init?: RequestInit
@@ -379,5 +388,57 @@ export async function removeChatConversation(conversationId: string): Promise<vo
   if (!response.ok && response.status !== 404) {
     const errorText = await response.text().catch(() => response.statusText);
     throw new Error(errorText || `Delete failed with status ${response.status}`);
+  }
+}
+
+export async function* streamChatSend(
+  conversationId: string,
+  message: string,
+  options?: { signal?: AbortSignal }
+): AsyncGenerator<Record<string, unknown>> {
+  const res = await fetch(chatApiPath("/api/chat/send"), {
+    method: "POST",
+    signal: options?.signal,
+    headers: {
+      "Content-Type": "application/json",
+      ...getHeaders(),
+    },
+    body: JSON.stringify({ message, conversation_id: conversationId }),
+  });
+
+  if (!res.ok || !res.body) {
+    const errText = await res.text().catch(() => "Unknown error");
+    throw new Error(`Chat send failed (${res.status}): ${errText}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+
+    for (const part of parts) {
+      for (const line of part.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6);
+        if (!jsonStr) continue;
+
+        try {
+          yield JSON.parse(jsonStr);
+        } catch {
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[streamChatSend] Failed to parse SSE chunk", {
+              chunk: jsonStr,
+            });
+          }
+        }
+      }
+    }
   }
 }
