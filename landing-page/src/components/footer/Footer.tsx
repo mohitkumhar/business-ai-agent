@@ -8,55 +8,35 @@ import {
 } from "../../constants";
 import gradientSeparatorSrc from "./assets/gradient-separator.png";
 
-const data = [
+type FooterLink =
+  | { label: string; href: string }
+  | { label: string; to: "/" | "/login" | "/get-started" | "." | ".." | "/$slug" | "/about" }  | { label: string; params: Record<string, string> };
+
+const data: { title: string; links: FooterLink[] }[] = [
   {
     title: "Product",
     links: [
-      {
-        label: "Documentation",
-        href: docsUrl,
-      },
+      { label: "Documentation", href: docsUrl },
     ],
   },
   {
     title: "Community",
     links: [
-      {
-        label: "Discord",
-        href: discordUrl,
-      },
-      {
-        label: "GitHub",
-        href: githubRepoUrl,
-      },
-      {
-        label: "LinkedIn",
-        href: linkedInUrl,
-      },
+      { label: "Discord", href: discordUrl },
+      { label: "GitHub", href: githubRepoUrl },
+      { label: "LinkedIn", href: linkedInUrl },
     ],
   },
   {
     title: "Company",
     links: [
-      {
-        label: "About",
-        to: "/",
-      },
-      {
-        label: "Terms of Service",
-        to: "/",
-      },
-      {
-        label: "Privacy Policy",
-        to: "/",
-      },
-      {
-        label: "Business Continuity",
-        to: "/",
-      },
+      { label: "About", to: "/" },
+      { label: "Terms of Service", to: "/" },
+      { label: "Privacy Policy", to: "/" },
+      { label: "Business Continuity", to: "/" },
     ],
   },
-] as const;
+];
 
 export const Footer = () => {
   return (
@@ -75,7 +55,7 @@ export const Footer = () => {
                       <TextLink
                         href={"href" in link ? link.href : undefined}
                         to={"to" in link ? link.to : undefined}
-                        params={"params" in link ? (link as any).params : undefined}
+                        params={"params" in link ? link.params : undefined}
                         target={"href" in link ? "_blank" : undefined}
                         className="text-muted-foreground font-normal"
                         size="sm"
