@@ -66,38 +66,22 @@ _FORBIDDEN = [
 
 
 def _remove_string_literals(sql: str) -> str:
-    """
-    Replaces all string literals (enclosed in single or double quotes)
-    with empty strings to allow safety checks on the raw SQL structure.
-    Also handles standard SQL escape characters (doubled quotes) and backslash escapes.
-    """
+    """Replace string literal contents with empty strings for structural safety checks.
+    Handles PostgreSQL's standard SQL escaping (doubled quotes).
+    Backslash has no special meaning in standard_conforming_strings=on (the default)."""
     result = []
     in_single_quote = False
     in_double_quote = False
-    escape = False
 
     for char in sql:
-        if escape:
-            escape = False
-            if not in_single_quote and not in_double_quote:
-                result.append(char)
-            continue
-
-        if char == '\\':
-            escape = True
-            if not in_single_quote and not in_double_quote:
-                result.append(char)
-            continue
-
         if char == "'" and not in_double_quote:
             in_single_quote = not in_single_quote
             result.append(char)
         elif char == '"' and not in_single_quote:
             in_double_quote = not in_double_quote
             result.append(char)
-        else:
-            if not in_single_quote and not in_double_quote:
-                result.append(char)
+        elif not in_single_quote and not in_double_quote:
+            result.append(char)
 
     return "".join(result)
 
