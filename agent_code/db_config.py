@@ -93,6 +93,7 @@ def _assert_read_only_select(sql: str) -> str:
     if not (cleaned.startswith("select") or cleaned.startswith("with")):
         raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
 
+    # Remove string literals to perform structural validation without false positives
     structural_sql = _remove_string_literals(s)
     structural_cleaned = structural_sql.lower()
 
@@ -134,9 +135,11 @@ def execute_read_query(sql: str) -> list[dict]:
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(s)
-        results = cur.fetchall()
-        cur.close()
+        try:
+            cur.execute(s)
+            results = cur.fetchall()
+        finally:
+            cur.close()
         return [dict(row) for row in results]
     except Exception:
         logger.error("SQL execution error", exc_info=True)
