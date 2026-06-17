@@ -3,7 +3,6 @@ import { useEffect, useState, useCallback } from "react";
 import { api, Transaction } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { SearchIcon, FilterIcon } from "./Icons";
-import { LoadingSpinner } from "./LoadingStates";
 
 interface RecentTransactionsProps {
   search?: string;
@@ -86,9 +85,7 @@ export default function RecentTransactions({ search: globalSearch }: RecentTrans
       </div>
 
       {loading ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 0", width: "100%" }}>
-          <LoadingSpinner label="Loading transactions…" />
-        </div>
+        <div className="loading-spinner">Loading transactions...</div>
       ) : (
         <table className="data-table">
           <thead>

@@ -4,7 +4,6 @@ import { api, SalesTarget } from "@/lib/api";
 import { useDashboardPeriod } from "@/context/DashboardPeriodContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { LoadingSpinner } from "./LoadingStates";
 
 function SemiCircleGauge({ percentage, isDark }: { percentage: number; isDark: boolean }) {
   const size = 200;
@@ -119,8 +118,8 @@ const { data, loading } = useAsyncData<SalesTarget>(
       </div>
 
       {loading ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, padding: "40px 0", width: "100%" }}>
-          <LoadingSpinner label="Loading sales metrics…" />
+        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>
+          Loading metrics...
         </div>
       ) : (
         <div className="flex flex-col flex-1">

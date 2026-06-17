@@ -281,6 +281,23 @@ alerts = sa.Table(
     ),
 )
 
+refresh_tokens = sa.Table(
+    "refresh_tokens",
+    metadata,
+    sa.Column("id", sa.Integer(), sa.Identity(always=False), primary_key=True),
+    sa.Column("user_id", sa.BigInteger(), nullable=False),
+    sa.Column("token_hash", sa.String(255), nullable=False, unique=True),
+    sa.Column("expires_at", sa.DateTime(), nullable=False),
+    sa.Column("created_at", sa.DateTime(), server_default=sa.text("NOW()")),
+    sa.Column("revoked", sa.Boolean(), server_default=sa.text("FALSE")),
+    sa.ForeignKeyConstraint(
+        ["user_id"],
+        ["users.user_id"],
+        name="refresh_tokens_user_id_fkey",
+        ondelete="CASCADE",
+    ),
+)
+
 business_health_scores = sa.Table(
     "business_health_scores",
     metadata,
