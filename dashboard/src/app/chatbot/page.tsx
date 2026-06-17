@@ -407,28 +407,30 @@ export default function ChatbotPage() {
             }
             break;
           }
-          case "token":
-            assistantContent += evt.content ?? "";
+          case "token": {
+            const content = (evt.content as string) ?? "";
+            assistantContent += content;
             updateActiveMessages((prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
               if (last?.role === "assistant") {
                 updated[updated.length - 1] = {
                   ...last,
-                  content: last.content + (evt.content ?? ""),
+                  content: last.content + content,
                 };
               }
               return updated;
             });
             break;
+          }
 
           case "clarification": {
             const clarif =
               typeof evt.clarification === "string"
                 ? evt.clarification
-                : evt.clarification?.message ?? "Please clarify your question.";
+                : (evt.clarification as { message?: string } | null)?.message ?? "Please clarify your question.";
             assistantContent = clarif;
-            assistantIntent = evt.intent_str ?? null;
+            assistantIntent = (evt.intent_str as string) ?? null;
             shouldPersistAssistant = true;
             updateActiveMessages((prev) => {
               const updated = [...prev];
@@ -437,7 +439,7 @@ export default function ChatbotPage() {
                 updated[updated.length - 1] = {
                   ...last,
                   content: clarif,
-                  intent: evt.intent_str,
+                  intent: (evt.intent_str as string) ?? null,
                 };
               }
               return updated;
@@ -446,8 +448,9 @@ export default function ChatbotPage() {
             break;
           }
 
-          case "final":
-            assistantIntent = evt.intent_str ?? null;
+          case "final": {
+            const finalContent = (evt.content as string) ?? "";
+            assistantIntent = (evt.intent_str as string) ?? null;
             shouldPersistAssistant = assistantContent.trim().length > 0;
             updateActiveMessages((prev) => {
               const updated = [...prev];
@@ -455,15 +458,16 @@ export default function ChatbotPage() {
               if (last?.role === "assistant") {
                 updated[updated.length - 1] = {
                   ...last,
-                  ...(evt.content ? { content: evt.content } : {}),
-                  intent: evt.intent_str,
+                  ...(evt.content ? { content: finalContent } : {}),
+                  intent: (evt.intent_str as string) ?? null,
                 };
-                if (evt.content) assistantContent = evt.content;
+                if (evt.content) assistantContent = finalContent;
               }
               return updated;
             });
             setStatus({ kind: "idle" });
             break;
+          }
 
           case "error":
             shouldPersistAssistant = false;
@@ -471,7 +475,7 @@ export default function ChatbotPage() {
               const updated = [...prev];
               const last = updated[updated.length - 1];
               if (last?.role === "assistant") {
-                const nextContent = last.content || `⚠ Error: ${evt.error ?? "Unknown"}`;
+                const nextContent = last.content || `⚠ Error: ${(evt.error as string) ?? "Unknown"}`;
                 assistantContent = nextContent;
                 updated[updated.length - 1] = {
                   ...last,
