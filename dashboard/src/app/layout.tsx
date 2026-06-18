@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   description: "AI-powered business intelligence dashboard with real-time analytics, financial insights, and chatbot assistance.",
 };
 
+import ErrorBoundary from "@/components/ErrorBoundary";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,9 +29,11 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
+        <ErrorBoundary label="Dashboard Application">
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

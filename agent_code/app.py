@@ -59,6 +59,15 @@ CORS(app)
 def handle_payload_too_large(e):
     return jsonify({"error": "Payload too large. Maximum size is 1MB."}), 413
 
+@app.errorhandler(Exception)
+def handle_global_exception(e):
+    logger.error("Unhandled Exception: %s", e, exc_info=True)
+    # Ensure safe internal error response for unexpected crashes
+    return jsonify({
+        "error": SAFE_INTERNAL_ERROR_MESSAGE,
+        "request_id": getattr(g, "request_id", "unknown")
+    }), 500
+
 def sanitize_input(text):
     if not isinstance(text, str):
         return text
