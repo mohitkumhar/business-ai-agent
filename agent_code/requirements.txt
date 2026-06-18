@@ -91,7 +91,7 @@ pydantic_core==2.41.5
 Pygments==2.19.2
 pypdf==6.7.4
 python-dateutil==2.9.0.post0
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 PyYAML==6.0.3
 pyzmq==27.1.0
 regex==2026.2.28
