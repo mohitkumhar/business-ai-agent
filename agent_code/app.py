@@ -311,43 +311,20 @@ def auth_signup():
         token = jwt.encode({
             "user_id": user_id,
             "business_id": biz_id,
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.now(timezone.utc) + timedelta(days=7)
         }, app.config["SECRET_KEY"], algorithm="HS256")
 
         return jsonify({"token": token, "business_id": biz_id, "user": {"name": name, "email": email}}), 201
     except Exception as e:
+        conn.rollback()
         return internal_error_response(e, field="message")
-    finally:
-        conn.close()
 
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit(AUTH_RATE_LIMIT)
 def auth_login():
-    """
-    Authenticate an existing user and return a JWT access token.
-
-    Expects a JSON request body with:
-        email (str): The user's registered email address (case-insensitive).
-        password (str): The user's plain-text password (verified against bcrypt hash).
-
-    Returns:
-        JSON response containing:
-            token (str): Signed JWT valid for 7 days (HS256).
-            business_id (str): UUID of the user's associated business.
-            user (dict): Basic user info with 'name' and 'email' keys.
-        HTTP 200 on successful authentication.
-        HTTP 400 if email or password are missing.
-        HTTP 401 if the email is not found or the password does not match.
-        HTTP 500 on unexpected server error.
-
-    Side effects:
-        Reads from the PostgreSQL users table.
-        Rate-limited to AUTH_RATE_LIMIT (default: 5 per minute) per IP.
-    """
-
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"message": "Invalid or missing JSON payload"}), 400
+        return jsonify({"message": "Invalid or missing JSON body"}), 400
 
     email = data.get("email", "").lower().strip()
     password = data.get("password")
@@ -367,11 +344,12 @@ def auth_login():
         token = jwt.encode({
             "user_id": user["user_id"],
             "business_id": user["business_id"],
-            "exp": datetime.utcnow() + timedelta(days=7)
+            "exp": datetime.now(timezone.utc) + timedelta(days=7)
         }, app.config["SECRET_KEY"], algorithm="HS256")
 
         return jsonify({"token": token, "business_id": user["business_id"], "user": {"name": user["name"], "email": email}}), 200
     except Exception as e:
+        conn.rollback()
         return internal_error_response(e, field="message")
     finally:
         conn.close()
@@ -1010,26 +988,13 @@ def api_categories():
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    """
-    Creates a new business and associated user account during onboarding.
-
-    Expects a JSON request containing business and user information.
-    Validates required fields, generates a unique business identifier,
-    and stores the business and user records in the database.
-
-    Returns:
-        Response: JSON response indicating success or failure.
-
-    Raises:
-        Exception: Any unexpected database or application error is
-        handled and returned as an internal error response.
-    """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
-    if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
+    if not business_name or not email:
+        return jsonify({"error": "Missing fields"}), 400
     
     conn = get_db_connection()
     try:
@@ -1041,6 +1006,9 @@ def onboarding():
                    (bid, data.get("full_name"), email, SOCIAL_LOGIN_PASSWORD_HASH))
         conn.commit()
         return jsonify({"success": True, "business_id": bid}), 201
+    except Exception as e:          # ← ADDED
+        conn.rollback()             # ← ADDED — undoes partial DB writes
+        return internal_error_response(e, field="error")  # ← ADDED
     finally:
         conn.close()
 
@@ -1055,6 +1023,7 @@ def whatsapp_verify():
     if request.args.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
         return request.args.get("hub.challenge"), 200
     return "failed", 403
+
 
 @app.route("/api/v1/whatsapp/webhook", methods=["POST"])
 def whatsapp_events():
@@ -1300,17 +1269,13 @@ def query_agent():
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
 def api_chat_send():
-    try:
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid or missing JSON payload"}), 400
-        msg = data.get("message")
-        conv_id = data.get("conversation_id") or str(uuid.uuid4())
-        bid = get_current_business_id()
-        return Response(stream_with_context(stream_agent_sse_lines(msg, conv_id, bid)), mimetype="text/event-stream")
-    except Exception as exc:
-        logger.error("api_chat_send failed: %s", exc, exc_info=True)
-        return internal_error_response(exc)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+    msg = data.get("message")
+    conv_id = data.get("conversation_id") or str(uuid.uuid4())
+    bid = get_current_business_id()
+    return Response(stream_with_context(stream_agent_sse_lines(msg, conv_id, bid)), mimetype="text/event-stream")
 
 @app.route("/api/chat/conversations", methods=["GET"])
 @limiter.limit(CHAT_RATE_LIMIT)
