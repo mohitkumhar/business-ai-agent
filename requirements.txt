@@ -81,7 +81,7 @@ psutil==7.2.2
 psycopg==3.3.3
 psycopg-binary==3.3.3
 psycopg-pool==3.3.0
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.12
 pure_eval==0.2.3
 pydantic==2.12.5
 pydantic-settings==2.13.1
