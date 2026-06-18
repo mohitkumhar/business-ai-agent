@@ -144,15 +144,17 @@ export const injectCustomHeadCode = (customHeadCode: string) => {
 export const getAtPath = <T>(obj: T, path: string): unknown => {
   if (isNotDefined(obj)) return undefined;
   const pathParts = path.split(".");
-  let current: any = obj;
+  let current: unknown = obj;
   for (const part of pathParts) {
-    if (current === undefined) {
+    if (current === undefined || current === null) {
       return undefined;
     }
-    current = current[part];
+    if (typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
   }
   return current;
 };
-
 export const isSvgSrc = (src: string | undefined) =>
   src?.startsWith("data:image/svg") || src?.endsWith(".svg");
