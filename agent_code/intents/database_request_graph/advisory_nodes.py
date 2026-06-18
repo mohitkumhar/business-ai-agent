@@ -42,6 +42,17 @@ def _resolve_business_id(state: DatabaseRequestGraphState) -> str:
         if raw and _UUID_PATTERN.match(raw):
             return raw
         try:
+            rows = execute_read_query("SELECT business_id FROM businesses LIMIT 1")
+            if rows and len(rows) > 0:
+                return str(rows[0].get("business_id", ""))
+        except Exception:
+            pass
+        for table_name, sql in (
+            ("businesses", "SELECT business_id FROM businesses LIMIT 1"),
+            ("business", "SELECT business_id FROM business LIMIT 1"),
+        ):
+            try:
+                rows = execute_read_query(sql)
                 rows = execute_read_query("SELECT business_id FROM businesses LIMIT 1")
                 if rows and len(rows) > 0:
                     return str(rows[0].get("business_id", ""))
@@ -90,6 +101,10 @@ def fetch_financial_context(state: DatabaseRequestGraphState):
 
     business_profile: dict | None = None
     profile_sql = f"""
+    for table_name, profile_sql in (
+        (
+            "businesses",
+            f"""
 SELECT business_id, business_name, industry_type, owner_name,
        monthly_target_revenue, risk_appetite
 FROM businesses
@@ -100,6 +115,33 @@ LIMIT 1
         prof_rows = execute_read_query(profile_sql)
         if prof_rows:
             business_profile = prof_rows[0]
+    except Exception:
+        pass
+""".strip(),
+        ),
+        (
+            "business",
+            f"""
+SELECT business_id, business_name, industry_type, owner_name,
+       monthly_target_revenue, risk_appetite
+FROM business
+WHERE business_id = '{bid}'::uuid
+LIMIT 1
+""".strip(),
+        ),
+    ):
+        try:
+            prof_rows = execute_read_query(profile_sql)
+            if prof_rows:
+                business_profile = prof_rows[0]
+                break
+        except Exception as exc:
+            _log_query_failure(
+                operation="fetch_financial_context_profile_lookup",
+                table_name=table_name,
+                exc=exc,
+            )
+            continue
     except Exception as exc:
         _log_query_failure(
             operation="fetch_financial_context_profile_lookup",
@@ -125,6 +167,7 @@ ORDER BY fr.year DESC, fr.month DESC
 LIMIT 24
 """.strip()
     try:
+        rows = execute_read_query(sql)
         try:
             rows = execute_read_query(sql)
         except Exception as exc:
