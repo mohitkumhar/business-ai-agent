@@ -104,6 +104,24 @@ services:
       retries: 3
       start_period: 30s
 
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: web_dashboard
+    restart: always
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./.env
+    environment:
+      - AGENT_API_URL=http://backend:5000
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
   whatsapp-gateway:
     build:
       context: ./whatsapp_gateway

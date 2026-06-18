@@ -64,5 +64,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+<!-- Added type="module" to enable ES6 modules-->
+<script type="module" src="{{ url_for('static', filename='js/chatbot.js') }}"></script> 
 {% endblock %}
