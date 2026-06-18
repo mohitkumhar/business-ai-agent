@@ -65,7 +65,7 @@
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.0.2",
     "dotenv-cli": "^8.0.0",
     "mdx-local-link-checker": "^2.1.1",
     "rehype-autolink-headings": "^7.1.0",
