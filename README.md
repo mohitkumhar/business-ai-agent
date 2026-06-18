@@ -506,6 +506,95 @@ curl -X POST "https://api.telegram.org/bot<your-token>/setWebhook" \
 
 Text messages and captions are forwarded to the AI agent. Photo, document, or voice updates without captions receive a helpful fallback message instead of failing silently.
 
+## ⚠️ Common Setup Errors
+
+### `package.json` not found
+
+If you see:
+
+```bash
+npm ERR! enoent Could not read package.json
+```
+
+you are likely running the command from the wrong directory.
+
+Make sure you first move into the correct folder:
+
+```bash
+cd dashboard
+```
+
+or
+
+```bash
+cd landing-page
+```
+
+before running:
+
+```bash
+npm install
+npm run dev
+```
+
+---
+
+### `ModuleNotFoundError` in Python
+
+If backend dependencies are missing:
+
+```bash
+pip install -r requirements.txt
+```
+
+For the Flask agent:
+
+```bash
+cd agent_code
+pip install -r requirements.txt
+```
+
+---
+
+### Ollama connection failed
+
+Make sure Ollama is installed and running on your host machine:
+
+```bash
+ollama serve
+```
+
+Also pull the required model:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+---
+
+### Port already in use
+
+If Docker or Vite fails because a port is occupied:
+
+```bash
+lsof -i :5173
+kill -9 <PID>
+```
+
+Replace `5173` with the blocked port.
+
+---
+
+### Frontend cannot connect to backend
+
+Verify that:
+
+* Flask backend is running on `localhost:5000`
+* `.env` variables are configured correctly
+* Docker containers are running properly
+* `AGENT_API_URL` points to the correct backend URL
+
+
 ---
 
 ## 🤝 Contributing — GSSoC Guide
