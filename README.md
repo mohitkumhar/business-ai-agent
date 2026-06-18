@@ -107,7 +107,7 @@ SSE streaming response to browser
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| 🌐 **Landing Page** | http://localhost:5173 | Onboarding & marketing site |
+| 🌐 **Landing Page** | http://localhost:3003 | Onboarding & marketing site |
 | 🤖 **Flask Agent API** | http://localhost:5000 | AI chatbot backend |
 | 📊 **Dashboard** | http://localhost:3001 | Business analytics dashboard |
 | 🗄️ **pgAdmin** | http://localhost:5050 | PostgreSQL UI (set local credentials in `.env`) |
