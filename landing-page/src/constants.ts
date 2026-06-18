@@ -7,8 +7,10 @@ export const signinUrl = "/login";
 export const registerUrl = `/login`;
 export const onboardingUrl = `/get-started`;
 
-/** Browser: backend Flask (onboarding + agent APIs). Override with VITE_AGENT_API_URL in .env */
+/** Browser: backend Flask (onboarding + agent APIs). Override with VITE_AGENT_API_URL or VITE_API_URL in .env */
 export const agentApiBaseUrl =
+  typeof import.meta !== "undefined" && (import.meta.env?.VITE_AGENT_API_URL || import.meta.env?.VITE_API_URL)
+    ? String(import.meta.env.VITE_AGENT_API_URL || import.meta.env.VITE_API_URL).replace(/\/$/, "")
   typeof import.meta !== "undefined" && import.meta.env?.VITE_AGENT_API_URL
     ? String(import.meta.env.VITE_AGENT_API_URL).replace(/\/$/, "")
     : typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL

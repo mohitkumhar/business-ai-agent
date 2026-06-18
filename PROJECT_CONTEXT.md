@@ -340,7 +340,7 @@ Browser
 **Purpose:** Client-only FAQ bot with keyword matching — **does not call the LangGraph backend**.  
 
 **Other `src/components`, `src/features`:** Homepage sections (Hero, FAQ, testimonials, etc.).  
-**Known issues:** `get-started.tsx` hardcodes backend URL instead of consistently using `VITE_API_URL`. `@typebot.io/ui` Button import in get-started.
+**Known issues:** `@typebot.io/ui` Button import in get-started.
 
 ---
 
