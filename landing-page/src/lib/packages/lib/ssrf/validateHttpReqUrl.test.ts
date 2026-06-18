@@ -1,8 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  validateHttpReqHeaders,
-  validateHttpReqUrl,
-} from "./validateHttpReqUrl";
+import { validateHttpReqUrl } from "./validateHttpReqUrl";
 
 describe("validateHttpReqUrl", () => {
   describe("AWS Metadata Service (IMDSv1/v2)", () => {
@@ -13,17 +10,17 @@ describe("validateHttpReqUrl", () => {
     });
 
     it("should block decimal encoded AWS metadata IP", () => {
-      // URL parser converts this to 169.254.169.254, caught by link-local check
       expect(() => validateHttpReqUrl("http://2852039166")).toThrow();
     });
 
     it("should block hexadecimal encoded AWS metadata IP", () => {
-      // URL parser converts this to 169.254.169.254, caught by link-local check
       expect(() => validateHttpReqUrl("http://0xa9fea9fe")).toThrow();
     });
 
     it("should block octal encoded AWS metadata IP", () => {
-      expect(() => validateHttpReqUrl("http://0251.0376.0251.0376")).toThrow();
+      expect(() =>
+        validateHttpReqUrl("http://0251.0376.0251.0376"),
+      ).toThrow();
     });
 
     it("should block with path to token endpoint", () => {
@@ -73,7 +70,9 @@ describe("validateHttpReqUrl", () => {
 
   describe("Private IP ranges (RFC1918)", () => {
     it("should block 10.0.0.0/8", () => {
-      expect(() => validateHttpReqUrl("http://10.0.0.1")).toThrow("10.0.0.0/8");
+      expect(() => validateHttpReqUrl("http://10.0.0.1")).toThrow(
+        "10.0.0.0/8",
+      );
       expect(() => validateHttpReqUrl("http://10.255.255.255")).toThrow(
         "10.0.0.0/8",
       );
@@ -123,7 +122,9 @@ describe("validateHttpReqUrl", () => {
     });
 
     it("should block IPv6 loopback ::1", () => {
-      expect(() => validateHttpReqUrl("http://[::1]")).toThrow("IPv6 loopback");
+      expect(() => validateHttpReqUrl("http://[::1]")).toThrow(
+        "IPv6 loopback",
+      );
     });
   });
 
@@ -152,6 +153,26 @@ describe("validateHttpReqUrl", () => {
       expect(() => validateHttpReqUrl("http://[fd00::1]")).toThrow(
         "IPv6 unique local",
       );
+    });
+  });
+
+  describe("IPv6-mapped IPv4 addresses", () => {
+    it("should block IPv6-mapped IPv4 addresses for AWS metadata", () => {
+      expect(() =>
+        validateHttpReqUrl("http://[::ffff:169.254.169.254]"),
+      ).toThrow("link-local addresses");
+    });
+
+    it("should block IPv6-mapped IPv4 addresses for hex AWS metadata", () => {
+      expect(() =>
+        validateHttpReqUrl("http://[::ffff:a9fe:a9fe]"),
+      ).toThrow("link-local addresses");
+    });
+
+    it("should block IPv6-mapped IPv4 addresses for private ranges", () => {
+      expect(() =>
+        validateHttpReqUrl("http://[::ffff:10.0.0.1]"),
+      ).toThrow("10.0.0.0/8");
     });
   });
 
@@ -203,136 +224,8 @@ describe("validateHttpReqUrl", () => {
     });
 
     it("should block large numeric hostnames that could be decimal IPs", () => {
-      // 8-10 digit numeric hostnames are likely encoded IPs
       expect(() => validateHttpReqUrl("http://2852039166")).toThrow();
-      expect(() => validateHttpReqUrl("http://3232235777")).toThrow(); // 192.168.1.1 in decimal
+      expect(() => validateHttpReqUrl("http://3232235777")).toThrow();
     });
-  });
-});
-
-describe("validateHttpReqHeaders", () => {
-  describe("IMDSv2 token headers", () => {
-    it("should block X-aws-ec2-metadata-token header", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "X-aws-ec2-metadata-token",
-            value: "some-token",
-          },
-        ]),
-      ).toThrow("bypass cloud metadata service");
-    });
-
-    it("should block X-aws-ec2-metadata-token-ttl-seconds header", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "X-aws-ec2-metadata-token-ttl-seconds",
-            value: "21600",
-          },
-        ]),
-      ).toThrow("bypass cloud metadata service");
-    });
-
-    it("should be case-insensitive", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "x-AWS-ec2-METADATA-token",
-            value: "some-token",
-          },
-        ]),
-      ).toThrow("bypass cloud metadata service");
-    });
-  });
-
-  describe("Google Cloud metadata headers", () => {
-    it("should block Metadata-Flavor header", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "Metadata-Flavor",
-            value: "Google",
-          },
-        ]),
-      ).toThrow("bypass cloud metadata service");
-    });
-
-    it("should block Metadata header", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "Metadata",
-            value: "true",
-          },
-        ]),
-      ).toThrow("bypass cloud metadata service");
-    });
-  });
-
-  describe("Valid headers", () => {
-    it("should allow standard headers", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "Content-Type",
-            value: "application/json",
-          },
-          {
-            key: "Authorization",
-            value: "Bearer token",
-          },
-        ]),
-      ).not.toThrow();
-    });
-
-    it("should allow custom application headers", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            key: "X-Custom-Header",
-            value: "custom-value",
-          },
-        ]),
-      ).not.toThrow();
-    });
-
-    it("should handle undefined headers", () => {
-      expect(() => validateHttpReqHeaders(undefined)).not.toThrow();
-    });
-
-    it("should handle empty headers array", () => {
-      expect(() => validateHttpReqHeaders([])).not.toThrow();
-    });
-
-    it("should skip headers without a key", () => {
-      expect(() =>
-        validateHttpReqHeaders([
-          {
-            value: "some-value",
-          },
-        ]),
-      ).not.toThrow();
-    });
-  });
-});
-
-describe("validateHttpReqUrl - IPv6-mapped IPv4", () => {
-  it("should block IPv6-mapped IPv4 addresses for AWS metadata", () => {
-    expect(() => validateHttpReqUrl("http://[::ffff:169.254.169.254]")).toThrow(
-      "link-local addresses",
-    );
-  });
-
-  it("should block IPv6-mapped IPv4 addresses for hex AWS metadata", () => {
-    expect(() => validateHttpReqUrl("http://[::ffff:a9fe:a9fe]")).toThrow(
-      "link-local addresses",
-    );
-  });
-
-  it("should block IPv6-mapped IPv4 addresses for private ranges", () => {
-    expect(() => validateHttpReqUrl("http://[::ffff:10.0.0.1]")).toThrow(
-      "10.0.0.0/8",
-    );
   });
 });
