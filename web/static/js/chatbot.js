@@ -279,19 +279,30 @@
             }
 
             // flush any remaining buffer
-            if (buffer.startsWith("data: ")) {
-                 try {
-                     const payload = buffer.substring(6);
-                     const chunkData = JSON.parse(payload);
-                     if (chunkData.type === "token") {
-                         accumulatedContent += chunkData.content || "";
-                         streamBubble.updateContent(accumulatedContent);
-                     } else if (chunkData.type === "final") {
-                         streamBubble.updateIntents(chunkData.intent_str);
-                         streamBubble.updateStatus("");
-                     }
-                 } catch(e) { }
-            }
+         if (buffer.startsWith("data: ")) {
+           const payload = buffer.substring(6);
+
+           try {
+             const chunkData = JSON.parse(payload);
+
+             if (chunkData.type === "token") {
+               accumulatedContent += chunkData.content || "";
+               streamBubble.updateContent(accumulatedContent);
+             } else if (chunkData.type === "final") {
+               streamBubble.updateIntents(chunkData.intent_str);
+               streamBubble.updateStatus("");
+             }
+           } catch (e) {
+             console.error("Failed to parse final SSE buffer", {
+               payloadLength: payload.length,
+               error: e,
+             });
+
+             accumulatedContent = "⚠️ Error: Malformed server response";
+             streamBubble.updateContent(accumulatedContent);
+             streamBubble.updateStatus("");
+           }
+         }
 
         } catch (err) {
             typingEl.remove();
