@@ -49,7 +49,7 @@ langchain==1.2.10
 langchain-classic==1.0.1
 langchain-community==0.4.1
 langchain-core==1.2.14
-langchain-ollama==1.0.1
+langchain-ollama==1.1.0
 langchain-openai==1.1.10
 langchain-text-splitters==1.1.1
 langgraph==1.0.9
