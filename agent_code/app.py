@@ -198,6 +198,7 @@ def get_employees():
             exc,
             exc_info=True,
         )
+        # Audit 417: Return stable, user-safe error code/message instead of raw exception text
         return (
             jsonify(
                 {
