@@ -1793,6 +1793,22 @@ def api_sales_target():
 @app.route("/api/dashboard/alerts-by-severity", methods=["GET", "OPTIONS"])
 @token_required
 def api_alerts_by_severity():
+    """
+    Retrieve active alerts grouped and counted by their severity level.
+
+    Queries the database for active alerts associated with the current business ID,
+    which is extracted from the authentication token context.
+
+    Returns:
+        Response: A Flask JSON response containing:
+            - labels (list of str): A list of active alert severity levels.
+            - data (list of int): A list of counts of active alerts corresponding to
+              each severity level.
+
+    Raises:
+        Exception: Any unexpected database or application error is handled and
+            returned as an internal error response.
+    """
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params("SELECT severity, COUNT(*) AS cnt FROM alerts WHERE business_id = %s AND status='Active' GROUP BY severity", (bid,))
