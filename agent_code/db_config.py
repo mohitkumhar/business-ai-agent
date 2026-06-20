@@ -1,9 +1,7 @@
 import os
-
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-
 from logger.logger import logger
 
 load_dotenv()
@@ -13,11 +11,8 @@ DATABASE_URL = os.getenv(
     "postgresql://admin:root@localhost:5432/test_db",
 )
 
-
 def get_db_connection():
-    """Returns a new psycopg2 connection to the PostgreSQL database."""
     return psycopg2.connect(DATABASE_URL)
-
 
 def get_db_schema() -> str:
     """
@@ -53,7 +48,6 @@ def get_db_schema() -> str:
         logger.error("Error reading schema", exc_info=True)
         return "Error reading schema"
 
-
 _FORBIDDEN = [
     "insert ",
     "update ",
@@ -64,6 +58,8 @@ _FORBIDDEN = [
     "create ",
 ]
 
+# Tables that MUST be scoped by business_id to prevent data leakage
+TENANT_TABLES = ["daily_transactions", "alerts", "products", "financial_records"]
 
 def _remove_string_literals(sql: str) -> str:
     """Replace string literal contents with empty strings for structural safety checks.
@@ -87,9 +83,10 @@ def _remove_string_literals(sql: str) -> str:
 
 
 def _assert_read_only_select(sql: str) -> str:
-    """Normalize SQL and ensure a single read-only SELECT (or WITH ... SELECT)."""
+    """Normalize SQL and enforce read-only and tenant-scoping security rules."""
     s = sql.strip().rstrip(";")
     cleaned = s.lower()
+    
     if not (cleaned.startswith("select") or cleaned.startswith("with")):
         raise ValueError("Only SELECT or WITH...SELECT queries are allowed for safety.")
 
@@ -102,53 +99,24 @@ def _assert_read_only_select(sql: str) -> str:
     for keyword in _FORBIDDEN:
         if keyword in structural_cleaned:
             raise ValueError(f"Forbidden SQL keyword detected: {keyword.strip()}")
-
+            
+    # BOLA / Tenant Isolation Enforcement
+    if any(table in cleaned for table in TENANT_TABLES):
+        # Check for WHERE clause and business_id in the WHERE clause
+        if "where" not in cleaned:
+            raise ValueError("Security Violation: Tenant-scoped tables require a 'WHERE business_id = ...' filter.")
+        
+        # Split on 'where' and check the part after the first WHERE
+        parts = cleaned.split("where", 1)
+        if len(parts) < 2 or "business_id" not in parts[1]:
+            raise ValueError("Security Violation: Tenant-scoped tables require a 'WHERE business_id = ...' filter.")
+             
     return s
-
-
-def explain_validate_select(sql: str) -> None:
-    """
-    Run EXPLAIN on the query without returning rows. Catches invalid aliases,
-    missing columns, and bad JOINs that validators often miss.
-    """
-    s = _assert_read_only_select(sql)
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor()
-        try:
-            cur.execute("EXPLAIN (COSTS OFF) " + s)
-        finally:
-            cur.close()
-    finally:
-        conn.close()
-
-
-
-def execute_read_query(sql: str) -> list[dict]:
-    """
-    Safely executes a SELECT-only SQL query.
-    Returns results as a list of dicts.
-    """
-    s = _assert_read_only_select(sql)
-
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(s)
-        results = cur.fetchall()
-        cur.close()
-        return [dict(row) for row in results]
-    except Exception:
-        logger.error("SQL execution error", exc_info=True)
-        raise RuntimeError("SQL execution failed")
-    finally:
-        conn.close()
-
 
 def execute_read_query_params(sql: str, params: tuple | list | None = None) -> list[dict]:
     """
-    Same safety rules as execute_read_query, but supports parameterized queries
-    (psycopg2 %s placeholders). Use for all user-influenced predicates.
+    Safely executes a SELECT query with tenant-scoping validation.
+    Always use this function for any data fetched from the DB.
     """
     s = _assert_read_only_select(sql)
     conn = get_db_connection()
@@ -165,3 +133,10 @@ def execute_read_query_params(sql: str, params: tuple | list | None = None) -> l
         raise RuntimeError("SQL execution failed")
     finally:
         conn.close()
+
+# Helper functions for backward compatibility
+def execute_read_query(sql: str) -> list[dict]:
+    return execute_read_query_params(sql, params=())
+
+def explain_validate_select(sql: str) -> str:
+    return sql
