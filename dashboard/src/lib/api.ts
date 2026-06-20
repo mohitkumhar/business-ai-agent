@@ -42,11 +42,13 @@ export type ForecastTrend = "up" | "down" | "flat";
 
 export interface Forecast {
   historical: { date: string; actual: number }[];
-  forecast: { date: string; predicted: number; lower_bound: number; upper_bound: number }[];
+  forecast: { date: string; predicted: number; lower_bound?: number; upper_bound?: number }[];
   trend_direction: ForecastTrend;
   trend_percent: number;
   insight: string;
 }
+
+
 
 export interface BusinessInfo {
   business_id: string;
@@ -231,14 +233,7 @@ if (!res.ok) {
   );
 }
 
-return res.json();
-},
 
-getAlertsList: async (period?: string) => {
-  const res = await fetch(
-    `/api/dashboard/alerts-list${period ? `?period=${period}` : ""}`,
-    { headers: getHeaders() }
-  );
 
   return res.json();
 },
