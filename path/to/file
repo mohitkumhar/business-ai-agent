@@ -1,0 +1,12 @@
+--- a/dashboard/src/components/RecentTransactions.tsx
++++ b/dashboard/src/components/RecentTransactions.tsx
+@@ -81,7 +81,7 @@ const RecentTransactions = () => {
+           <div className="flex items-center">
+             <div className="mr-2">
+               <Icon name="Trash" />
+-            </div>
++            </div>
++            <button aria-label="Delete transaction">
+           </div>
+         </div>
+       </div>
