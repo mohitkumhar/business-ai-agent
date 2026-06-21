@@ -34,10 +34,6 @@ export default function contentCollectionsPlugin(
     name: "content-collections",
 
     config(config) {
-      // even if the plugin is disabled, we need to configure the alias
-      // vite is often executed multiple time and the plugin should only
-      // run once, but the aliases must be available for all runs
-
       const configPath = resolveConfigPath(
         config.root || process.cwd(),
         pluginOptions.configPath,
@@ -60,7 +56,6 @@ export default function contentCollectionsPlugin(
       };
 
       if ((config.server?.fs?.allow || []).length > 0) {
-        // required for Svelte Kit
         configPatch.server = {
           fs: {
             allow: [directory],
@@ -79,10 +74,6 @@ export default function contentCollectionsPlugin(
         config.root,
         pluginOptions.configPath,
       );
-      console.log(
-        "Starting content-collections with config",
-        path.relative(process.cwd(), configPath),
-      );
 
       builder = await createBuilder(configPath);
       configureLogging(builder);
@@ -94,7 +85,6 @@ export default function contentCollectionsPlugin(
       if (!builder) {
         return;
       }
-      console.log("Start initial build");
       await builder.build();
       return;
     },
@@ -103,7 +93,6 @@ export default function contentCollectionsPlugin(
       if (!builder) {
         return;
       }
-      console.log("Start watching");
       builder.watch();
       return;
     },
