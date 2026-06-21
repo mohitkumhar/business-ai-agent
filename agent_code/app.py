@@ -58,7 +58,9 @@ def get_current_business_id():
 
 @app.route("/api/auth/signup", methods=["POST"])
 def auth_signup():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON request body"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
     name = data.get("name")
@@ -95,13 +97,15 @@ def auth_signup():
 
         return jsonify({"token": token, "business_id": biz_id, "user": {"name": name, "email": email}}), 201
     except Exception as e:
-        return jsonify({"message": str(e)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
     finally:
         conn.close()
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON request body"}), 400
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -125,7 +129,7 @@ def auth_login():
 
         return jsonify({"token": token, "business_id": user["business_id"], "user": {"name": user["name"], "email": email}}), 200
     except Exception as e:
-        return jsonify({"message": str(e)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
     finally:
         conn.close()
 
@@ -319,7 +323,7 @@ def api_forecast():
             "insight": f"Revenue is trending {trend}wards based on the last {len(hist)} days of data."
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/categories", methods=["GET", "OPTIONS"])
 @token_required
@@ -329,11 +333,13 @@ def api_categories():
         rows = execute_read_query_params("SELECT DISTINCT category FROM daily_transactions WHERE category IS NOT NULL ORDER BY category")
         return jsonify({"categories": [r["category"] for r in rows]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/v1/onboarding", methods=["POST"])
 def onboarding():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON request body"}), 400
     business_name = data.get("business_name")
     email = data.get("email", "").lower().strip()
     if not business_name or not email: return jsonify({"error": "Missing fields"}), 400
@@ -394,7 +400,7 @@ def import_transactions():
         finally: conn.close()
     except Exception as e:
         logger.error(f"Import failed: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/v1/import/notebook", methods=["POST"])
 @token_required
@@ -439,12 +445,14 @@ def import_notebook():
         
     except Exception as e:
         logger.error(f"Notebook extraction failed: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/v1/import/confirm-notebook", methods=["POST"])
 @token_required
 def confirm_notebook():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON request body"}), 400
     bid = get_current_business_id()
     transactions = data.get("transactions", [])
     file_hash = data.get("hash")
@@ -465,7 +473,7 @@ def confirm_notebook():
         conn.commit()
         return jsonify({"message": f"Successfully saved {len(transactions)} transactions!"}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
     finally:
         conn.close()
 
@@ -474,7 +482,9 @@ def confirm_notebook():
 @app.route("/api/chat/send", methods=["POST"])
 @token_required
 def api_chat_send():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON request body"}), 400
     msg = data.get("message")
     conv_id = data.get("conversation_id") or str(uuid.uuid4())
     bid = get_current_business_id()
@@ -508,7 +518,7 @@ def api_financial_overview():
             "cash_balance": [float(r["cash_balance"]) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/revenue-vs-expense", methods=["GET", "OPTIONS"])
 @token_required
@@ -542,7 +552,7 @@ def api_revenue_vs_expense():
             "expenses": [expense_cats.get(c, 0) for c in labels]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/sales-trend", methods=["GET", "OPTIONS"])
 @token_required
@@ -566,7 +576,7 @@ def api_sales_trend():
             "expenses": [float(r["expenses"]) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/recent-transactions", methods=["GET", "OPTIONS"])
 @token_required
@@ -593,7 +603,7 @@ def api_recent_transactions():
             r["transaction_date"] = r["transaction_date"].strftime("%Y-%m-%d")
         return jsonify({"transactions": rows})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 def get_period_dates(period):
     end_date = datetime.now().date()
@@ -660,7 +670,7 @@ def api_summary_sql():
             "transactions_change": calc_change(txns, prev_txns),
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/alerts-list", methods=["GET"])
 @token_required
@@ -672,7 +682,7 @@ def api_alerts_list():
             r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M")
         return jsonify({"alerts": rows})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/business-info", methods=["GET", "OPTIONS"])
 @token_required
@@ -683,7 +693,7 @@ def get_business_info():
         rows = execute_read_query_params("SELECT * FROM businesses WHERE business_id = %s", (bid,))
         return jsonify(rows[0] if rows else {})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/sales-target", methods=["GET", "OPTIONS"])
 @token_required
@@ -705,7 +715,7 @@ def api_sales_target():
         pct = round((current / target * 100), 1) if target > 0 else 0
         return jsonify({"current_revenue": current, "target_revenue": target, "percentage": pct})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/alerts-by-severity", methods=["GET", "OPTIONS"])
 @token_required
@@ -715,7 +725,7 @@ def api_alerts_by_severity():
         rows = execute_read_query_params("SELECT severity, COUNT(*) AS cnt FROM alerts WHERE business_id = %s AND status='Active' GROUP BY severity", (bid,))
         return jsonify({"labels": [r["severity"] for r in rows], "data": [int(r["cnt"]) for r in rows]})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/health-scores", methods=["GET", "OPTIONS"])
 @token_required
@@ -751,7 +761,7 @@ def api_health_scores():
             ],
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
 @token_required
@@ -765,7 +775,7 @@ def api_top_products():
             "margin": [float((r["selling_price"] or 0) - (r["cost_price"] or 0)) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/api/dashboard/employee-stats", methods=["GET", "OPTIONS"])
 @token_required
@@ -779,7 +789,7 @@ def api_employee_stats():
             "avg_salary": [round(float(r["avg_salary"]), 2) for r in rows]
         })
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "An internal error occurred"}), 500
 
 @app.route("/metrics")
 def metrics():
