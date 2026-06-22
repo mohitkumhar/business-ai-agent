@@ -462,7 +462,8 @@ def test_telegram_webhook_fallback_notification_logs_without_chat_id(
         json={"message": {"text": "How are sales?"}},
     )
 
-    assert response.status_code == 500
+   assert response.status_code == 200
+assert response.get_json() == {"ok": True}
 
 
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
