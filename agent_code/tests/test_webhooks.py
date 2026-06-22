@@ -162,4 +162,3 @@ def test_telegram_webhook_replies_to_text_message(client, app_module, monkeypatc
     assert response.status_code == 200
     assert response.get_json() == {"ok": True}
     assert sent_messages == [(42, "answer: How are sales?")]
-
