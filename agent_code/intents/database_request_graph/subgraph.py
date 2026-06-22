@@ -83,14 +83,29 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
 
 def _route_after_sql_validation(state: DatabaseRequestGraphState) -> str:
     try:
+        # Emergency short-circuit (highest priority safety check)
         if state.get("halt_pipeline") or state.get("emergency_reason"):
             return "emergency_exit"
-        logger.info(f"Routing after SQL validation. State: {state}")
-        return state.get("route", "sql_valid")
-    except Exception as e:
-        logger.error(f"Error in routing function after SQL validation: {e}", exc_info=True)
-        return "sql_valid"
 
+        logger.info(f"Routing after SQL validation. State: {state}")
+
+        # Extract route safely
+        route = state.get("route")
+
+        # Strict validation of allowed transitions
+        if route in ("sql_valid", "sql_invalid", "sql_failed", "emergency_exit"):
+            return route
+
+        # Fallback safety: unknown or missing route should NOT proceed as valid SQL
+        logger.error(f"Invalid or missing route in SQL validation state: {route}")
+        return "emergency_exit"
+
+    except Exception as e:
+        logger.error(
+            f"Error in routing function after SQL validation: {e}",
+            exc_info=True
+        )
+        return "emergency_exit"
 
 def _route_after_entry(state: DatabaseRequestGraphState) -> str:
     if state.get("halt_pipeline") or state.get("emergency_reason"):
