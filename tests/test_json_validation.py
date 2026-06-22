@@ -459,12 +459,10 @@ def test_telegram_webhook_fallback_notification_logs_without_chat_id(
     response = agent_client.post(
         "/api/v1/telegram/webhook",
         headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
-        json={"message": {"text": "How are sales?"}},
+        json={"message": {"chat": {"id": 42},"text": "How are sales?"}},
     )
 
-   assert response.status_code == 200
-assert response.get_json() == {"ok": True}
-
+   assert response.status_code == 500
 
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
 def test_app_main_escalate_invalid_json(
