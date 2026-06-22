@@ -436,6 +436,39 @@ def test_app_main_telegram_webhook_rejects_wrong_secret_token(
     assert sent_messages == []
 
 
+def test_telegram_webhook_fallback_notification_logs_without_chat_id(
+    agent_client, agent_app_module, monkeypatch
+):
+    monkeypatch.setattr(agent_app_module, "TELEGRAM_WEBHOOK_SECRET", "telegram-secret")
+    monkeypatch.setattr(agent_app_module, "DEFAULT_BUSINESS_ID", "business-1")
+
+    def fake_run_agent(*args, **kwargs):
+        raise RuntimeError("agent failure")
+
+    monkeypatch.setattr(agent_app_module, "_run_agent_to_text", fake_run_agent)
+
+    def failing_send(*args, **kwargs):
+        raise RuntimeError("telegram send failed")
+
+    monkeypatch.setattr(
+        agent_app_module,
+        "_send_telegram_text",
+        failing_send,
+    )
+
+    response = agent_client.post(
+        "/api/v1/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+        json={
+            "message": {
+                "chat": {"id": 42},
+                "text": "How are sales?"
+            }
+        },
+    )
+
+    assert response.status_code == 500
+
 @pytest.mark.parametrize("payload,content_type", INVALID_PAYLOADS)
 def test_app_main_escalate_invalid_json(
     app_main_client, app_main_auth_headers, payload, content_type

@@ -1112,14 +1112,25 @@ def telegram_webhook():
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("Telegram webhook failed: %s", e, exc_info=True)
+        chat_id = None
         try:
             update = data
             message = update.get("message") or update.get("edited_message") or {}
             chat_id = (message.get("chat") or {}).get("id")
             if chat_id is not None:
-                _send_telegram_text(chat_id, "Sorry, I could not process that Telegram update.")
-        except Exception:
-            pass
+                _send_telegram_text(
+                    chat_id,
+                    "Sorry, I could not process that Telegram update.",
+                )
+
+        except Exception as exc:
+            logger.error(
+                "Telegram fallback notification failed chat_id=%s: %s",
+                chat_id,
+                exc,
+                exc_info=True,
+            )
+
         return internal_error_response(e)
 
 # --- Transaction Import Endpoints ---
