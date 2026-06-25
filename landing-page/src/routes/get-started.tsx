@@ -46,6 +46,9 @@ function GetStartedPage() {
     onboarding_notes: "",
   });
 
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+
   useEffect(() => {
     const savedUser = localStorage.getItem("profit_pilot_user");
     if (!savedUser) {
@@ -74,7 +77,19 @@ function GetStartedPage() {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+  const handleFileUpload = (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
+  const file = e.target.files?.[0];
 
+  if (!file) return;
+
+  setUploadedFile(file);
+
+  if (file.type.startsWith("image/")) {
+    setUploadedImage(file);
+  }
+};
   const handleChallengeChange = (challenge: string) => {
     setFormData(prev => {
       const current = [...prev.challenges];
@@ -468,7 +483,7 @@ function GetStartedPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                       <span className="text-sm font-medium">Upload Image of Notebook</span>
-                      <input type="file" className="hidden" accept="image/*" capture="environment" />
+                      <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} />
                     </div>
                   </motion.div>
                 )}
