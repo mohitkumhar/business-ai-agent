@@ -26,38 +26,45 @@ const stats = [
 
 const avatars = [
   {
+    id: "avatar-1",
     src: abhaySrc,
-    alt: "Community member 1 avatar",
+    alt: "Community member 1 profile photo",
     position: "top-1 left-36",
   },
   {
+    id: "avatar-2",
     src: laszloSrc,
-    alt: "Community member 2 avatar",
+    alt: "Community member 2 profile photo",
     position: "top-32 left-4 delay-500",
   },
   {
+    id: "avatar-3",
     src: joshuaSrc,
-    alt: "Community member 3 avatar",
+    alt: "Community member 3 profile photo",
     position: "bottom-8 left-24 delay-300",
   },
   {
+    id: "avatar-4",
     src: lucasSrc,
-    alt: "Community member 4 avatar",
+    alt: "Community member 4 profile photo",
     position: "-bottom-7 -left-7 delay-700",
   },
   {
+    id: "avatar-5",
     src: kurniaSrc,
-    alt: "Community member 5 avatar",
+    alt: "Community member 5 profile photo",
     position: "top-1 right-36 delay-1000",
   },
   {
+    id: "avatar-6",
     src: nicolaiSrc,
-    alt: "Community member 6 avatar",
+    alt: "Community member 6 profile photo",
     position: "top-28 right-4 delay-500",
   },
   {
+    id: "avatar-7",
     src: barrettaSrc,
-    alt: "Community member 7 avatar",
+    alt: "Community member 7 profile photo",
     position: "bottom-12 right-32 delay-300",
   },
 ];
@@ -74,7 +81,8 @@ export const JoinTheCommunity = () => (
             business alone.
           </h2>
           <p className="text-gray-11">
-            Focus on peer support. Connect with like-minded entrepreneurs, share financial strategies, and get help when you're stuck.
+            Focus on peer support. Connect with like-minded entrepreneurs,
+            share financial strategies, and get help when you're stuck.
           </p>
         </div>
         <CtaButtonLink size="lg" href={discordUrl} target="_blank">
@@ -82,6 +90,7 @@ export const JoinTheCommunity = () => (
         </CtaButtonLink>
       </div>
     </div>
+
     <div className="flex flex-col md:flex-row justify-evenly gap-6 p-6 md:p-8">
       {stats.map(({ stat, label }) => (
         <div key={label} className="flex flex-col items-center gap-2">
@@ -95,13 +104,13 @@ export const JoinTheCommunity = () => (
 
 const FloatingAvatars = ({ className }: { className?: string }) => (
   <div className={className}>
-    {avatars.map(({ src, alt, position }) => (
+    {avatars.map(({ id, src, alt, position }) => (
       <img
-        key={alt}
+        key={id}
         src={src}
         alt={alt}
         className={cx(
-          `rounded-full w-16 h-16 border-4 absolute animate-float`,
+          "rounded-full w-16 h-16 border-4 absolute animate-float",
           position,
         )}
       />
