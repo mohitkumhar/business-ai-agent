@@ -1845,6 +1845,34 @@ def api_health_scores():
 @app.route("/api/dashboard/top-products", methods=["GET", "OPTIONS"])
 @token_required
 def api_top_products():
+    """
+    Retrieve the top-performing products for the authenticated business.
+
+    This endpoint returns up to 10 products ranked by their calculated
+    business value. It also computes stock quantities, profit margins,
+    margin percentages, and business value for each product.
+
+    Returns:
+        flask.Response:
+            A JSON response containing:
+                - labels: Product names.
+                - stock: Stock quantities.
+                - margin: Profit margin percentages.
+                - margin_amount: Profit amount per product.
+                - margin_pct: Profit margin percentages.
+                - business_value: Calculated business value for each product.
+
+    Side Effects:
+        - Retrieves the authenticated user's business ID.
+        - Executes a database query against the products table.
+        - Calculates profit margins and business values before
+        returning the response.
+
+    Raises:
+        Unexpected exceptions during database access or response
+        processing are handled by ``internal_error_response()`` and
+        returned as a standardized internal server error response.
+    """
     bid = get_current_business_id()
     try:
         rows = execute_read_query_params(
