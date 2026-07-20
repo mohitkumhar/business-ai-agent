@@ -164,6 +164,8 @@ Docker Compose runs a preflight check and will stop if placeholder values such a
 
 ### Step 3 — Start all services
 
+> **Note:** The first build may take several minutes because Docker needs to download base images and install project dependencies. Subsequent builds will be significantly faster due to Docker layer caching.
+
 ```bash
 docker compose up --build
 ```
