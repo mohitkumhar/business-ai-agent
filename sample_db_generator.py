@@ -7,10 +7,10 @@ import uuid
 fake = Faker()
 
 conn = psycopg2.connect(
-    host="localhost",
-    database="test_db",
-    user="admin",
-    password="root"
+    host=os.getenv("DB_HOST", "localhost"),
+    database=os.getenv("DB_NAME", "test_db"),
+    user=os.getenv("DB_USER", "admin"),
+    password=os.getenv("DB_PASSWORD", "root")
 )
 
 cursor = conn.cursor()
