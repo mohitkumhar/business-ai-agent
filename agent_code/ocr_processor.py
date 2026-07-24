@@ -29,7 +29,7 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
         mime_type = "image/webp"
 
     # Gemini Vision API Endpoint (Generative Language API)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
     prompt = """
     Extract all transaction data from this handwritten ledger or receipt image. 
@@ -68,7 +68,10 @@ def extract_transactions_from_image(image_bytes: bytes, filename: str) -> list[t
         }
     }
 
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+    }
 
     try:
         logger.info(f"Sending image OCR request to Gemini for {filename}...")

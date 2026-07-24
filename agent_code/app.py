@@ -30,6 +30,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 
 # Database & AI Imports
 from db_config import get_db_connection, execute_read_query_params
+import psycopg2.extras
 from transaction_import import parse_csv_bytes, parse_xlsx_bytes
 from ocr_processor import extract_transactions_from_image
 from langchain_openai import ChatOpenAI
