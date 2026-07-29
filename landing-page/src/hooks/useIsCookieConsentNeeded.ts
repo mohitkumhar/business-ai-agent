@@ -19,17 +19,4 @@ export const useCookieConsentStatus = () => {
     }
 
     isEU().then((response) => {
-      if (response.isEU) {
-        setCookieConsentStatus("need-consent");
-      } else {
-        setCookie("accepted");
-        setCookieConsentStatus("not-needed");
-      }
-    });
-  }, []);
-
-  return {
-    cookieConsentStatus,
-    setCookieConsentStatus,
-  };
-};
+    .catch(err => console.error(err))
