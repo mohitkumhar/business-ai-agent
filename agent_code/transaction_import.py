@@ -12,6 +12,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from charset_normalizer import from_bytes
+
 logger = None  # set from app if needed
 
 
@@ -140,8 +142,43 @@ def _rows_from_dicts(
     return out
 
 
+def _decode_csv_text(raw: bytes) -> str:
+    if not raw:
+        raise ValueError("CSV payload is empty.")
+
+    fallback_encodings = ("utf-8-sig", "utf-8", "cp1251", "utf-16", "utf-16-le", "utf-16-be")
+
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        encodings_to_try: list[str] = []
+
+        match = from_bytes(raw).best()
+        if match is not None:
+            primary = match.encoding
+            confidence = getattr(match, "percent_coherence", 0.0)
+            if primary and confidence >= 70:
+                encodings_to_try.append(primary)
+
+        for encoding in fallback_encodings:
+            if encoding not in encodings_to_try:
+                encodings_to_try.append(encoding)
+
+        for encoding in encodings_to_try:
+            try:
+                return raw.decode(encoding, errors="strict")
+            except (LookupError, UnicodeDecodeError):
+                continue
+
+        raise ValueError(
+            "CSV must be valid text with a detectable encoding (prefer UTF-8). "
+            "I could not decode the file without data-loss replacement. "
+            "Please re-export using UTF-8 and re-upload."
+        ) from exc
+
+
 def parse_csv_bytes(raw: bytes) -> list[tuple]:
-    text = raw.decode("utf-8-sig", errors="replace")
+    text = _decode_csv_text(raw)
     reader = csv.reader(io.StringIO(text))
     rows = list(reader)
     if len(rows) < 2:

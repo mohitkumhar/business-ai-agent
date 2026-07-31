@@ -18,7 +18,6 @@ import uuid
 import jwt
 import bcrypt
 import hashlib
-import hmac
 from functools import wraps
 import numpy as np
 from datetime import datetime, timedelta, date, timezone
