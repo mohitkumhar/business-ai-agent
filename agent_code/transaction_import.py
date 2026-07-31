@@ -141,7 +141,13 @@ def _rows_from_dicts(
 
 
 def parse_csv_bytes(raw: bytes) -> list[tuple]:
-    text = raw.decode("utf-8-sig", errors="replace")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            "CSV must be valid UTF-8 (with optional BOM). "
+            "Please re-export using UTF-8 encoding or clean invalid bytes."
+        ) from exc
     reader = csv.reader(io.StringIO(text))
     rows = list(reader)
     if len(rows) < 2:
