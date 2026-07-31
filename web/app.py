@@ -41,6 +41,7 @@ from prometheus_client import (
     CollectorRegistry,
     REGISTRY,
 )
+from auth import decode_jwt_identity, require_jwt_secret
 
 load_dotenv()
 
@@ -53,7 +54,7 @@ CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key-change-me")
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
+app.config["JWT_SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 
 
 @dataclass(frozen=True)

@@ -407,7 +407,7 @@ Defines authentication keys, database settings, and rate-limiting options.
 | Variable | Status | Description | Default / Example |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | **Required** | PostgreSQL connection string. | `postgresql://profitpilot_dev:<generated-password>@db:5432/test_db` |
-| `JWT_SECRET` | **Required** | High-entropy JWT signing secret for Flask auth tokens; must not use the sample value. | `replace-with-a-high-entropy-jwt-secret` |
+| `JWT_SECRET` | **Required** | High-entropy JWT signing secret for Flask auth tokens; no default is accepted. | `your-strong-random-secret-here` |
 | `API_KEY` | **Required** | Simple static API key used for internal authentication checks. | `secret-token` |
 | `CHAT_DB_PATH` | Optional | Path to the SQLite database storing local user chat history. | `chat_history.db` |
 | `RATE_LIMIT_DEFAULT` | Optional | Default Flask-Limiter limit for general API clients. | `200 per day;50 per hour` |
