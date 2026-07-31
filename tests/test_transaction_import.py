@@ -95,9 +95,26 @@ def test_parse_csv_bytes_maps_aliases_skips_invalid_rows_and_truncates_text():
     ]
 
 
+def test_parse_csv_bytes_supports_cp1251_when_detected():
+    raw = (
+        "date,amount,description\n"
+        "2026-05-27,-42.10,май\n"
+    ).encode("cp1251")
+
+    rows = transaction_import.parse_csv_bytes(raw)
+
+    assert rows == [(date(2026, 5, 27), "Expense", "General", 42.1, "май")]
+
+
 def test_parse_csv_bytes_requires_header_and_data_row():
     with pytest.raises(ValueError, match="header row"):
         transaction_import.parse_csv_bytes(b"date,amount\n")
+
+
+def test_parse_csv_bytes_rejects_invalid_text_encoding_without_silently_replacing():
+    raw = b"\xff\xff\xff\x00garbage"
+    with pytest.raises(ValueError, match="data-loss replacement"):
+        transaction_import.parse_csv_bytes(raw)
 
 
 def test_rows_from_dicts_requires_date_and_amount_columns():
