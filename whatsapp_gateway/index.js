@@ -57,10 +57,15 @@ client.on('message', async (msg) => {
     if (msg.hasMedia) {
       // ── Image / document bill ──────────────────────────────────────────
       const media = await msg.downloadMedia();
+      if (!media || !media.data) {
+        console.warn(`[gateway] Media download returned no payload for ${fromNumber}`);
+        await msg.reply('⚠️ I could not load this attachment. Please resend the image/document and try again.');
+        return;
+      }
       payload = {
         from_number : fromNumber,
         type        : 'image',
-        media_base64: media.data,        // already base64
+        media_base64: media.data, // already base64
         mime_type   : media.mimetype,
         body        : msg.body || '',
       };
