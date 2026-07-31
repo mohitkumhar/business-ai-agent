@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import os
+
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 import jwt
+
+os.environ.setdefault("JWT_SECRET", "unit-test-web-jwt-secret")
 
 from web import app as web_app_module
 

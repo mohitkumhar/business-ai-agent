@@ -41,6 +41,7 @@ from prometheus_client import (
     CollectorRegistry,
     REGISTRY,
 )
+from auth import decode_jwt_identity, require_jwt_secret
 
 load_dotenv()
 
@@ -53,7 +54,7 @@ CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", "chat_history.db")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "super-secret-key-change-me")
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET", "super-secret-business-key-2026")
+app.config["JWT_SECRET_KEY"] = require_jwt_secret(os.getenv("JWT_SECRET"))
 
 
 @dataclass(frozen=True)
@@ -324,20 +325,23 @@ def api_dashboard_summary():
 
 
 @app.route("/api/dashboard/revenue-vs-expense")
+@token_required
 def api_revenue_vs_expense():
     """Hourly revenue vs expense for the last 24 h (grouped by category)."""
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
             SELECT category, type,
                    COALESCE(SUM(amount), 0) AS total
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             GROUP BY category, type
             ORDER BY total DESC
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         revenue_cats = {}
         expense_cats = {}
@@ -362,19 +366,22 @@ def api_revenue_vs_expense():
 
 
 @app.route("/api/dashboard/transactions-by-category")
+@token_required
 def api_transactions_by_category():
     """Pie chart data: transaction count by category (last 24 h)."""
     cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d")
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
             SELECT category, COUNT(*) as cnt
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             GROUP BY category
             ORDER BY cnt DESC
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         return jsonify(
             {
@@ -387,9 +394,11 @@ def api_transactions_by_category():
 
 
 @app.route("/api/dashboard/sales-trend")
+@token_required
 def api_sales_trend():
     """Daily sales trend – last 7 days for context, highlight last 24 h."""
     cutoff = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
@@ -397,11 +406,12 @@ def api_sales_trend():
                    COALESCE(SUM(CASE WHEN type='Revenue' THEN amount END), 0) AS revenue,
                    COALESCE(SUM(CASE WHEN type='Expense' THEN amount END), 0) AS expenses
             FROM daily_transactions
-            WHERE transaction_date >= %s
+            WHERE business_id = %s
+              AND transaction_date >= %s
             GROUP BY transaction_date
             ORDER BY transaction_date
             """,
-            (cutoff,),
+            (business_id, cutoff),
         )
         return jsonify(
             {
@@ -415,6 +425,7 @@ def api_sales_trend():
 
 
 @app.route("/api/dashboard/alerts-by-severity")
+@token_required
 def api_alerts_by_severity():
     """Doughnut chart: active alerts by severity."""
     try:
@@ -423,8 +434,10 @@ def api_alerts_by_severity():
             SELECT severity, COUNT(*) AS cnt
             FROM alerts
             WHERE status = 'Active'
+              AND business_id = %s
             GROUP BY severity
-            """
+            """,
+            (get_current_business_id(),),
         )
         return jsonify(
             {
@@ -437,8 +450,10 @@ def api_alerts_by_severity():
 
 
 @app.route("/api/dashboard/health-scores")
+@token_required
 def api_health_scores():
     """Latest health scores (radar chart)."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
@@ -448,9 +463,12 @@ def api_health_scores():
                    b.business_name
             FROM business_health_scores bhs
             JOIN businesses b ON b.business_id = bhs.business_id
+            WHERE bhs.business_id = %s
+              AND b.business_id = %s
             ORDER BY bhs.calculated_at DESC
             LIMIT 5
-            """
+            """,
+            (business_id, business_id),
         )
         return jsonify(
             {
@@ -474,16 +492,20 @@ def api_health_scores():
 
 
 @app.route("/api/dashboard/top-products")
+@token_required
 def api_top_products():
     """Bar chart: top products by stock quantity."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
             SELECT p.product_name, p.stock_quantity, p.selling_price, p.cost_price
             FROM products p
+            WHERE business_id = %s
             ORDER BY p.stock_quantity DESC
             LIMIT 10
-            """
+            """,
+            (business_id,),
         )
         return jsonify(
             {
@@ -500,8 +522,10 @@ def api_top_products():
 
 
 @app.route("/api/dashboard/financial-overview")
+@token_required
 def api_financial_overview():
     """Monthly financial records for the most recent months."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
@@ -511,10 +535,12 @@ def api_financial_overview():
                    COALESCE(SUM(net_profit),0) AS net_profit,
                    COALESCE(SUM(cash_balance),0) AS cash_balance
             FROM financial_records
+            WHERE business_id = %s
             GROUP BY year, month
             ORDER BY year DESC, month DESC
             LIMIT 12
-            """
+            """,
+            (business_id,),
         )
         rows.reverse()
         labels = [f"{r['year']}-{str(r['month']).zfill(2)}" for r in rows]
@@ -532,15 +558,19 @@ def api_financial_overview():
 
 
 @app.route("/api/dashboard/employee-stats")
+@token_required
 def api_employee_stats():
     """Employee distribution."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
             SELECT status, COUNT(*) AS cnt, COALESCE(AVG(salary),0) AS avg_salary
             FROM employees
+            WHERE business_id = %s
             GROUP BY status
-            """
+            """,
+            (business_id,),
         )
         return jsonify(
             {
@@ -554,19 +584,21 @@ def api_employee_stats():
 
 
 @app.route("/api/dashboard/recent-transactions")
+@token_required
 def api_recent_transactions():
     """Recent transactions for the table view."""
     limit = request.args.get("limit", 20, type=int)
     search = request.args.get("search", "").strip()
     category = request.args.get("category", "").strip()
+    business_id = get_current_business_id()
     try:
         base_sql = """
             SELECT transaction_id, transaction_date, type, category,
                    amount, description
             FROM daily_transactions
-            WHERE 1=1
+            WHERE business_id = %s
         """
-        params = []
+        params = [business_id]
         if search:
             base_sql += " AND (description ILIKE %s OR category ILIKE %s)"
             params.extend([f"%{search}%", f"%{search}%"])
@@ -586,8 +618,10 @@ def api_recent_transactions():
 
 
 @app.route("/api/dashboard/sales-target")
+@token_required
 def api_sales_target():
     """Sales vs target for gauge widget."""
+    business_id = get_current_business_id()
     try:
         rows = _pg_query(
             """
@@ -597,10 +631,12 @@ def api_sales_target():
             LEFT JOIN daily_transactions dt ON dt.business_id = b.business_id
                 AND EXTRACT(MONTH FROM dt.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)
                 AND EXTRACT(YEAR FROM dt.transaction_date) = EXTRACT(YEAR FROM CURRENT_DATE)
+            WHERE b.business_id = %s
             GROUP BY b.business_id, b.business_name, b.monthly_target_revenue
             ORDER BY current_revenue DESC
             LIMIT 1
-            """
+            """,
+            (business_id,),
         )
         if rows:
             row = rows[0]
@@ -619,10 +655,14 @@ def api_sales_target():
 
 
 @app.route("/api/dashboard/categories")
+@token_required
 def api_categories():
     """List distinct categories for filter dropdown."""
     try:
-        rows = _pg_query("SELECT DISTINCT category FROM daily_transactions ORDER BY category")
+        rows = _pg_query(
+            "SELECT DISTINCT category FROM daily_transactions WHERE business_id = %s ORDER BY category",
+            (get_current_business_id(),),
+        )
         return jsonify({"categories": [r["category"] for r in rows if r["category"]]})
     except Exception as e:
         return _internal_error_response(e)
