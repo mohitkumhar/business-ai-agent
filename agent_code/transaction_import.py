@@ -146,20 +146,29 @@ def _decode_csv_text(raw: bytes) -> str:
     if not raw:
         raise ValueError("CSV payload is empty.")
 
+    fallback_encodings = ("utf-8-sig", "utf-8", "cp1251", "utf-16", "utf-16-le", "utf-16-be")
+
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        matches = from_bytes(raw).best()
-        if matches:
-            primary = matches.encoding
-            if primary:
-                for encoding in [primary, "utf-8-sig", "utf-8", "cp1251", "utf-16"]:
-                    if not encoding:
-                        continue
-                    try:
-                        return raw.decode(encoding, errors="strict")
-                    except (LookupError, UnicodeDecodeError):
-                        continue
+        encodings_to_try: list[str] = []
+
+        match = from_bytes(raw).best()
+        if match is not None:
+            primary = match.encoding
+            confidence = getattr(match, "percent_coherence", 0.0)
+            if primary and confidence >= 70:
+                encodings_to_try.append(primary)
+
+        for encoding in fallback_encodings:
+            if encoding not in encodings_to_try:
+                encodings_to_try.append(encoding)
+
+        for encoding in encodings_to_try:
+            try:
+                return raw.decode(encoding, errors="strict")
+            except (LookupError, UnicodeDecodeError):
+                continue
 
         raise ValueError(
             "CSV must be valid text with a detectable encoding (prefer UTF-8). "

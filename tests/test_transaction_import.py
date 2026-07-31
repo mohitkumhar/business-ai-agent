@@ -111,6 +111,12 @@ def test_parse_csv_bytes_requires_header_and_data_row():
         transaction_import.parse_csv_bytes(b"date,amount\n")
 
 
+def test_parse_csv_bytes_rejects_invalid_text_encoding_without_silently_replacing():
+    raw = b"\xff\xff\xff\x00garbage"
+    with pytest.raises(ValueError, match="data-loss replacement"):
+        transaction_import.parse_csv_bytes(raw)
+
+
 def test_rows_from_dicts_requires_date_and_amount_columns():
     with pytest.raises(ValueError, match="required columns"):
         transaction_import._rows_from_dicts(["date", "category"], [["2026-05-27", "Sales"]])
