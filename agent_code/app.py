@@ -348,7 +348,6 @@ def auth_login():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"message": "Invalid or missing JSON payload"}), 400
-
     email = data.get("email", "").lower().strip()
     password = data.get("password")
 
@@ -1311,7 +1310,6 @@ def api_chat_send():
     except Exception as exc:
         logger.error("api_chat_send failed: %s", exc, exc_info=True)
         return internal_error_response(exc)
-
 @app.route("/api/chat/conversations", methods=["GET"])
 @limiter.limit(CHAT_RATE_LIMIT)
 @token_required
