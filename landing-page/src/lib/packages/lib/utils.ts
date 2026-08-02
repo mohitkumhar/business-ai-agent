@@ -51,7 +51,7 @@ export const isNotEmpty = (value: string | undefined | null): value is string =>
 
 export const byId = (id?: string) => (obj: { id: string }) => obj.id === id;
 
-export const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+export const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 interface Omit {
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -91,7 +91,7 @@ export const sanitizeUrl = (url: string): string =>
 export const toTitleCase = (str: string) =>
   str.replace(
     /\w\S*/g,
-    (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase(),
+    (txt) => txt[0].toUpperCase() + txt.slice(1).toLowerCase(),
   );
 
 export const generateId = (idDesiredLength: number): string => {
