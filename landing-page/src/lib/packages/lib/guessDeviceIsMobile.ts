@@ -17,8 +17,8 @@ export const guessDeviceIsMobile = (opts?: { includeTablet?: boolean }) => {
     !result &&
     opts?.includeTablet &&
     navigator.maxTouchPoints > 1 &&
-    ua.indexOf("Macintosh") !== -1 &&
-    ua.indexOf("Safari") !== -1
+    ua.includes("Macintosh") &&
+    ua.includes("Safari")
   ) {
     result = true;
   }

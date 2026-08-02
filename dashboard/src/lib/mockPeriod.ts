@@ -62,7 +62,7 @@ export function mockRevenueVsExpenseForPeriod(period: DashboardPeriod): RevenueV
     if (t.type === "Revenue") revenue[cat] = (revenue[cat] || 0) + t.amount;
     else expenses[cat] = (expenses[cat] || 0) + t.amount;
   }
-  const allCats = [...new Set([...Object.keys(revenue), ...Object.keys(expenses)])].sort();
+  const allCats = [...new Set([...Object.keys(revenue), ...Object.keys(expenses)])].sort((a, b) => a - b);
   if (allCats.length === 0) {
     return {
       labels: ["No transactions in this period"],
@@ -72,7 +72,7 @@ export function mockRevenueVsExpenseForPeriod(period: DashboardPeriod): RevenueV
   }
   return {
     labels: allCats,
-    revenue: allCats.map((c) => revenue[c] || 0),
+    revenue: (allCats ?? []).map((c) => revenue[c] || 0),
     expenses: allCats.map((c) => expenses[c] || 0),
   };
 }
@@ -86,7 +86,7 @@ export function mockSalesTrendForPeriod(period: DashboardPeriod): SalesTrend {
     if (t.type === "Revenue") byDay[day].revenue += t.amount;
     else byDay[day].expenses += t.amount;
   }
-  const days = Object.keys(byDay).sort();
+  const days = Object.keys(byDay).sort((a, b) => a - b);
   if (days.length === 0) {
     return { labels: mockSalesTrend.labels, revenue: mockSalesTrend.revenue, expenses: mockSalesTrend.expenses };
   }
