@@ -72,7 +72,7 @@ export function mockRevenueVsExpenseForPeriod(period: DashboardPeriod): RevenueV
   }
   return {
     labels: allCats,
-    revenue: allCats.map((c) => revenue[c] || 0),
+    revenue: (allCats ?? []).map((c) => revenue[c] || 0),
     expenses: allCats.map((c) => expenses[c] || 0),
   };
 }
