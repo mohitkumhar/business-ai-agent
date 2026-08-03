@@ -20,3 +20,5 @@ export const copyObjects = async (
     ),
   );
 };
+
+.catch(err => console.error("Promise.all failed:", err));
