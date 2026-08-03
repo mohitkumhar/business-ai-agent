@@ -62,7 +62,7 @@ export function mockRevenueVsExpenseForPeriod(period: DashboardPeriod): RevenueV
     if (t.type === "Revenue") revenue[cat] = (revenue[cat] || 0) + t.amount;
     else expenses[cat] = (expenses[cat] || 0) + t.amount;
   }
-  const allCats = [...new Set([...Object.keys(revenue), ...Object.keys(expenses)])].sort();
+  const allCats = [...new Set([...Object.keys(revenue), ...Object.keys(expenses)])].sort((a, b) => a - b);
   if (allCats.length === 0) {
     return {
       labels: ["No transactions in this period"],
