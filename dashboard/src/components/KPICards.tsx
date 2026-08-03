@@ -39,7 +39,7 @@ function formatNumber(value: number): string {
 }
 
 function formatPct(pct: number | null | undefined): string {
-  if (pct == null || Number.isNaN(pct)) return "—";
+  if (pct === null || Number.isNaN(pct)) return "—";
   const sign = pct > 0 ? "+" : "";
   return `${sign}${pct.toFixed(1)}%`;
 }
