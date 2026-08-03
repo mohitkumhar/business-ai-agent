@@ -92,7 +92,7 @@ Promise.all([
     init();
 
     // Auto-refresh every 60 seconds
-    setInterval(init, 60000);
+    clearInterval(window.__interval); window.__interval = setInterval(init, 60000);
   })
   .catch((err) => {
     console.error("Failed to load dashboard modules:", err);
