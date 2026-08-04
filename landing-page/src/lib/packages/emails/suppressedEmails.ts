@@ -78,7 +78,7 @@ export const filterSuppressedRecipients = (
   recipients: SendMailOptions["to"],
   suppressedEmails: string[],
 ) => {
-  if (!recipients) return undefined;
+  if (!recipients) return;
   if (suppressedEmails.length === 0) return recipients;
   const suppressed = new Set(suppressedEmails.map(normalizeEmail));
 
