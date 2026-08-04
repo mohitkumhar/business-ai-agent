@@ -211,7 +211,7 @@ const validateIPAddress = (ip: ParsedIP) => {
         const octets = ipv4Part.split(".").map(Number);
         if (
           octets.length === 4 &&
-          octets.every((o) => !isNaN(o) && o >= 0 && o <= 255)
+          octets.every((o) => !Number.isNaN(o) && o >= 0 && o <= 255)
         ) {
           validateIPAddress({ version: 4, octets });
           return;

@@ -55,7 +55,7 @@ function transform(
   let separatorMatcher = "";
   let wildcard = ".";
 
-  if (separator === true) {
+  if (separator ) {
     // In this case forward slashes in patterns match both forward and backslashes in samples:
     //
     // `foo/bar` will match `foo/bar`
