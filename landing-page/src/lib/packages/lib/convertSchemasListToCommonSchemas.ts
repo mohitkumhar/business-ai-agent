@@ -125,7 +125,7 @@ const generateKeyFromDiscriminant = (
   discriminator: string,
   value: unknown,
 ): string | undefined => {
-  if (typeof value !== "string") return undefined;
+  if (typeof value !== "string") return;
   if (discriminator === "version") return `V${value}`;
   return toPascalCase(value);
 };
