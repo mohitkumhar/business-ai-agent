@@ -142,7 +142,7 @@ export const injectCustomHeadCode = (customHeadCode: string) => {
 };
 
 export const getAtPath = <T>(obj: T, path: string): unknown => {
-  if (isNotDefined(obj)) return undefined;
+  if (isNotDefined(obj)) return;
   const pathParts = path.split(".");
   let current: any = obj;
   for (const part of pathParts) {
